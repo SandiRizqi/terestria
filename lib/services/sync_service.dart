@@ -1,21 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
-import 'package:http/http.dart' as http;
+import 'api_service.dart';
 import '../config/api_config.dart';
 import '../models/geo_data_model.dart';
 import '../models/project_model.dart';
+import '../models/form_field_model.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
   factory SyncService() => _instance;
   SyncService._internal();
 
+  final ApiService _apiService = ApiService();
+
   // Sync single GeoData to backend
   Future<SyncResult> syncGeoData(GeoData geoData, Project project) async {
     try {
-      final url = ApiConfig.getFullUrl(ApiConfig.syncDataEndpoint);
-      
       // Prepare data untuk dikirim
       final Map<String, dynamic> payload = {
         'id': geoData.id,
@@ -31,13 +32,11 @@ class SyncService {
         'synced_at': DateTime.now().toIso8601String(),
       };
 
-      final response = await http
-          .post(
-            Uri.parse(url),
-            headers: ApiConfig.defaultHeaders,
-            body: jsonEncode(payload),
-          )
-          .timeout(ApiConfig.connectionTimeout);
+      // Gunakan ApiService yang sudah include token
+      final response = await _apiService.post(
+        ApiConfig.syncDataEndpoint,
+        body: payload,
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = jsonDecode(response.body);
@@ -61,6 +60,79 @@ class SyncService {
       return SyncResult(
         success: false,
         message: 'Connection timeout',
+      );
+    } on ApiException catch (e) {
+      return SyncResult(
+        success: false,
+        message: e.message,
+      );
+    } on FormatException catch (e) {
+      return SyncResult(
+        success: false,
+        message: 'Invalid response format: ${e.message}',
+      );
+    } catch (e) {
+      return SyncResult(
+        success: false,
+        message: 'Sync failed: ${e.toString()}',
+      );
+    }
+  }
+
+  // Sync Project to backend
+  Future<SyncResult> syncProject(Project project) async {
+    try {
+      // Prepare project data untuk dikirim
+      final Map<String, dynamic> payload = {
+        'id': project.id,
+        'name': project.name,
+        'description': project.description,
+        'geometry_type': project.geometryType.toString().split('.').last,
+        'form_fields': project.formFields.map((field) => {
+          'id': field.id,
+          'label': field.label,
+          'type': field.type.toString().split('.').last,
+          'required': field.required,
+          'options': field.options,
+        }).toList(),
+        'created_at': project.createdAt.toIso8601String(),
+        'updated_at': project.updatedAt.toIso8601String(),
+        'synced_at': DateTime.now().toIso8601String(),
+      };
+
+      // Gunakan ApiService yang sudah include token
+      final response = await _apiService.post(
+        ApiConfig.syncProjectEndpoint,
+        body: payload,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = jsonDecode(response.body);
+        return SyncResult(
+          success: true,
+          message: responseData['message'] ?? 'Project synced successfully',
+          data: responseData,
+        );
+      } else {
+        return SyncResult(
+          success: false,
+          message: 'Server error: ${response.statusCode} - ${response.body}',
+        );
+      }
+    } on SocketException {
+      return SyncResult(
+        success: false,
+        message: 'No internet connection',
+      );
+    } on TimeoutException {
+      return SyncResult(
+        success: false,
+        message: 'Connection timeout',
+      );
+    } on ApiException catch (e) {
+      return SyncResult(
+        success: false,
+        message: e.message,
       );
     } on FormatException catch (e) {
       return SyncResult(
@@ -105,9 +177,8 @@ class SyncService {
   // Test connection to backend
   Future<bool> testConnection() async {
     try {
-      final url = ApiConfig.baseUrl;
-      final response = await http
-          .get(Uri.parse(url))
+      // Test dengan endpoint root atau health check
+      final response = await _apiService.get('/')
           .timeout(const Duration(seconds: 10));
       
       return response.statusCode == 200 || 

@@ -10,6 +10,8 @@ class Project {
   final List<FormFieldModel> formFields;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool isSynced;
+  final DateTime? syncedAt;
 
   Project({
     required this.id,
@@ -19,6 +21,8 @@ class Project {
     required this.formFields,
     required this.createdAt,
     required this.updatedAt,
+    this.isSynced = false,
+    this.syncedAt,
   });
 
   Map<String, dynamic> toJson() {
@@ -30,6 +34,8 @@ class Project {
       'formFields': formFields.map((f) => f.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      'isSynced': isSynced,
+      'syncedAt': syncedAt?.toIso8601String(),
     };
   }
 
@@ -46,6 +52,8 @@ class Project {
           .toList(),
       createdAt: DateTime.parse(json['createdAt']),
       updatedAt: DateTime.parse(json['updatedAt']),
+      isSynced: json['isSynced'] ?? false,
+      syncedAt: json['syncedAt'] != null ? DateTime.parse(json['syncedAt']) : null,
     );
   }
 
@@ -55,6 +63,8 @@ class Project {
     GeometryType? geometryType,
     List<FormFieldModel>? formFields,
     DateTime? updatedAt,
+    bool? isSynced,
+    DateTime? syncedAt,
   }) {
     return Project(
       id: id,
@@ -64,6 +74,8 @@ class Project {
       formFields: formFields ?? this.formFields,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isSynced: isSynced ?? this.isSynced,
+      syncedAt: syncedAt ?? this.syncedAt,
     );
   }
 }

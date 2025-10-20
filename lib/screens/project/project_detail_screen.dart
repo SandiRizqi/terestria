@@ -166,6 +166,142 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  Future<void> _syncProject() async {
+    // Check if online
+    if (!_isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.wifi_off, color: Colors.white),
+              SizedBox(width: 8),
+              Text('No internet connection. Please connect to sync project.'),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sync Project'),
+        content: Text('Sync project "${_currentProject.name}" to server?\n\nThis will upload project structure and form fields.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sync'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    // Show loading
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Syncing project to server...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    try {
+      // Sync project to backend
+      final result = await _syncService.syncProject(_currentProject);
+      
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        
+        if (result.success) {
+          // Update project sync status if needed
+          final updatedProject = _currentProject.copyWith(
+            updatedAt: DateTime.now(),
+          );
+          await _storageService.saveProject(updatedProject);
+          
+          setState(() {
+            _currentProject = updatedProject;
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(result.message),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          // Show error dialog
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.error, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text('Sync Failed'),
+                ],
+              ),
+              content: Text(result.message),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error syncing project: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _syncAllData() async {
     // Check if online
     if (!_isOnline) {
@@ -487,6 +623,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           PopupMenuButton(
             itemBuilder: (context) => [
               const PopupMenuItem(
+                value: 'sync_project',
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_upload),
+                    SizedBox(width: 8),
+                    Text('Sync Project'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
                 value: 'info',
                 child: Row(
                   children: [
@@ -498,7 +644,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ],
             onSelected: (value) {
-              if (value == 'info') {
+              if (value == 'sync_project') {
+                _syncProject();
+              } else if (value == 'info') {
                 _showProjectInfo();
               }
             },

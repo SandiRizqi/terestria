@@ -1,15 +1,15 @@
 class ApiConfig {
   // Base URL backend
-  static const String baseUrl = 'https://your-backend-url.com/api';
+  static const String baseUrl = 'https://jango-dev1.tap-agri.com';
 
-  static const String authUrl = 'https://django.tap-agri.com/loginldap/';
+  static const String authUrl = 'https://jango-dev1.tap-agri.com/loginldap/';
 
   static const String bundleName = 'com.sandi.geoformApp';
 
   
   // Endpoints
-  static const String syncDataEndpoint = '/sync/geodata';
-  static const String syncProjectEndpoint = '/sync/project';
+  static const String syncDataEndpoint = '/mobile/geodata/';
+  static const String syncProjectEndpoint = '/mobile/projects/';
   
   // Timeout settings
   static const Duration connectionTimeout = Duration(seconds: 30);

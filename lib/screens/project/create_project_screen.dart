@@ -3,8 +3,11 @@ import 'package:uuid/uuid.dart';
 import '../../models/project_model.dart';
 import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
+import '../../services/sync_service.dart';
+import '../../services/connectivity_service.dart';
 import '../../widgets/form_field_builder.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
+import 'dart:async';
 
 class CreateProjectScreen extends StatefulWidget {
   final Project? project; // for editing
@@ -18,6 +21,8 @@ class CreateProjectScreen extends StatefulWidget {
 class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final _formKey = GlobalKey<FormState>();
   final _storageService = StorageService();
+  final _syncService = SyncService();
+  final _connectivityService = ConnectivityService();
   final _uuid = const Uuid();
 
   late TextEditingController _nameController;
@@ -25,6 +30,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   GeometryType _selectedGeometry = GeometryType.point;
   List<FormFieldModel> _formFields = [];
   bool _isSaving = false;
+  bool _isOnline = false;
+  StreamSubscription<bool>? _connectivitySubscription;
 
   @override
   void initState() {
@@ -36,12 +43,27 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
       _selectedGeometry = widget.project!.geometryType;
       _formFields = List.from(widget.project!.formFields);
     }
+    
+    _initConnectivity();
+  }
+
+  void _initConnectivity() {
+    _connectivityService.startMonitoring();
+    _isOnline = _connectivityService.isOnline;
+    _connectivitySubscription = _connectivityService.connectivityStream.listen((isOnline) {
+      if (mounted) {
+        setState(() {
+          _isOnline = isOnline;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -71,14 +93,21 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
       await _storageService.saveProject(project);
 
       if (mounted) {
-        Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.project == null 
-                ? 'Project created successfully' 
-                : 'Project updated successfully'),
-          ),
-        );
+        // Tanya user apakah ingin sync project
+        final shouldSync = await _showSyncDialog();
+        
+        if (shouldSync == true && _isOnline) {
+          await _syncProjectToServer(project);
+        } else {
+          Navigator.pop(context, true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(widget.project == null 
+                  ? 'Project created successfully' 
+                  : 'Project updated successfully'),
+            ),
+          );
+        }
       }
     } catch (e) {
       setState(() => _isSaving = false);
@@ -86,6 +115,198 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error saving project: $e')),
         );
+      }
+    }
+  }
+
+  Future<bool?> _showSyncDialog() async {
+    if (!_isOnline) {
+      return false;
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.cloud_upload, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 12),
+            const Text('Sync Project'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.project == null 
+                  ? 'Project has been saved locally.' 
+                  : 'Project has been updated locally.',
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Do you want to sync this project to the server now?',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 20, color: Colors.blue[700]),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'This will upload the project structure to the server.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Later'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.cloud_upload, size: 18),
+            label: const Text('Sync Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _syncProjectToServer(Project project) async {
+    // Show syncing dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Syncing project to server...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final result = await _syncService.syncProject(project);
+      
+      if (mounted) {
+        Navigator.pop(context); // Close syncing dialog
+        
+        if (result.success) {
+          Navigator.pop(context, true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.project == null
+                          ? 'Project created and synced successfully'
+                          : 'Project updated and synced successfully',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          // Sync failed, but project is saved locally
+          final retry = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.error, color: Colors.orange),
+                  SizedBox(width: 12),
+                  Text('Sync Failed'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Project saved locally but failed to sync to server:'),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      result.message,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'You can sync it later from the project detail screen.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Close'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+
+          if (retry == true) {
+            await _syncProjectToServer(project);
+          } else {
+            Navigator.pop(context, true);
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close syncing dialog
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error syncing project: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        
+        Navigator.pop(context, true);
       }
     }
   }
