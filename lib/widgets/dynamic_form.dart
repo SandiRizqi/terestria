@@ -7,23 +7,48 @@ class DynamicForm extends StatefulWidget {
   final List<FormFieldModel> formFields;
   final Function(Map<String, dynamic>) onSaved;
   final VoidCallback? onChanged;
+  final Map<String, dynamic>? initialData; // Add initial data support
 
   const DynamicForm({
     Key? key,
     required this.formFields,
     required this.onSaved,
     this.onChanged,
+    this.initialData,
   }) : super(key: key);
 
   @override
   State<DynamicForm> createState() => _DynamicFormState();
 }
 
-class _DynamicFormState extends State<DynamicForm> {
-  final Map<String, dynamic> _formData = {};
+class _DynamicFormState extends State<DynamicForm> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+  
+  late Map<String, dynamic> _formData;
+  final Map<String, TextEditingController> _textControllers = {};
+  
+  @override
+  void initState() {
+    super.initState();
+    // Initialize formData with initialData if provided
+    _formData = widget.initialData != null 
+        ? Map<String, dynamic>.from(widget.initialData!) 
+        : {};
+  }
+  
+  @override
+  void dispose() {
+    // Clean up controllers
+    for (var controller in _textControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Column(
       children: widget.formFields.map((field) {
         return Padding(
@@ -52,7 +77,17 @@ class _DynamicFormState extends State<DynamicForm> {
   }
 
   Widget _buildTextField(FormFieldModel field) {
+    // Create or reuse controller to preserve value
+    if (!_textControllers.containsKey(field.label)) {
+      // Use initialData if available
+      final initialValue = _formData[field.label]?.toString() ?? '';
+      _textControllers[field.label] = TextEditingController(
+        text: initialValue,
+      );
+    }
+    
     return TextFormField(
+      controller: _textControllers[field.label],
       decoration: InputDecoration(
         labelText: field.label + (field.required ? ' *' : ''),
         border: const OutlineInputBorder(),
@@ -64,6 +99,8 @@ class _DynamicFormState extends State<DynamicForm> {
         return null;
       },
       onChanged: (value) {
+        _formData[field.label] = value;
+        widget.onSaved(_formData);
         widget.onChanged?.call();
       },
       onSaved: (value) {
@@ -74,7 +111,17 @@ class _DynamicFormState extends State<DynamicForm> {
   }
 
   Widget _buildNumberField(FormFieldModel field) {
+    // Create or reuse controller to preserve value
+    if (!_textControllers.containsKey(field.label)) {
+      // Use initialData if available
+      final initialValue = _formData[field.label]?.toString() ?? '';
+      _textControllers[field.label] = TextEditingController(
+        text: initialValue,
+      );
+    }
+    
     return TextFormField(
+      controller: _textControllers[field.label],
       decoration: InputDecoration(
         labelText: field.label + (field.required ? ' *' : ''),
         border: const OutlineInputBorder(),
@@ -95,6 +142,10 @@ class _DynamicFormState extends State<DynamicForm> {
         return null;
       },
       onChanged: (value) {
+        _formData[field.label] = value != null && value.isNotEmpty
+            ? double.tryParse(value) ?? value
+            : '';
+        widget.onSaved(_formData);
         widget.onChanged?.call();
       },
       onSaved: (value) {
@@ -107,9 +158,18 @@ class _DynamicFormState extends State<DynamicForm> {
   }
 
   Widget _buildDateField(FormFieldModel field) {
+    // Parse initial date if exists
     DateTime? selectedDate;
+    if (_formData[field.label] != null && _formData[field.label] is String) {
+      try {
+        selectedDate = DateTime.parse(_formData[field.label]);
+      } catch (e) {
+        selectedDate = null;
+      }
+    }
 
     return FormField<DateTime>(
+      initialValue: selectedDate,
       validator: (value) {
         if (field.required && value == null) {
           return 'This field is required';
@@ -135,6 +195,8 @@ class _DynamicFormState extends State<DynamicForm> {
                 if (date != null) {
                   state.didChange(date);
                   selectedDate = date;
+                  _formData[field.label] = date.toIso8601String();
+                  widget.onSaved(_formData);
                   widget.onChanged?.call();
                 }
               },
@@ -159,7 +221,11 @@ class _DynamicFormState extends State<DynamicForm> {
   }
 
   Widget _buildDropdownField(FormFieldModel field) {
+    // Get initial value
+    final initialValue = _formData[field.label] as String?;
+    
     return DropdownButtonFormField<String>(
+      value: initialValue,
       decoration: InputDecoration(
         labelText: field.label + (field.required ? ' *' : ''),
         border: const OutlineInputBorder(),
@@ -181,16 +247,19 @@ class _DynamicFormState extends State<DynamicForm> {
         widget.onSaved(_formData);
       },
       onChanged: (value) {
+        _formData[field.label] = value ?? '';
+        widget.onSaved(_formData);
         widget.onChanged?.call();
       },
     );
   }
 
   Widget _buildCheckboxField(FormFieldModel field) {
-    bool? checkboxValue = false;
+    // Get initial value
+    final initialValue = _formData[field.label] as bool? ?? false;
 
     return FormField<bool>(
-      initialValue: false,
+      initialValue: initialValue,
       validator: (value) {
         if (field.required && value != true) {
           return 'This field is required';
@@ -210,7 +279,9 @@ class _DynamicFormState extends State<DynamicForm> {
               value: state.value,
               onChanged: (value) {
                 state.didChange(value);
-                checkboxValue = value;
+                // checkboxValue = value;
+                _formData[field.label] = value ?? false;
+                widget.onSaved(_formData);
                 widget.onChanged?.call();
               },
               contentPadding: EdgeInsets.zero,
@@ -234,12 +305,19 @@ class _DynamicFormState extends State<DynamicForm> {
   }
 
   Widget _buildPhotoField(FormFieldModel field) {
-    List<String> photoPaths = [];
+    // Get initial photos if exists
+    List<String> initialPhotos = [];
+    if (_formData[field.label] is List) {
+      initialPhotos = (_formData[field.label] as List)
+          .map((e) => e.toString())
+          .toList();
+    }
+    
     final minPhotos = field.minPhotos ?? (field.required ? 1 : 0);
     final maxPhotos = field.maxPhotos ?? 1;
 
     return FormField<List<String>>(
-      initialValue: [],
+      initialValue: initialPhotos,
       validator: (value) {
         final photoCount = value?.length ?? 0;
         
@@ -271,7 +349,9 @@ class _DynamicFormState extends State<DynamicForm> {
           errorText: state.errorText,
           onChanged: (photos) {
             state.didChange(photos);
-            photoPaths = photos;
+            // photoPaths = photos;
+            _formData[field.label] = photos;
+            widget.onSaved(_formData);
             widget.onChanged?.call();
           },
         );

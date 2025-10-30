@@ -189,6 +189,9 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
     TileGeneratorConfig config,
   ) async {
     try {
+      // Extract georeferencing first to get bounds
+      final georef = await _pdfService.extractGeoreferencing(pdfPath);
+      
       await _pdfService.generateTilesFromPdf(
         pdfPath: pdfPath,
         basemapId: basemapId,
@@ -208,12 +211,17 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
           );
 
           if (progress >= 1.0) {
-            final basePath = await _pdfService.getBasePath(basemapId);
-            // Store base path instead of URL template
+            // Store SQLite reference and georeferencing bounds
             final completed = updated.copyWith(
-              urlTemplate: basePath, // We'll use this as base path
-              minZoom: config.minZoom,
-              maxZoom: config.maxZoom,
+              urlTemplate: 'sqlite://$basemapId/{z}/{x}/{y}',
+              minZoom: config.minZoom ?? georef?.calculateOptimalZoomLevels()['minZoom'],
+              maxZoom: config.maxZoom ?? georef?.calculateOptimalZoomLevels()['maxZoom'],
+              pdfMinLat: georef?.minLat,
+              pdfMinLon: georef?.minLon,
+              pdfMaxLat: georef?.maxLat,
+              pdfMaxLon: georef?.maxLon,
+              pdfCenterLat: georef?.centerLat,
+              pdfCenterLon: georef?.centerLon,
             );
             await _basemapService.saveBasemap(completed);
           } else {
@@ -440,7 +448,12 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
 
   Widget _buildBasemapList() {
     return ListView.builder(
-      padding: const EdgeInsets.all(AppTheme.spacingMedium),
+      padding: const EdgeInsets.only(
+        left: AppTheme.spacingMedium,
+        right: AppTheme.spacingMedium,
+        top: AppTheme.spacingMedium,
+        bottom: 80, // Padding untuk FAB
+      ),
       itemCount: _basemaps.length,
       itemBuilder: (context, index) {
         final basemap = _basemaps[index];

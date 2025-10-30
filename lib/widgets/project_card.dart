@@ -6,12 +6,14 @@ class ProjectCard extends StatelessWidget {
   final Project project;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   const ProjectCard({
     Key? key,
     required this.project,
     required this.onTap,
     required this.onDelete,
+    required this.onEdit,
   }) : super(key: key);
 
   @override
@@ -81,9 +83,36 @@ class ProjectCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: onDelete,
+                  // Edit button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      color: AppTheme.primaryColor,
+                      onPressed: onEdit,
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Edit Project',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Delete button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      color: Colors.red[700],
+                      onPressed: onDelete,
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Delete Project',
+                    ),
                   ),
                 ],
               ),

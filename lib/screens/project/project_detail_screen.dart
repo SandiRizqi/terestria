@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:geoform_app/theme/app_theme.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/sync_service.dart';
+import '../../services/api_service.dart';
+import '../../config/api_config.dart';
 import '../data_collection/data_collection_screen.dart';
+import 'edit_geo_data_screen.dart';
 import 'create_project_screen.dart';
 import '../../widgets/geo_data_list_item.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
@@ -27,6 +32,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final StorageService _storageService = StorageService();
   final ConnectivityService _connectivityService = ConnectivityService();
   final SyncService _syncService = SyncService();
+  final ApiService _apiService = ApiService();
   
   List<GeoData> _geoDataList = [];
   List<GeoData> _filteredGeoDataList = [];
@@ -36,6 +42,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _isSearching = false;
   bool _isOnline = false;
   StreamSubscription<bool>? _connectivitySubscription;
+  bool _isSyncing = false;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -44,6 +52,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     _loadGeoData();
     _searchController.addListener(_filterGeoData);
     _initConnectivity();
+    _scrollController.addListener(_onScroll);
   }
 
   void _initConnectivity() {
@@ -56,6 +65,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         });
       }
     });
+  }
+
+  void _onScroll() {
+    // Reserved for future scroll-based actions
   }
 
   Color _getGeoColor(String polygonType) {
@@ -76,6 +89,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void dispose() {
     _searchController.dispose();
     _connectivitySubscription?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -117,6 +131,88 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  /// Sync GeoData untuk project ini dari server
+  Future<void> _syncGeoDataFromServer() async {
+    if (_isSyncing || !_isOnline) return;
+
+    setState(() => _isSyncing = true);
+
+    try {
+      final geoDataResponse = await _apiService.get(
+        '${ApiConfig.syncDataEndpoint}by-project/?project_id=${_currentProject.id}',
+      );
+
+      int newGeoDataCount = 0;
+      int updatedGeoDataCount = 0;
+
+      if (_apiService.isSuccess(geoDataResponse)) {
+        final geoDataList = jsonDecode(geoDataResponse.body);
+        
+        // Load existing geodata
+        final existingGeoData = await _storageService.loadGeoData(_currentProject.id);
+        final existingGeoDataMap = {for (var g in existingGeoData) g.id: g};
+
+        // Process geodata dari server
+        if (geoDataList is List) {
+          for (var geoDataJson in geoDataList) {
+            try {
+              final serverGeoData = GeoData.fromJson(geoDataJson);
+              final existingGeoData = existingGeoDataMap[serverGeoData.id];
+
+              if (existingGeoData == null) {
+                // GeoData baru dari server
+                await _storageService.saveGeoData(serverGeoData);
+                newGeoDataCount++;
+              } else if (serverGeoData.updatedAt.isAfter(existingGeoData.updatedAt)) {
+                // Update geodata yang lebih baru dari server
+                await _storageService.saveGeoData(serverGeoData);
+                updatedGeoDataCount++;
+              }
+            } catch (e) {
+              print('Error processing geodata from server: $e');
+            }
+          }
+        }
+      }
+
+      // Reload local data
+      await _loadGeoData();
+
+      // Show notification jika ada data baru
+      if (mounted && (newGeoDataCount > 0 || updatedGeoDataCount > 0)) {
+        String message = '';
+        if (newGeoDataCount > 0) {
+          message += '$newGeoDataCount new';
+        }
+        if (updatedGeoDataCount > 0) {
+          if (message.isNotEmpty) message += ', ';
+          message += '$updatedGeoDataCount updated';
+        }
+        message += ' geodata synced';
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.cloud_download, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text(message)),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error syncing geodata from server: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
+    }
+  }
+
   Future<void> _editProject() async {
     final result = await Navigator.push(
       context,
@@ -134,33 +230,310 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  /// Convert GeoData to GeoJSON Feature Collection
+  Map<String, dynamic> _exportAsGeoJSON() {
+    List<Map<String, dynamic>> features = [];
+    
+    for (var geoData in _geoDataList) {
+      // Determine geometry type and coordinates based on project geometry type
+      String geometryType;
+      dynamic coordinates;
+      
+      if (_currentProject.geometryType == GeometryType.point) {
+        geometryType = 'Point';
+        if (geoData.points.isNotEmpty) {
+          final point = geoData.points.first;
+          coordinates = [point.longitude, point.latitude];
+          if (point.altitude != null) {
+            coordinates.add(point.altitude);
+          }
+        } else {
+          coordinates = [0.0, 0.0]; // Default jika tidak ada point
+        }
+      } else if (_currentProject.geometryType == GeometryType.line) {
+        geometryType = 'LineString';
+        coordinates = geoData.points.map((point) {
+          List<double> coord = [point.longitude, point.latitude];
+          if (point.altitude != null) {
+            coord.add(point.altitude!);
+          }
+          return coord;
+        }).toList();
+      } else { // Polygon
+        geometryType = 'Polygon';
+        // GeoJSON Polygon requires array of LinearRings (first is exterior, rest are holes)
+        // Each LinearRing must be closed (first point = last point)
+        List<List<double>> ring = geoData.points.map((point) {
+          List<double> coord = [point.longitude, point.latitude];
+          if (point.altitude != null) {
+            coord.add(point.altitude!);
+          }
+          return coord;
+        }).toList();
+        
+        // Close the ring if not already closed
+        if (ring.isNotEmpty && ring.first != ring.last) {
+          ring.add(ring.first);
+        }
+        
+        coordinates = [ring]; // Wrap in array for Polygon format
+      }
+      
+      // Create properties from formData
+      Map<String, dynamic> properties = {
+        'id': geoData.id,
+        'createdAt': geoData.createdAt.toIso8601String(),
+        'updatedAt': geoData.updatedAt.toIso8601String(),
+        'isSynced': geoData.isSynced,
+      };
+      
+      // Add form data to properties
+      properties.addAll(geoData.formData);
+      
+      // Create GeoJSON feature
+      features.add({
+        'type': 'Feature',
+        'geometry': {
+          'type': geometryType,
+          'coordinates': coordinates,
+        },
+        'properties': properties,
+      });
+    }
+    
+    // Create GeoJSON Feature Collection
+    return {
+      'type': 'FeatureCollection',
+      'name': _currentProject.name,
+      'crs': {
+        'type': 'name',
+        'properties': {
+          'name': 'urn:ogc:def:crs:OGC:1.3:CRS84'
+        }
+      },
+      'features': features,
+    };
+  }
+
   Future<void> _exportData() async {
     try {
-      final exportData = await _storageService.exportProject(_currentProject.id);
-      final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
+      // Export as GeoJSON Feature Collection
+      final geoJsonData = _exportAsGeoJSON();
+      final jsonString = const JsonEncoder.withIndent('  ').convert(geoJsonData);
       
       // Show export dialog
       if (mounted) {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Export Data'),
-            content: SingleChildScrollView(
-              child: SelectableText(jsonString),
+            title: Row(
+              children: [
+                Icon(Icons.file_download, color: Theme.of(context).primaryColor),
+                const SizedBox(width: 8),
+                const Text('Export as GeoJSON'),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-            ],
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Format: GeoJSON Feature Collection',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Features: ${_geoDataList.length}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      jsonString,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                    const Spacer(),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: jsonString));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Colors.white),
+                                  SizedBox(width: 8),
+                                  Text('GeoJSON copied to clipboard'),
+                                ],
+                              ),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await _downloadGeoJSON(jsonString);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.download, size: 18),
+                    label: const Text('Download'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error exporting data: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _downloadGeoJSON(String jsonString) async {
+    try {
+      // Generate filename with project name and timestamp
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final projectName = _currentProject.name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
+      final filename = '${projectName}_$timestamp.geojson';
+
+      // Get download directory
+      Directory? directory;
+      if (Platform.isAndroid) {
+        // Try multiple directories for Android
+        final downloadDir = Directory('/storage/emulated/0/Download');
+        
+        if (await downloadDir.exists()) {
+          directory = downloadDir;
+        } else {
+          // Fallback to app-specific external storage (no permission required)
+          directory = await getExternalStorageDirectory();
+          
+          // Create GeoJSON folder in app directory
+          if (directory != null) {
+            final geoJsonDir = Directory('${directory.path}/GeoJSON');
+            if (!await geoJsonDir.exists()) {
+              await geoJsonDir.create(recursive: true);
+            }
+            directory = geoJsonDir;
+          }
+        }
+      } else if (Platform.isIOS) {
+        // For iOS, use documents directory
+        directory = await getApplicationDocumentsDirectory();
+      } else {
+        // For other platforms
+        directory = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+      }
+
+      if (directory == null) {
+        throw Exception('Could not access storage directory');
+      }
+
+      // Create file path
+      final filePath = '${directory.path}/$filename';
+      final file = File(filePath);
+
+      // Write GeoJSON to file
+      await file.writeAsString(jsonString);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'GeoJSON downloaded successfully!',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Saved to: $filePath',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error exporting data: $e')),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error saving file: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -566,6 +939,23 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  Future<void> _editGeoData(GeoData data) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditGeoDataScreen(
+          geoData: data,
+          project: _currentProject,
+        ),
+      ),
+    );
+
+    // Reload data jika ada perubahan
+    if (result == true) {
+      await _loadGeoData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -613,39 +1003,106 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               },
             ),
           IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: _editProject,
-          ),
-          IconButton(
             icon: const Icon(Icons.download),
             onPressed: _exportData,
           ),
-          PopupMenuButton(
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 8,
+            offset: const Offset(0, 50),
             itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'sync_project',
+              PopupMenuItem<String>(
+                value: 'sync_to_server',
                 child: Row(
                   children: [
-                    Icon(Icons.cloud_upload),
-                    SizedBox(width: 8),
-                    Text('Sync Project'),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.cloud_upload_rounded,
+                        color: Theme.of(context).primaryColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Push to Server',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Upload geodata to cloud',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
                 value: 'info',
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline),
-                    SizedBox(width: 8),
-                    Text('Project Info'),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.info_outline_rounded,
+                        color: Colors.blue,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Project Info',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'View project details',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
             onSelected: (value) {
-              if (value == 'sync_project') {
-                _syncProject();
+              if (value == 'sync_to_server') {
+                _syncAllData();
               } else if (value == 'info') {
                 _showProjectInfo();
               }
@@ -655,6 +1112,34 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ),
       body: Column(
         children: [
+          // Sync Indicator
+          if (_isSyncing)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.blue[50],
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[700]!),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Syncing with server...',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.blue[800],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
           // Stats Card
           _buildStatsCard(),
           
@@ -667,9 +1152,22 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     : _filteredGeoDataList.isEmpty
                         ? _buildNoResultsState()
                         : RefreshIndicator(
-                            onRefresh: _loadGeoData,
+                            onRefresh: () async {
+                              // Saat pull to refresh, sync geodata dari server
+                              if (_isOnline) {
+                                await _syncGeoDataFromServer();
+                              } else {
+                                await _loadGeoData();
+                              }
+                            },
                             child: ListView.builder(
-                              padding: const EdgeInsets.all(16),
+                              controller: _scrollController,
+                              padding: const EdgeInsets.only(
+                                left: 16,
+                                right: 16,
+                                top: 16,
+                                bottom: 80, // Padding untuk FAB
+                              ),
                               itemCount: _filteredGeoDataList.length,
                               itemBuilder: (context, index) {
                                 final data = _filteredGeoDataList[index];
@@ -678,6 +1176,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                   geometryType: _currentProject.geometryType,
                                   project: _currentProject,
                                   onDelete: () => _deleteGeoData(data),
+                                  onEdit: () => _editGeoData(data),
                                   onTap: () => _showDataDetail(data),
                                 );
                               },
@@ -916,8 +1415,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ),
     );
 
+    // Reload data jika ada perubahan (data baru ditambahkan)
     if (result == true) {
-      _loadGeoData();
+      print('Data collection result: true, reloading data...');
+      await _loadGeoData();
+      
+      // Scroll ke atas untuk melihat data terbaru
+      if (_geoDataList.isNotEmpty && _scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     }
   }
 
@@ -1423,7 +1933,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       case GeometryType.line:
         return Icons.timeline;
       case GeometryType.polygon:
-        return Icons.polyline;
+        return Icons.pentagon_outlined;
     }
   }
 

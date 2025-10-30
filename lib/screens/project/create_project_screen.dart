@@ -419,9 +419,48 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Geometry Type',
-                      style: Theme.of(context).textTheme.titleMedium,
+                    Row(
+                      children: [
+                        Text(
+                          'Geometry Type',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        if (widget.project != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Colors.orange.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.lock,
+                                  size: 14,
+                                  color: Colors.orange[700],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Cannot be changed',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.orange[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 12),
                     _buildGeometryTypeSelector(),
@@ -500,31 +539,72 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   }
 
   Widget _buildGeometryTypeSelector() {
+    final isEditing = widget.project != null;
+    
     return Column(
       children: [
         RadioListTile<GeometryType>(
-          title: const Text('Point'),
-          subtitle: const Text('Single location marker'),
+          title: Text(
+            'Point',
+            style: TextStyle(
+              color: isEditing ? Colors.grey : null,
+            ),
+          ),
+          subtitle: Text(
+            'Single location marker',
+            style: TextStyle(
+              color: isEditing ? Colors.grey : null,
+            ),
+          ),
           value: GeometryType.point,
           groupValue: _selectedGeometry,
-          onChanged: (value) => setState(() => _selectedGeometry = value!),
-          secondary: const Icon(Icons.place),
+          onChanged: isEditing ? null : (value) => setState(() => _selectedGeometry = value!),
+          secondary: Icon(
+            Icons.place,
+            color: isEditing ? Colors.grey : null,
+          ),
         ),
         RadioListTile<GeometryType>(
-          title: const Text('Line'),
-          subtitle: const Text('Path or route'),
+          title: Text(
+            'Line',
+            style: TextStyle(
+              color: isEditing ? Colors.grey : null,
+            ),
+          ),
+          subtitle: Text(
+            'Path or route',
+            style: TextStyle(
+              color: isEditing ? Colors.grey : null,
+            ),
+          ),
           value: GeometryType.line,
           groupValue: _selectedGeometry,
-          onChanged: (value) => setState(() => _selectedGeometry = value!),
-          secondary: const Icon(Icons.timeline),
+          onChanged: isEditing ? null : (value) => setState(() => _selectedGeometry = value!),
+          secondary: Icon(
+            Icons.timeline,
+            color: isEditing ? Colors.grey : null,
+          ),
         ),
         RadioListTile<GeometryType>(
-          title: const Text('Polygon'),
-          subtitle: const Text('Area or boundary'),
+          title: Text(
+            'Polygon',
+            style: TextStyle(
+              color: isEditing ? Colors.grey : null,
+            ),
+          ),
+          subtitle: Text(
+            'Area or boundary',
+            style: TextStyle(
+              color: isEditing ? Colors.grey : null,
+            ),
+          ),
           value: GeometryType.polygon,
           groupValue: _selectedGeometry,
-          onChanged: (value) => setState(() => _selectedGeometry = value!),
-          secondary: const Icon(Icons.crop_square),
+          onChanged: isEditing ? null : (value) => setState(() => _selectedGeometry = value!),
+          secondary: Icon(
+            Icons.crop_square,
+            color: isEditing ? Colors.grey : null,
+          ),
         ),
       ],
     );

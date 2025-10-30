@@ -5,7 +5,10 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_compass/flutter_compass.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/basemap_model.dart';
@@ -14,15 +17,14 @@ import '../../services/location_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/basemap_service.dart';
 import '../../services/tile_providers/local_file_tile_provider.dart';
-import '../../services/tile_cache_service.dart';
+import '../../services/tile_cache_sqlite_service.dart';
+import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../widgets/dynamic_form.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../theme/app_theme.dart';
-import 'package:flutter_map_cache/flutter_map_cache.dart';
-import 'package:dio_cache_interceptor_hive_store/dio_cache_interceptor_hive_store.dart';
-import 'package:path_provider/path_provider.dart';
+import 'widgets/collapsible_bottom_controls.dart';
+import 'widgets/user_location_marker.dart';
 import '../basemap/basemap_management_screen.dart';
-import 'package:path_provider/path_provider.dart';
 
 
 
@@ -38,10 +40,13 @@ class DataCollectionScreen extends StatefulWidget {
   State<DataCollectionScreen> createState() => _DataCollectionScreenState();
 }
 
-class _DataCollectionScreenState extends State<DataCollectionScreen> {
+class _DataCollectionScreenState extends State<DataCollectionScreen> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   final LocationService _locationService = LocationService();
   final StorageService _storageService = StorageService();
   final BasemapService _basemapService = BasemapService();
+  final TileCacheSqliteService _tileCacheService = TileCacheSqliteService();
   final MapController _mapController = MapController();
   final _formKey = GlobalKey<FormState>();
   final _uuid = const Uuid();
@@ -56,10 +61,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
   Map<String, dynamic> _formData = {};
   CollectionMode _collectionMode = CollectionMode.tracking;
   Basemap? _selectedBasemap;
-  Future<String>? _cachePathFuture;
   bool _showForm = false;
-  bool _isFormValid = false;
   bool _isLoadingLocation = true;
+  bool _hasInitialZoom = false;
+  double _currentBearing = 0.0;
+  StreamSubscription<CompassEvent>? _compassSubscription;
+  bool _isBottomSheetExpanded = false;
+  LatLng _centerCoordinates = const LatLng(-6.2088, 106.8456);
   
   // Existing data from project
   List<GeoData> _existingData = [];
@@ -71,7 +79,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
     _initializeLocation();
     _loadBasemap();
     _loadExistingData();
-    _cachePathFuture = _getCachePath();
+    _initCompass();
+  }
+
+  void _initCompass() {
+    _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
+      if (mounted && event.heading != null) {
+        setState(() {
+          _currentBearing = event.heading!;
+        });
+      }
+    });
   }
 
   Future<void> _loadExistingData() async {
@@ -88,15 +106,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
     }
   }
 
-  Future<String> _getCachePath() async {
-    final directory = await getApplicationSupportDirectory();
-    return '${directory.path}${Platform.pathSeparator}MapTiles';
-  }
-
   @override
   void dispose() {
     _locationSubscription?.cancel();
     _backgroundServiceSubscription?.cancel();
+    _compassSubscription?.cancel();
     if (_isTracking) {
       _locationService.stopBackgroundTracking();
     }
@@ -121,10 +135,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
       setState(() {
         _currentLocation = location;
       });
-      _mapController.move(
-        LatLng(location.latitude, location.longitude),
-        15,
-      );
+      // Zoom hanya saat pertama kali
+      if (!_hasInitialZoom) {
+        _mapController.move(
+          LatLng(location.latitude, location.longitude), 15
+        );
+        _hasInitialZoom = true;
+      }
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -168,11 +185,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
               _collectedPoints.add(location);
             }
           });
-          
-          _mapController.move(
-            LatLng(location.latitude, location.longitude),
-            _mapController.camera.zoom,
-          );
+          // Tidak zoom otomatis saat tracking
         }
       });
     } else {
@@ -188,11 +201,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
               _collectedPoints.add(location);
             }
           });
-          
-          _mapController.move(
-            LatLng(location.latitude, location.longitude),
-            _mapController.camera.zoom,
-          );
+          // Tidak zoom otomatis saat tracking
         }
       });
     }
@@ -261,17 +270,32 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
   }
 
   void _addCurrentPoint() async {
-    final location = await _locationService.getCurrentLocation();
-    if (location != null) {
-      setState(() {
-        _collectedPoints.add(location);
-        // _checkAndShowForm();
-      });
-
+    // Untuk point geometry, hanya bisa add 1 point
+    if (widget.project.geometryType == GeometryType.point && _collectedPoints.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Point added'), duration: Duration(seconds: 1)),
+        const SnackBar(
+          content: Text('Only 1 point allowed for point geometry'),
+          duration: Duration(seconds: 2),
+        ),
       );
+      return;
     }
+
+    // Ambil koordinat tengah layar
+    final center = _mapController.camera.center;
+    final centerPoint = GeoPoint(
+      latitude: center.latitude,
+      longitude: center.longitude,
+      timestamp: DateTime.now(),
+    );
+    
+    setState(() {
+      _collectedPoints.add(centerPoint);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Point added at center'), duration: Duration(seconds: 1)),
+    );
   }
 
   void _checkAndShowForm() {
@@ -287,16 +311,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
     }
   }
 
-
-  void _validateForm() {
-    // Validate the form and update button state
-    if (_formKey.currentState != null) {
-      final isValid = _formKey.currentState!.validate();
-      setState(() {
-        _isFormValid = isValid;
-      });
-    }
-  }
 
   void _undoLastPoint() {
     if (_collectedPoints.isNotEmpty) {
@@ -318,7 +332,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
     setState(() {
       _collectedPoints.clear();
       _showForm = false;
-      _isFormValid = false;
+      // _isFormValid = false;
     });
   }
 
@@ -395,10 +409,33 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
       await _storageService.saveGeoData(geoData);
 
       if (mounted) {
-        Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Data saved successfully')),
-        );
+        // Reset saving state sebelum pop
+        setState(() => _isSaving = false);
+        
+        // Delay singkat untuk memastikan UI update
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        if (mounted) {
+          // Simpan context sebelum pop untuk SnackBar
+          final scaffoldMessenger = ScaffoldMessenger.of(context);
+          
+          // Pop Form Dialog terlebih dahulu
+          Navigator.pop(context);
+          await Future.delayed(const Duration(milliseconds: 50));
+          
+          if (mounted) {
+            // Pop DataCollectionScreen dengan result=true untuk trigger reload
+            Navigator.pop(context, true);
+            
+            // Show success message (akan muncul di ProjectDetailScreen)
+            scaffoldMessenger.showSnackBar(
+              const SnackBar(
+                content: Text('Data saved successfully'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
       setState(() => _isSaving = false);
@@ -449,7 +486,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
       case GeometryType.line:
         return Icons.timeline;
       case GeometryType.polygon:
-        return Icons.polyline;
+        return Icons.pentagon_outlined;
     }
   }
 
@@ -556,94 +593,158 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
       children: [
         // Photo fields
         ...data.formData.entries.where((entry) => _isPhotoField(entry.key)).map((entry) {
-          List<String> photoPaths = [];
-          if (entry.value is List) {
-            photoPaths = (entry.value as List).map((e) => e.toString()).toList();
-          } else if (entry.value is String && entry.value.toString().isNotEmpty) {
-            photoPaths = [entry.value.toString()];
-          }
-          
-          if (photoPaths.isNotEmpty) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.photo_camera,
-                        size: 20,
-                        color: AppTheme.primaryColor,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        entry.key,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (photoPaths.length > 1)
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 1.2,
-                    ),
-                    itemCount: photoPaths.length,
-                    itemBuilder: (context, index) {
-                      final photoFile = File(photoPaths[index]);
-                      return GestureDetector(
-                        onTap: () => photoFile.existsSync() ? _showFullImage(photoPaths[index]) : null,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: photoFile.existsSync()
-                              ? Image.file(photoFile, fit: BoxFit.cover)
-                              : Container(
-                                  color: Colors.grey[200],
-                                  child: const Icon(Icons.image_not_supported, size: 40),
+                        // Handle both List and String types
+                        List<String> photoPaths = [];
+                        if (entry.value is List) {
+                          photoPaths = (entry.value as List).map((e) => e.toString()).toList();
+                        } else if (entry.value is String && entry.value.toString().isNotEmpty) {
+                          photoPaths = [entry.value.toString()];
+                        }
+                        
+                        if (photoPaths.isNotEmpty) {
+                          
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.photo_camera,
+                                      size: 20,
+                                      color: Theme.of(context).primaryColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          entry.key,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF1F2937),
+                                          ),
+                                        ),
+                                        Text(
+                                          '${photoPaths.length} photo${photoPaths.length > 1 ? "s" : ""}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              // Display photos in a grid if multiple
+                              if (photoPaths.length > 1)
+                                GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
+                                    childAspectRatio: 1.2,
+                                  ),
+                                  itemCount: photoPaths.length,
+                                  itemBuilder: (context, index) {
+                                    final photoPath = photoPaths[index];
+                                    final photoFile = File(photoPath);
+                                    final fileExists = photoFile.existsSync();
+                                    
+                                    return GestureDetector(
+                                      onTap: () {
+                                        if (fileExists) {
+                                          _showFullImage(photoPath);
+                                        }
+                                      },
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(12),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.1),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: fileExists
+                                              ? Image.file(
+                                                  photoFile,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (context, error, stackTrace) {
+                                                    return _buildImageErrorWidget();
+                                                  },
+                                                )
+                                              : _buildImageNotFoundWidget(photoPath),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                              else
+                                // Single photo display
+                                GestureDetector(
+                                  onTap: () {
+                                    final photoFile = File(photoPaths[0]);
+                                    if (photoFile.existsSync()) {
+                                      _showFullImage(photoPaths[0]);
+                                    }
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: () {
+                                        final photoFile = File(photoPaths[0]);
+                                        final fileExists = photoFile.existsSync();
+                                        
+                                        if (fileExists) {
+                                          return Image.file(
+                                            photoFile,
+                                            width: double.infinity,
+                                            height: 250,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return _buildImageErrorWidget();
+                                            },
+                                          );
+                                        } else {
+                                          return _buildImageNotFoundWidget(photoPaths[0]);
+                                        }
+                                      }(),
+                                    ),
+                                  ),
                                 ),
-                        ),
-                      );
-                    },
-                  )
-                else
-                  GestureDetector(
-                    onTap: () {
-                      final photoFile = File(photoPaths[0]);
-                      if (photoFile.existsSync()) _showFullImage(photoPaths[0]);
-                    },
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: File(photoPaths[0]).existsSync()
-                          ? Image.file(File(photoPaths[0]), height: 250, width: double.infinity, fit: BoxFit.cover)
-                          : Container(
-                              height: 250,
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.image_not_supported, size: 64),
-                            ),
-                    ),
-                  ),
-                const SizedBox(height: 24),
-              ],
-            );
-          }
-          return const SizedBox.shrink();
-        }),
+                              const SizedBox(height: 24),
+                            ],
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      }),
         
         // Non-photo form fields
         if (data.formData.entries.any((entry) => !_isPhotoField(entry.key))) ...[
@@ -732,125 +833,201 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
 
   void _showFormBottomSheet() {
     // Initialize form validity based on whether there are required fields
-    setState(() {
-      _isFormValid = !widget.project.formFields.any((field) => field.required);
-    });
+    final hasRequiredFields = widget.project.formFields.any((field) => field.required);
+    bool localIsFormValid = !hasRequiredFields;
+    bool localIsSaving = false;
     
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.3,
-        maxChildSize: 0.9,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(20),
-              topRight: Radius.circular(20),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Handle bar
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setModalState) {
+            // Local validation function that updates modal state
+            void validateFormLocal() {
+              bool hasAllRequiredFields = true;
+              for (var field in widget.project.formFields) {
+                if (field.required) {
+                  final value = _formData[field.label];
+                  
+                  if (value == null) {
+                    hasAllRequiredFields = false;
+                    break;
+                  }
+                  
+                  if (field.type == FieldType.text || field.type == FieldType.number) {
+                    if (value is String && value.trim().isEmpty) {
+                      hasAllRequiredFields = false;
+                      break;
+                    }
+                  } else if (field.type == FieldType.photo) {
+                    if (value is List && value.isEmpty) {
+                      hasAllRequiredFields = false;
+                      break;
+                    }
+                  } else if (field.type == FieldType.checkbox) {
+                    if (value is bool && value == false) {
+                      hasAllRequiredFields = false;
+                      break;
+                    }
+                  } else if (field.type == FieldType.dropdown || field.type == FieldType.date) {
+                    if (value is String && value.isEmpty) {
+                      hasAllRequiredFields = false;
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              setModalState(() {
+                localIsFormValid = hasAllRequiredFields;
+              });
+            }
+            
+            return Scaffold(
+              appBar: AppBar(
+                title: const Text('Survey Data'),
+                leading: IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
                 ),
               ),
-              
-              // Header
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.spacingMedium,
-                  vertical: AppTheme.spacingSmall,
-                ),
-                child: Row(
+              body: Form(
+                key: _formKey,
+                child: Column(
                   children: [
                     Expanded(
-                      child: Text(
-                        'Survey Data',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
-                        ),
+                      child: ListView(
+                        padding: const EdgeInsets.all(AppTheme.spacingMedium),
+                        children: [
+                          DynamicForm(
+                            formFields: widget.project.formFields,
+                            onSaved: (data) => _formData = data,
+                            onChanged: () {
+                              // Delay check to allow validation to complete
+                              Future.delayed(const Duration(milliseconds: 100), () {
+                                if (mounted) {
+                                  validateFormLocal();
+                                }
+                              });
+                            },
+                          ),
+                          const SizedBox(height: AppTheme.spacingLarge),
+                          
+                          // Info card
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppTheme.primaryColor.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: AppTheme.primaryColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Fill in all required fields to save your data',
+                                    style: TextStyle(
+                                      color: AppTheme.primaryColor,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 100), // Extra space for button
+                        ],
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                      tooltip: 'Close',
+                    // Save Button di Bawah
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, -2),
+                          ),
+                        ],
+                      ),
+                      child: SafeArea(
+                        top: false,
+                        child: ElevatedButton(
+                          onPressed: (localIsSaving || !localIsFormValid) ? null : () async {
+                            setModalState(() => localIsSaving = true);
+                            
+                            // Simpan data
+                            await _saveData();
+                            
+                            // Jika save berhasil, _saveData() akan menutup DataCollectionScreen
+                            // dan modal form sheet juga akan tertutup otomatis
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey[300],
+                            disabledForegroundColor: Colors.grey[600],
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: localIsSaving
+                              ? const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      'Saving...',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.check_circle_outline, size: 22),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Save Data',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-              
-              const Divider(height: 1),
-              
-              // Scrollable Form Content
-              Expanded(
-                child: Form(
-                  key: _formKey,
-                  child: ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.all(AppTheme.spacingMedium),
-                    children: [
-                      DynamicForm(
-                        formFields: widget.project.formFields,
-                        onSaved: (data) => _formData = data,
-                        onChanged: () {
-                          // Delay check to allow validation to complete
-                          Future.delayed(const Duration(milliseconds: 100), () {
-                            _validateForm();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: AppTheme.spacingMedium),
-                      
-                      // Save Button at bottom of form
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: (_isSaving || !_isFormValid) ? null : () {
-                            _saveData();
-                            Navigator.pop(context);
-                          },
-                          icon: _isSaving 
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.check),
-                          label: Text(_isSaving ? 'Saving...' : 'Save Data'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: _isFormValid ? AppTheme.primaryColor : Colors.grey,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey[300],
-                            disabledForegroundColor: Colors.grey[500],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppTheme.spacingMedium),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     ).then((_) {
@@ -869,8 +1046,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
           polylines: [
             Polyline(
               points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-              color: Colors.blue.withOpacity(0.6),
-              strokeWidth: 2.5,
+              color: Colors.orange.withOpacity(0.7),
+              strokeWidth: 3,
             ),
           ],
         ));
@@ -880,9 +1057,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
             polygons: [
               Polygon(
                 points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-                color: Colors.blue.withOpacity(0.15),
-                borderColor: Colors.blue.withOpacity(0.6),
-                borderStrokeWidth: 2.5,
+                color: Colors.orange.withOpacity(0.15),
+                borderColor: Colors.orange.withOpacity(0.7),
+                borderStrokeWidth: 3,
                 isFilled: true,
               ),
             ],
@@ -896,15 +1073,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
           markers: [
             Marker(
               point: LatLng(data.points.first.latitude, data.points.first.longitude),
-              width: 40,
-              height: 40,
+              width: 25,
+              height: 25,
               child: GestureDetector(
                 onTap: () => _onExistingDataTap(data),
                 child: Container(
+                  width: 23,
+                  height: 23,
                   decoration: BoxDecoration(
-                    color: Colors.blue,
+                    color: Colors.orange,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+                    border: Border.all(color: Colors.white, width: 1.5),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
@@ -916,7 +1095,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                   child: const Icon(
                     Icons.location_on,
                     color: Colors.white,
-                    size: 24,
+                    size: 20,
                   ),
                 ),
               ),
@@ -933,15 +1112,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                 data.points[centerIndex].latitude,
                 data.points[centerIndex].longitude,
               ),
-              width: 32,
-              height: 32,
+              width: 25,
+              height: 25,
               child: GestureDetector(
                 onTap: () => _onExistingDataTap(data),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.blue,
+                    color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+                    border: Border.all(color: Colors.black87, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
@@ -951,9 +1130,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                     ],
                   ),
                   child: const Icon(
-                    Icons.info_outline,
-                    color: Colors.white,
-                    size: 18,
+                    Icons.info,
+                    color: Colors.black87,
+                    size: 20,
                   ),
                 ),
               ),
@@ -975,15 +1154,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
           markers: [
             Marker(
               point: LatLng(centroidLat, centroidLng),
-              width: 32,
-              height: 32,
+              width: 25,
+              height: 25,
               child: GestureDetector(
                 onTap: () => _onExistingDataTap(data),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.blue,
+                    color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+                    border: Border.all(color: Colors.black87, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
@@ -993,9 +1172,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                     ],
                   ),
                   child: const Icon(
-                    Icons.info_outline,
-                    color: Colors.white,
-                    size: 18,
+                    Icons.info,
+                    color: Colors.black87,
+                    size: 20,
                   ),
                 ),
               ),
@@ -1010,6 +1189,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
       appBar: AppBar(
         title: Text('Collect ${widget.project.geometryType.toString().split('.').last.toUpperCase()}'),
@@ -1049,13 +1229,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
   Widget _buildMap() {
     return Stack(
       children: [
-        FutureBuilder<String>(
-          future: _cachePathFuture,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            
+        // Clip map untuk menghilangkan celah putih di bawah
+        Positioned.fill(
+          bottom: -10, // Extend map sedikit ke bawah untuk menutupi celah
+          child: ClipRect(
+            child: Builder(
+          builder: (context) {
             // Show loading overlay when getting location
             if (_isLoadingLocation) {
               return Container(
@@ -1079,27 +1258,31 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
               );
             }
             
-            final cachePath = snapshot.data!;
-            
-            return FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _currentLocation != null
-                    ? LatLng(_currentLocation!.latitude, _currentLocation!.longitude)
-                    : const LatLng(-6.2088, 106.8456),
-                initialZoom: 15,
-                onTap: _onMapTap,
-              ),
+            return ClipRect(
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: _currentLocation != null
+                      ? LatLng(_currentLocation!.latitude, _currentLocation!.longitude)
+                      : const LatLng(-6.2088, 106.8456),
+                  initialZoom: 15,
+                  onTap: _onMapTap,
+                  onPositionChanged: (position, hasGesture) {
+                    setState(() {
+                      _centerCoordinates = position.center!;
+                    });
+                  },
+                ),
               children: [
-                // Basemap Layer
+                // Basemap Layer dengan SQLite Cache - SUPER CEPAT!
                 if (_selectedBasemap != null)
                   _selectedBasemap!.isPdfBasemap
                       ? TileLayer(
-                          urlTemplate: '', // Not used for local files
+                          urlTemplate: '',
                           minZoom: _selectedBasemap!.minZoom.toDouble(),
                           maxZoom: _selectedBasemap!.maxZoom.toDouble(),
                           tileProvider: LocalFileTileProvider(
-                            _selectedBasemap!.urlTemplate, // This contains the base path
+                            _selectedBasemap!.urlTemplate,
                           ),
                         )
                       : TileLayer(
@@ -1107,11 +1290,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                           userAgentPackageName: ApiConfig.bundleName,
                           minZoom: _selectedBasemap!.minZoom.toDouble(),
                           maxZoom: _selectedBasemap!.maxZoom.toDouble(),
-                          tileProvider: CachedTileProvider(
-                            store: HiveCacheStore(
-                              cachePath,
-                              hiveBoxName: TileCacheService.getHiveBoxName(_selectedBasemap!.id),
-                            ),
+                          tileProvider: SqliteCachedTileProvider(
+                            basemapId: _selectedBasemap!.id,
                             maxStale: const Duration(days: 30),
                           ),
                         )
@@ -1119,11 +1299,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                   TileLayer(
                     urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: ApiConfig.bundleName,
-                    tileProvider: CachedTileProvider(
-                      store: HiveCacheStore(
-                        cachePath,
-                        hiveBoxName: TileCacheService.getHiveBoxName('default_osm'),
-                      ),
+                    tileProvider: SqliteCachedTileProvider(
+                      basemapId: 'osm_road', // Gunakan ID dari default basemap
                       maxStale: const Duration(days: 30),
                     ),
                   ),
@@ -1226,8 +1403,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                     ),
                   ],
                 
-                // Current Location Marker
-                if (_currentLocation != null)
+                // Current Location Marker (User Location - Blue with direction)
+                if (_currentLocation != null && !_isTracking)
                   MarkerLayer(
                     markers: [
                       Marker(
@@ -1237,26 +1414,73 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                         ),
                         width: 60,
                         height: 60,
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: AppTheme.currentLocationColor,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.my_location,
-                              color: AppTheme.pointColor,
-                              size: 30,
-                            ),
-                          ),
+                        child: UserLocationMarker(
+                          bearing: _currentBearing,
                         ),
                       ),
                     ],
                   ),
               ],
+              ),
             );
           },
+          ),
         ),
+        ),
+        
+        // Center Crosshair Marker dengan koordinat
+        const Center(
+          child: IgnorePointer(
+            child: Padding(
+                    padding: EdgeInsets.only(top: 10), // geser ke bawah 16px
+                    child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Koordinat display
+                // Container(
+                //   margin: const EdgeInsets.only(bottom: 8),
+                //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                //   decoration: BoxDecoration(
+                //     color: Colors.black87,
+                //     borderRadius: BorderRadius.circular(8),
+                //     boxShadow: [
+                //       BoxShadow(
+                //         color: Colors.black.withOpacity(0.3),
+                //         blurRadius: 4,
+                //         offset: const Offset(0, 2),
+                //       ),
+                //     ],
+                //   ),
+                //   child: Text(
+                //     '${_centerCoordinates.latitude.toStringAsFixed(6)}, ${_centerCoordinates.longitude.toStringAsFixed(6)}',
+                //     style: const TextStyle(
+                //       color: Colors.white,
+                //       fontSize: 11,
+                //       fontWeight: FontWeight.w500,
+                //       fontFamily: 'monospace',
+                //     ),
+                //   ),
+                // ),
+
+
+                // Crosshair icon
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Icon(
+                    Icons.location_searching,
+                    size: 40,
+                    color: Colors.black87,
+                  ),
+                ),
+                    
+              ],
+              )
+            ),
+          ),
+        ),
+        
+       
         
         // Info Card Overlay
         Positioned(
@@ -1266,9 +1490,42 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
           child: _buildInfoCard(),
         ),
         
+        // Zoom to User Location Button
+        Positioned(
+          bottom: AppTheme.spacingLarge,
+          right: AppTheme.spacingMedium,
+          child: FloatingActionButton(
+            heroTag: 'userLocation',
+            mini: true,
+            backgroundColor: Colors.white,
+            child: const Icon(Icons.my_location, color: AppTheme.primaryColor),
+            onPressed: () {
+              if (_currentLocation != null) {
+                _mapController.move(
+                  LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
+                  17,
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Zoomed to your location'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Location not available'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+        
         // Basemap Selector Button
         Positioned(
-          bottom : AppTheme.spacingLarge,
+          bottom : AppTheme.spacingLarge + 50,
           right: AppTheme.spacingMedium,
           child: FloatingActionButton(
             heroTag: 'basemap',
@@ -1279,10 +1536,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
           ),
         ),
         
+        
         // Mode Toggle Button (only for line/polygon)
         if (widget.project.geometryType != GeometryType.point)
           Positioned(
-            bottom: AppTheme.spacingMedium + 60,
+            bottom: AppTheme.spacingLarge + 110,
             right: AppTheme.spacingMedium,
             child: FloatingActionButton(
               heroTag: 'mode',
@@ -1291,7 +1549,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                   ? AppTheme.primaryColor
                   : Colors.white,
               child: Icon(
-                _collectionMode == CollectionMode.drawing ? Icons.edit : Icons.gps_fixed,
+                _collectionMode == CollectionMode.drawing ? Icons.touch_app : Icons.edit,
                 color: _collectionMode == CollectionMode.drawing ? Colors.white : AppTheme.primaryColor,
               ),
               onPressed: () {
@@ -1305,8 +1563,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
                 });
               },
             ),
-          ),
-      ],
+          )
+        
+      ]
     );
   }
 
@@ -1374,152 +1633,102 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> {
     );
   }
 
-  Widget _buildBottomControls() {
+  Widget _buildImageErrorWidget() {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacingMedium),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, -2))],
-      ),
-      child: SafeArea(
+      height: 250,
+      color: Colors.grey[100],
+      child: Center(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Tracking mode controls
-            if (widget.project.geometryType != GeometryType.point && 
-                _collectionMode == CollectionMode.tracking) ...[
-              Row(
-                children: [
-                  // Start/Finish button
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      onPressed: _toggleTracking,
-                      icon: Icon(_isTracking ? Icons.stop : Icons.play_arrow, size: 20),
-                      label: Text(
-                        _isTracking ? 'Finish' : 'Start',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: _isTracking ? Colors.red : AppTheme.primaryColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  
-                  // Pause/Resume button (only when tracking)
-                  if (_isTracking) ...[
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: ElevatedButton.icon(
-                        onPressed: _togglePause,
-                        icon: Icon(
-                          _isPaused ? Icons.play_arrow : Icons.pause,
-                          size: 20,
-                        ),
-                        label: Text(
-                          _isPaused ? 'Resume' : 'Pause',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: _isPaused ? Colors.green : Colors.orange,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+            Icon(
+              Icons.broken_image_rounded,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Failed to load image',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(height: 8),
-            ],
-            
-            // Bottom row: Add Point, Undo, Clear
-            Row(
-              children: [
-                // Add Point button
-                Expanded(
-                  flex: 3,
-                  child: ElevatedButton.icon(
-                    onPressed: (_isTracking || _collectionMode == CollectionMode.drawing) 
-                        ? null 
-                        : _addCurrentPoint,
-                    icon: const Icon(Icons.add_location, size: 20),
-                    label: Text(
-                      widget.project.geometryType == GeometryType.point 
-                          ? 'Use Location' 
-                          : 'Add Point',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      backgroundColor: AppTheme.primaryColor,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.grey[300],
-                      disabledForegroundColor: Colors.grey[500],
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                
-                // Undo button
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _collectedPoints.isEmpty ? null : _undoLastPoint,
-                    icon: const Icon(Icons.undo, size: 18),
-                    label: const Text('Undo', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      foregroundColor: AppTheme.primaryColor,
-                      side: BorderSide(
-                        color: _collectedPoints.isEmpty 
-                            ? Colors.grey[300]! 
-                            : AppTheme.primaryColor,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                
-                // Clear button
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _collectedPoints.isEmpty ? null : _clearPoints,
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('Clear', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      foregroundColor: Colors.red,
-                      side: BorderSide(
-                        color: _collectedPoints.isEmpty 
-                            ? Colors.grey[300]! 
-                            : Colors.red,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'The image file may be corrupted',
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 12,
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildImageNotFoundWidget(String path) {
+    return Container(
+      height: 250,
+      color: Colors.orange[50],
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.image_not_supported_rounded,
+                size: 64,
+                color: Colors.orange[400],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Image file not found',
+                style: TextStyle(
+                  color: Colors.orange[800],
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                path,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 11,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomControls() {
+    return CollapsibleBottomControls(
+      isExpanded: _isBottomSheetExpanded,
+      onToggleExpanded: () {
+        setState(() {
+          _isBottomSheetExpanded = !_isBottomSheetExpanded;
+        });
+      },
+      geometryType: widget.project.geometryType,
+      collectionMode: _collectionMode,
+      isTracking: _isTracking,
+      isPaused: _isPaused,
+      collectedPoints: _collectedPoints,
+      onToggleTracking: _toggleTracking,
+      onTogglePause: _togglePause,
+      onAddPoint: _addCurrentPoint,
+      onUndoPoint: _undoLastPoint,
+      onClearPoints: _clearPoints,
     );
   }
 }

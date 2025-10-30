@@ -28,22 +28,23 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Terestria needs camera access to capture field survey photos</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Terestria needs location access for accurate agricultural and environmental mapping</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Terestria needs continuous location access to track your survey path even when the app is in the background</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Terestria needs location access for accurate agricultural and environmental mapping</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Terestria needs location access to collect geospatial survey data</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Terestria needs photo library access to attach images to survey data</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 		<string>fetch</string>
 		<string>processing</string>
+		<string>remote-notification</string>
 	</array>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Terestria needs photo library access to attach images to survey data</string>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

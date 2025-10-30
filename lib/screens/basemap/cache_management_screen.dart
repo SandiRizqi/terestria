@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import '../../models/basemap_model.dart';
 import '../../services/basemap_service.dart';
-import '../../services/tile_cache_service.dart';
+import '../../services/tile_cache_sqlite_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 
@@ -15,7 +15,7 @@ class CacheManagementScreen extends StatefulWidget {
 
 class _CacheManagementScreenState extends State<CacheManagementScreen> {
   final BasemapService _basemapService = BasemapService();
-  final TileCacheService _cacheService = TileCacheService();
+  final TileCacheSqliteService _cacheService = TileCacheSqliteService();
   
   List<Basemap> _basemaps = [];
   Map<String, CacheInfo> _cacheInfoMap = {};
@@ -86,6 +86,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
         sizeInBytes: 0,
         tileCount: 0,
         lastModified: null,
+        isShared: false,
       );
     }
   }

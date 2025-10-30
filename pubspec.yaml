@@ -20,9 +20,11 @@ dependencies:
 
   # Location - alternative yang lebih simple
   location: ^6.0.2
+  flutter_compass: ^0.8.0
 
   # Storage
   shared_preferences: ^2.3.2
+  sqflite: ^2.3.0
 
   image_picker: ^1.0.4  # Untuk mengambil foto dari kamera/galeri
   flutter_map_cache: ^1.5.1  # Untuk offline tile caching
@@ -42,6 +44,8 @@ dependencies:
   # Utilities
   uuid: ^4.5.1
   http: ^1.1.0
+  firebase_core: ^3.4.0
+  firebase_messaging: ^15.1.0
 
 dev_dependencies:
   flutter_test:
@@ -59,6 +63,7 @@ flutter_launcher_icons:
   # Konfigurasi Adaptive Icons (disarankan untuk Android modern)
   adaptive_icon_foreground: "/Users/sandi/VScode/Android/geoform_app/assets/terestria_logo.png" # Lapisan depan
   adaptive_icon_background: "#FFFFFF" # Atau path ke gambar latar belakang
+  notification_icon: "/Users/sandi/VScode/Android/geoform_app/assets/terestria_logo.png"
 
 flutter:
   uses-material-design: true

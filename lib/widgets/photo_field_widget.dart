@@ -26,7 +26,10 @@ class PhotoFieldWidget extends StatefulWidget {
   State<PhotoFieldWidget> createState() => _PhotoFieldWidgetState();
 }
 
-class _PhotoFieldWidgetState extends State<PhotoFieldWidget> {
+class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+  
   final ImagePicker _picker = ImagePicker();
   List<String> _photoPaths = [];
 
@@ -117,7 +120,22 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> {
   }
 
   @override
+  void didUpdateWidget(PhotoFieldWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Update photos if initialPhotos changed
+    if (widget.initialPhotos != oldWidget.initialPhotos && 
+        widget.initialPhotos != null && 
+        widget.initialPhotos != _photoPaths) {
+      setState(() {
+        _photoPaths = List.from(widget.initialPhotos!);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     // Check if photo count meets requirements
     final photoCount = _photoPaths.length;
     final hasError = widget.errorText != null;

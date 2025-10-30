@@ -23,6 +23,14 @@ class Basemap {
   final double? processingProgress;
   final String? processingMessage;
   final DateTime? createdAt;
+  
+  // PDF Georeferencing
+  final double? pdfMinLat;
+  final double? pdfMinLon;
+  final double? pdfMaxLat;
+  final double? pdfMaxLon;
+  final double? pdfCenterLat;
+  final double? pdfCenterLon;
 
   Basemap({
     required this.id,
@@ -38,12 +46,25 @@ class Basemap {
     this.processingProgress,
     this.processingMessage,
     this.createdAt,
+    this.pdfMinLat,
+    this.pdfMinLon,
+    this.pdfMaxLat,
+    this.pdfMaxLon,
+    this.pdfCenterLat,
+    this.pdfCenterLon,
   });
 
   bool get isPdfBasemap => type == BasemapType.pdf;
   bool get isPdfProcessing => pdfStatus == PdfProcessingStatus.processing;
   bool get isPdfReady => pdfStatus == PdfProcessingStatus.completed;
   bool get isPdfFailed => pdfStatus == PdfProcessingStatus.failed;
+  bool get hasPdfGeoreferencing => pdfMinLat != null && pdfMinLon != null && pdfMaxLat != null && pdfMaxLon != null;
+  
+  /// Get PDF bounds as List [south, west, north, east]
+  List<double>? get pdfBounds {
+    if (!hasPdfGeoreferencing) return null;
+    return [pdfMinLat!, pdfMinLon!, pdfMaxLat!, pdfMaxLon!];
+  }
 
   Basemap copyWith({
     String? id,
@@ -59,6 +80,12 @@ class Basemap {
     double? processingProgress,
     String? processingMessage,
     DateTime? createdAt,
+    double? pdfMinLat,
+    double? pdfMinLon,
+    double? pdfMaxLat,
+    double? pdfMaxLon,
+    double? pdfCenterLat,
+    double? pdfCenterLon,
   }) {
     return Basemap(
       id: id ?? this.id,
@@ -74,6 +101,12 @@ class Basemap {
       processingProgress: processingProgress ?? this.processingProgress,
       processingMessage: processingMessage ?? this.processingMessage,
       createdAt: createdAt ?? this.createdAt,
+      pdfMinLat: pdfMinLat ?? this.pdfMinLat,
+      pdfMinLon: pdfMinLon ?? this.pdfMinLon,
+      pdfMaxLat: pdfMaxLat ?? this.pdfMaxLat,
+      pdfMaxLon: pdfMaxLon ?? this.pdfMaxLon,
+      pdfCenterLat: pdfCenterLat ?? this.pdfCenterLat,
+      pdfCenterLon: pdfCenterLon ?? this.pdfCenterLon,
     );
   }
 
@@ -92,6 +125,12 @@ class Basemap {
       'processingProgress': processingProgress,
       'processingMessage': processingMessage,
       'createdAt': createdAt?.toIso8601String(),
+      'pdfMinLat': pdfMinLat,
+      'pdfMinLon': pdfMinLon,
+      'pdfMaxLat': pdfMaxLat,
+      'pdfMaxLon': pdfMaxLon,
+      'pdfCenterLat': pdfCenterLat,
+      'pdfCenterLon': pdfCenterLon,
     };
   }
 
@@ -118,6 +157,12 @@ class Basemap {
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : null,
+      pdfMinLat: json['pdfMinLat']?.toDouble(),
+      pdfMinLon: json['pdfMinLon']?.toDouble(),
+      pdfMaxLat: json['pdfMaxLat']?.toDouble(),
+      pdfMaxLon: json['pdfMaxLon']?.toDouble(),
+      pdfCenterLat: json['pdfCenterLat']?.toDouble(),
+      pdfCenterLon: json['pdfCenterLon']?.toDouble(),
     );
   }
 

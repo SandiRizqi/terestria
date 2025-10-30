@@ -1,41 +1,65 @@
 import 'pdf_validator.dart';
 import 'tile_generator.dart';
+import 'pdf_georef_extractor.dart';
 
 class PdfBasemapService {
   final _validator = PdfValidator();
   final _tileGenerator = TileGenerator();
+  final _georefExtractor = PdfGeorefExtractor();
 
   /// Validate PDF file
   Future<PdfValidationResult> validatePdf(String pdfPath) async {
     return await _validator.validate(pdfPath);
   }
 
-  /// Generate tiles from PDF
+  /// Extract georeferencing info from PDF
+  Future<PdfGeoreferencing?> extractGeoreferencing(String pdfPath) async {
+    return await _georefExtractor.extractGeoreferencing(pdfPath);
+  }
+
+  /// Generate tiles from PDF with automatic extent detection
   Future<void> generateTilesFromPdf({
     required String pdfPath,
     required String basemapId,
     required Function(double progress, String status) onProgress,
     TileGeneratorConfig? config,
   }) async {
+    // Extract georeferencing first
+    final georef = await extractGeoreferencing(pdfPath);
+    
+    if (georef == null) {
+      throw Exception('PDF does not contain valid georeferencing information');
+    }
+    
+    // Create config with georeferencing
+    final finalConfig = config ?? TileGeneratorConfig(georef: georef);
+    final configWithGeoref = TileGeneratorConfig(
+      minZoom: finalConfig.minZoom,
+      maxZoom: finalConfig.maxZoom,
+      dpi: finalConfig.dpi,
+      georef: georef,
+    );
+    
     await _tileGenerator.generateTiles(
       pdfPath: pdfPath,
       basemapId: basemapId,
       onProgress: onProgress,
-      config: config ?? const TileGeneratorConfig(),
+      config: configWithGeoref,
     );
   }
 
-  /// Get base path for tiles
+  /// Get georeferencing for a basemap
+  Future<PdfGeoreferencing?> getGeoreferencing(String pdfPath) async {
+    return await _tileGenerator.getGeoreferencing(pdfPath);
+  }
+
+  /// Get base path for tiles (legacy support - now returns SQLite reference)
+  @Deprecated('Tiles are now stored in SQLite cache')
   Future<String> getBasePath(String basemapId) async {
-    return await _tileGenerator.getBasePath(basemapId);
+    return 'sqlite://$basemapId';
   }
 
-  /// Get local TMS URL
-  Future<String> getLocalTmsUrl(String basemapId) async {
-    return await _tileGenerator.getLocalTmsUrl(basemapId);
-  }
-
-  /// Delete tiles
+  /// Delete tiles (now from SQLite cache)
   Future<void> deleteTiles(String basemapId) async {
     await _tileGenerator.deleteTiles(basemapId);
   }

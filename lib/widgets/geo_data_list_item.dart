@@ -9,6 +9,7 @@ class GeoDataListItem extends StatelessWidget {
   final GeoData geoData;
   final GeometryType geometryType;
   final VoidCallback onDelete;
+  final VoidCallback onEdit; // Add edit callback
   final VoidCallback onTap;
   final Project? project;
 
@@ -17,6 +18,7 @@ class GeoDataListItem extends StatelessWidget {
     required this.geoData,
     required this.geometryType,
     required this.onDelete,
+    required this.onEdit, // Add edit parameter
     required this.onTap,
     this.project,
   }) : super(key: key);
@@ -137,6 +139,23 @@ class GeoDataListItem extends StatelessWidget {
                           ],
                         ),
                       ),
+                      // Edit button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          color: AppTheme.primaryColor,
+                          onPressed: onEdit,
+                          padding: const EdgeInsets.all(8),
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Edit',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Delete button
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.red.withOpacity(0.08),
@@ -148,6 +167,7 @@ class GeoDataListItem extends StatelessWidget {
                           onPressed: onDelete,
                           padding: const EdgeInsets.all(8),
                           constraints: const BoxConstraints(),
+                          tooltip: 'Delete',
                         ),
                       ),
                     ],
