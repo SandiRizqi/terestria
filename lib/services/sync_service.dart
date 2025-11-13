@@ -7,6 +7,7 @@ import '../models/geo_data_model.dart';
 import '../models/project_model.dart';
 import '../models/form_field_model.dart';
 import 'storage_service.dart';
+import 'photo_sync_service.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -15,19 +16,27 @@ class SyncService {
 
   final ApiService _apiService = ApiService();
   final StorageService _storageService = StorageService();
+  final PhotoSyncService _photoSyncService = PhotoSyncService();
 
   // ==================== UPLOAD TO SERVER ====================
 
   /// Sync single GeoData to backend
   Future<SyncResult> syncGeoData(GeoData geoData, Project project) async {
     try {
-      // Prepare data untuk dikirim
+      // Step 1: Upload photos to OSS and get URLs
+      print('Processing photos for geodata ${geoData.id}...');
+      final processedFormData = await _photoSyncService.processFormDataForPush(
+        geoData.formData,
+        project,
+      );
+
+      // Step 2: Prepare data untuk dikirim (dengan OSS URLs)
       final Map<String, dynamic> payload = {
         'id': geoData.id,
         'project_id': geoData.projectId,
         'project_name': project.name,
         'geometry_type': project.geometryType.toString().split('.').last,
-        'form_data': geoData.formData,
+        'form_data': processedFormData,
         'points': geoData.points.map((point) => {
           'latitude': point.latitude,
           'longitude': point.longitude,
@@ -49,12 +58,13 @@ class SyncService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = jsonDecode(response.body);
         
-        // Update sync status in local database
-        await _storageService.updateGeoDataSyncStatus(
-          geoData.id,
-          true,
+        // Update local geodata with OSS URLs
+        final updatedGeoData = geoData.copyWith(
+          formData: processedFormData,
+          isSynced: true,
           syncedAt: DateTime.now(),
         );
+        await _storageService.saveGeoData(updatedGeoData);
         
         return SyncResult(
           success: true,
@@ -342,7 +352,11 @@ class SyncService {
         final responseData = jsonDecode(response.body);
         final geoDataList = responseData['data'] as List? ?? [];
 
+        // Get project for photo field identification
+        final project = await _storageService.getProjectById(projectId);
+
         int savedCount = 0;
+        int updatedCount = 0;
         for (var geoDataJson in geoDataList) {
           try {
             // Parse geo data from server format
@@ -352,8 +366,15 @@ class SyncService {
             final existingGeoData = await _storageService.getGeoDataById(geoData.id);
             
             if (existingGeoData == null) {
-              // New geo data from server - save it
-              await _storageService.saveGeoData(geoData);
+              // New geo data from server - download photos and save
+              print('New geodata from server: ${geoData.id}');
+              final processedFormData = await _photoSyncService.processFormDataForPull(
+                geoData.formData,
+                project,
+              );
+              
+              final updatedGeoData = geoData.copyWith(formData: processedFormData);
+              await _storageService.saveGeoData(updatedGeoData);
               savedCount++;
             } else {
               // Geo data exists - check if server version is newer
@@ -361,9 +382,16 @@ class SyncService {
               final localUpdatedAt = existingGeoData.updatedAt;
               
               if (serverUpdatedAt.isAfter(localUpdatedAt)) {
-                // Server version is newer - update local
-                await _storageService.saveGeoData(geoData);
-                savedCount++;
+                // Server version is newer - download photos and update local
+                print('Updating geodata from server: ${geoData.id}');
+                final processedFormData = await _photoSyncService.processFormDataForPull(
+                  geoData.formData,
+                  project,
+                );
+                
+                final updatedGeoData = geoData.copyWith(formData: processedFormData);
+                await _storageService.saveGeoData(updatedGeoData);
+                updatedCount++;
               }
             }
           } catch (e) {
@@ -537,6 +565,22 @@ class SyncService {
       default:
         return FieldType.text;
     }
+  }
+
+  /// Process form data for pull (wrapper for PhotoSyncService)
+  Future<Map<String, dynamic>> processFormDataForPull(
+    Map<String, dynamic> formData,
+    Project? project,
+  ) async {
+    return await _photoSyncService.processFormDataForPull(formData, project);
+  }
+
+  /// Process form data for push (wrapper for PhotoSyncService)
+  Future<Map<String, dynamic>> processFormDataForPush(
+    Map<String, dynamic> formData,
+    Project project,
+  ) async {
+    return await _photoSyncService.processFormDataForPush(formData, project);
   }
 
   /// Test connection to backend

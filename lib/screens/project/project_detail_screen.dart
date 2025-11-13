@@ -44,6 +44,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   StreamSubscription<bool>? _connectivitySubscription;
   bool _isSyncing = false;
   final ScrollController _scrollController = ScrollController();
+  String _syncProgress = '';
+  int _totalPhotosToProcess = 0;
+  int _processedPhotos = 0;
 
   @override
   void initState() {
@@ -135,9 +138,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<void> _syncGeoDataFromServer() async {
     if (_isSyncing || !_isOnline) return;
 
-    setState(() => _isSyncing = true);
+    setState(() {
+      _isSyncing = true;
+      _syncProgress = 'Fetching data from server...';
+    });
 
     try {
+      // Fetch geodata from server
       final geoDataResponse = await _apiService.get(
         '${ApiConfig.syncDataEndpoint}by-project/?project_id=${_currentProject.id}',
       );
@@ -153,19 +160,50 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         final existingGeoDataMap = {for (var g in existingGeoData) g.id: g};
 
         // Process geodata dari server
-        if (geoDataList is List) {
-          for (var geoDataJson in geoDataList) {
+        if (geoDataList is List && geoDataList.isNotEmpty) {
+          setState(() {
+            _syncProgress = 'Processing ${geoDataList.length} records...';
+          });
+
+          for (var i = 0; i < geoDataList.length; i++) {
             try {
+              final geoDataJson = geoDataList[i];
+              setState(() {
+                _syncProgress = 'Processing record ${i + 1}/${geoDataList.length}...';
+              });
+
               final serverGeoData = GeoData.fromJson(geoDataJson);
               final existingGeoData = existingGeoDataMap[serverGeoData.id];
 
               if (existingGeoData == null) {
-                // GeoData baru dari server
-                await _storageService.saveGeoData(serverGeoData);
+                // GeoData baru dari server - download photos
+                setState(() {
+                  _syncProgress = 'Downloading photos for record ${i + 1}...';
+                });
+                
+                // Process photos (download from OSS)
+                final processedFormData = await _syncService.processFormDataForPull(
+                  serverGeoData.formData,
+                  _currentProject,
+                );
+                
+                final updatedGeoData = serverGeoData.copyWith(formData: processedFormData);
+                await _storageService.saveGeoData(updatedGeoData);
                 newGeoDataCount++;
               } else if (serverGeoData.updatedAt.isAfter(existingGeoData.updatedAt)) {
                 // Update geodata yang lebih baru dari server
-                await _storageService.saveGeoData(serverGeoData);
+                setState(() {
+                  _syncProgress = 'Updating record ${i + 1}...';
+                });
+                
+                // Process photos (download from OSS)
+                final processedFormData = await _syncService.processFormDataForPull(
+                  serverGeoData.formData,
+                  _currentProject,
+                );
+                
+                final updatedGeoData = serverGeoData.copyWith(formData: processedFormData);
+                await _storageService.saveGeoData(updatedGeoData);
                 updatedGeoDataCount++;
               }
             } catch (e) {
@@ -206,9 +244,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       }
     } catch (e) {
       print('Error syncing geodata from server: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Sync error: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) {
-        setState(() => _isSyncing = false);
+        setState(() {
+          _isSyncing = false;
+          _syncProgress = '';
+        });
       }
     }
   }
@@ -707,7 +762,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Sync Data'),
-        content: Text('Sync ${unsyncedData.length} record${unsyncedData.length > 1 ? "s" : ""} to server?'),
+        content: Text('Sync ${unsyncedData.length} record${unsyncedData.length > 1 ? "s" : ""} to server?\n\nThis will upload photos to cloud storage.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -723,44 +778,27 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
     if (confirm != true) return;
 
-    // Show loading
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Syncing data to server...'),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
+    // Set syncing state
+    setState(() {
+      _isSyncing = true;
+      _syncProgress = 'Preparing to upload...';
+    });
 
     try {
       int successCount = 0;
       List<String> errors = [];
       
       // Sync each unsynced data to backend
-      for (var data in unsyncedData) {
+      for (var i = 0; i < unsyncedData.length; i++) {
+        final data = unsyncedData[i];
+        
+        setState(() {
+          _syncProgress = 'Uploading record ${i + 1}/${unsyncedData.length}...';
+        });
+        
         final result = await _syncService.syncGeoData(data, _currentProject);
         
         if (result.success) {
-          // Update sync status only if backend sync successful
-          final updatedData = data.copyWith(
-            isSynced: true,
-            syncedAt: DateTime.now(),
-          );
-          await _storageService.saveGeoData(updatedData);
           successCount++;
         } else {
           errors.add(result.message);
@@ -771,7 +809,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       await _loadGeoData();
 
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
         
         if (successCount == unsyncedData.length) {
           // All synced successfully
@@ -883,7 +920,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -896,6 +932,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+          _syncProgress = '';
+        });
       }
     }
   }
@@ -1015,6 +1058,48 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             offset: const Offset(0, 50),
             itemBuilder: (context) => [
               PopupMenuItem<String>(
+                value: 'pull_from_server',
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.cloud_download_rounded,
+                        color: Colors.green,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Pull from Server',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Download geodata from cloud',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
                 value: 'sync_to_server',
                 child: Row(
                   children: [
@@ -1101,7 +1186,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ],
             onSelected: (value) {
-              if (value == 'sync_to_server') {
+              if (value == 'pull_from_server') {
+                _syncGeoDataFromServer();
+              } else if (value == 'sync_to_server') {
                 _syncAllData();
               } else if (value == 'info') {
                 _showProjectInfo();
@@ -1128,12 +1215,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    'Syncing with server...',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.blue[800],
-                      fontWeight: FontWeight.w500,
+                  Expanded(
+                    child: Text(
+                      _syncProgress.isEmpty ? 'Syncing with server...' : _syncProgress,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.blue[800],
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -1557,13 +1648,60 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Photo Section
-                      ...data.formData.entries.where((entry) => _isPhotoField(entry.key)).map((entry) {
-                        // Handle both List and String types
+                      ...data.formData.entries.where((entry) => _isPhotoField(entry.key) && !_isOssField(entry.key)).map((entry) {
+                        // Handle both List and String types - hanya ambil local paths
                         List<String> photoPaths = [];
+                        
+                        // Helper function to check if a path is local
+                        bool isLocalPath(String path) {
+                          final lowerPath = path.toLowerCase();
+                          // Check if it's NOT a URL or OSS key
+                          return !lowerPath.startsWith('http://') && 
+                                 !lowerPath.startsWith('https://') &&
+                                 !lowerPath.contains('aliyuncs.com') &&
+                                 !lowerPath.startsWith('oss-') &&
+                                 // Tambahan: pastikan path seperti file system path
+                                 (lowerPath.contains('/') || lowerPath.contains('\\'));
+                        }
+                        
                         if (entry.value is List) {
-                          photoPaths = (entry.value as List).map((e) => e.toString()).toList();
+                          final list = entry.value as List;
+                          
+                          for (var item in list) {
+                            // Handle if item is a Map (e.g., {local_path: ..., oss_url: ..., oss_key: ...})
+                            if (item is Map) {
+                              // Try to get local_path or localPath key
+                              final localPath = item['local_path'] ?? item['localPath'] ?? item['path'];
+                              if (localPath != null && localPath.toString().isNotEmpty) {
+                                final pathStr = localPath.toString();
+                                if (isLocalPath(pathStr)) {
+                                  photoPaths.add(pathStr);
+                                }
+                              }
+                            }
+                            // Handle if item is a String
+                            else if (item is String && item.isNotEmpty) {
+                              if (isLocalPath(item)) {
+                                photoPaths.add(item);
+                              }
+                            }
+                          }
+                        } else if (entry.value is Map) {
+                          final map = entry.value as Map;
+                          // Try to get local_path or localPath key
+                          final localPath = map['local_path'] ?? map['localPath'] ?? map['path'];
+                          if (localPath != null && localPath.toString().isNotEmpty) {
+                            final pathStr = localPath.toString();
+                            if (isLocalPath(pathStr)) {
+                              photoPaths = [pathStr];
+                            }
+                          }
                         } else if (entry.value is String && entry.value.toString().isNotEmpty) {
-                          photoPaths = [entry.value.toString()];
+                          final path = entry.value.toString();
+                          
+                          if (isLocalPath(path)) {
+                            photoPaths = [path];
+                          }
                         }
                         
                         if (photoPaths.isNotEmpty) {
@@ -1712,7 +1850,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       }),
                       
                       // Form Data Section
-                      if (data.formData.entries.any((entry) => !_isPhotoField(entry.key))) ...[
+                      if (data.formData.entries.any((entry) => !_isPhotoField(entry.key) && !_isOssField(entry.key))) ...[
                         Row(
                           children: [
                             Icon(
@@ -1732,7 +1870,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        ...data.formData.entries.where((entry) => !_isPhotoField(entry.key)).map((entry) {
+                        ...data.formData.entries.where((entry) => !_isPhotoField(entry.key) && !_isOssField(entry.key)).map((entry) {
                           return Container(
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(14),
@@ -1846,6 +1984,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
            lowerName.contains('picture') ||
            lowerName.contains('foto') ||
            lowerName.contains('gambar');
+  }
+
+  bool _isOssField(String fieldName) {
+    // Exclude fields yang berakhiran _oss_urls, _oss_keys, atau mengandung 'oss'
+    final lowerName = fieldName.toLowerCase();
+    return lowerName.endsWith('_oss_urls') || 
+           lowerName.endsWith('_oss_keys') ||
+           lowerName.endsWith('_oss_url') ||
+           lowerName.endsWith('_oss_key') ||
+           lowerName.contains('_oss_') ||
+           lowerName.startsWith('oss_');
   }
 
   Widget _buildImageErrorWidget() {

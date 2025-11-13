@@ -42,6 +42,16 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     if (widget.project != null) {
       _selectedGeometry = widget.project!.geometryType;
       _formFields = List.from(widget.project!.formFields);
+    } else {
+      // Untuk project baru, tambahkan field "Name" secara default
+      _formFields = [
+        FormFieldModel(
+          id: _uuid.v4(),
+          label: 'Name',
+          type: FieldType.text,
+          required: true,
+        ),
+      ];
     }
     
     _initConnectivity();

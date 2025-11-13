@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'auth_service.dart';
@@ -164,8 +165,8 @@ class ApiService {
     }
   }
 
-  /// Upload file dengan multipart
-  Future<http.StreamedResponse> uploadFile(
+  /// Upload file dengan multipart (legacy method)
+  Future<http.StreamedResponse> uploadFileStream(
     String endpoint, {
     required String filePath,
     required String fileFieldName,
@@ -192,6 +193,56 @@ class ApiService {
       return response;
     } catch (e) {
       throw ApiException('File upload failed: $e');
+    }
+  }
+
+  /// Upload file dan return parsed response
+  Future<Map<String, dynamic>?> uploadFile(
+    String url,
+    dynamic file, {
+    String fileFieldName = 'file',
+    Map<String, String>? fields,
+    Map<String, String>? headers,
+  }) async {
+    try {
+      String filePath;
+      
+      // Handle different file types
+      if (file is String) {
+        filePath = file;
+      } else if (file is File) {
+        filePath = file.path;
+      } else {
+        throw ApiException('Invalid file type');
+      }
+
+      final request = http.MultipartRequest('POST', Uri.parse(url));
+      
+      // Tambahkan headers dengan token
+      final requestHeaders = await _getHeaders(additionalHeaders: headers);
+      request.headers.addAll(requestHeaders);
+      
+      // Tambahkan file
+      request.files.add(await http.MultipartFile.fromPath(fileFieldName, filePath));
+      
+      // Tambahkan fields lain jika ada
+      if (fields != null) {
+        request.fields.addAll(fields);
+      }
+      
+      // Send request
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return jsonDecode(response.body);
+      } else {
+        print('Upload failed with status ${response.statusCode}: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Error uploading file: $e');
+      return null;
     }
   }
 

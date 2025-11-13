@@ -101,7 +101,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Sync projects dari server (Pull dari server ke local)
   Future<void> _syncProjectsFromServer() async {
-    if (_isSyncing || !_isOnline) return;
+    if (_isSyncing) return;
+
+    // Check if online
+    if (!_isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.wifi_off, color: Colors.white),
+                SizedBox(width: 8),
+                Text('No internet connection. Please connect to sync.'),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
     setState(() => _isSyncing = true);
 
@@ -119,11 +138,16 @@ class _HomeScreenState extends State<HomeScreen> {
         final existingProjects = await _storageService.loadProjects();
         final existingProjectMap = {for (var p in existingProjects) p.id: p};
 
+        // Buat set ID dari projects di server
+        Set<String> serverProjectIds = {};
+        int deletedProjectCount = 0;
+
         // Process projects dari server
         if (projectData is List) {
           for (var projectJson in projectData) {
             try {
               final serverProject = Project.fromJson(projectJson);
+              serverProjectIds.add(serverProject.id);
               final existingProject = existingProjectMap[serverProject.id];
 
               if (existingProject == null) {
@@ -139,40 +163,90 @@ class _HomeScreenState extends State<HomeScreen> {
               print('Error processing project from server: $e');
             }
           }
+
+          // Hapus projects local yang tidak ada di server
+          for (var existingProject in existingProjects) {
+            if (!serverProjectIds.contains(existingProject.id)) {
+              try {
+                await _storageService.deleteProject(existingProject.id);
+                deletedProjectCount++;
+                print('Deleted local project not found on server: ${existingProject.name}');
+              } catch (e) {
+                print('Error deleting local project: $e');
+              }
+            }
+          }
         }
 
         // Reload local data
         await _loadProjects();
 
-        // Show notification jika ada data baru
-        if (mounted && (newProjectCount > 0 || updatedProjectCount > 0)) {
-          String message = '';
-          if (newProjectCount > 0) {
-            message += '$newProjectCount new';
-          }
-          if (updatedProjectCount > 0) {
-            if (message.isNotEmpty) message += ', ';
-            message += '$updatedProjectCount updated';
-          }
-          message += ' project${(newProjectCount + updatedProjectCount) > 1 ? "s" : ""} synced';
+        // Show notification
+        if (mounted) {
+          int totalChanges = newProjectCount + updatedProjectCount + deletedProjectCount;
           
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.cloud_download, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(message)),
-                ],
+          if (totalChanges > 0) {
+            List<String> messageParts = [];
+            if (newProjectCount > 0) {
+              messageParts.add('$newProjectCount new');
+            }
+            if (updatedProjectCount > 0) {
+              messageParts.add('$updatedProjectCount updated');
+            }
+            if (deletedProjectCount > 0) {
+              messageParts.add('$deletedProjectCount deleted');
+            }
+            
+            String message = messageParts.join(', ');
+            message += ' project${totalChanges > 1 ? "s" : ""} synced from server';
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.cloud_download, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(message)),
+                  ],
+                ),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
               ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('Projects are up to date'),
+                  ],
+                ),
+                backgroundColor: Colors.blue,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
         }
       }
     } catch (e) {
       print('Error syncing projects from server: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error syncing from server: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isSyncing = false);
@@ -493,7 +567,9 @@ class _HomeScreenState extends State<HomeScreen> {
               elevation: 8,
               offset: const Offset(0, 50),
               onSelected: (value) {
-                if (value == 'sync_to_server') {
+                if (value == 'pull_from_server') {
+                  _syncProjectsFromServer();
+                } else if (value == 'sync_to_server') {
                   _syncProjectsToServer();
                 } else if (value == 'about') {
                   _showAboutDialog();
@@ -502,6 +578,48 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               },
               itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'pull_from_server',
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.cloud_download_rounded,
+                          color: Colors.green,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Pull from Server',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Download projects from cloud',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'sync_to_server',
                   child: Row(

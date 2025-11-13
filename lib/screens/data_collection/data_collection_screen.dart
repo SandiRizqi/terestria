@@ -479,6 +479,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
            lowerName.contains('gambar');
   }
 
+  bool _isOssField(String fieldName) {
+    // Exclude fields yang berakhiran _oss_urls, _oss_keys, atau mengandung 'oss'
+    final lowerName = fieldName.toLowerCase();
+    return lowerName.endsWith('_oss_urls') || 
+           lowerName.endsWith('_oss_keys') ||
+           lowerName.endsWith('_oss_url') ||
+           lowerName.endsWith('_oss_key') ||
+           lowerName.contains('_oss_') ||
+           lowerName.startsWith('oss_');
+  }
+
   IconData _getGeometryIcon() {
     switch (widget.project.geometryType) {
       case GeometryType.point:
@@ -592,13 +603,60 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Photo fields
-        ...data.formData.entries.where((entry) => _isPhotoField(entry.key)).map((entry) {
-                        // Handle both List and String types
+        ...data.formData.entries.where((entry) => _isPhotoField(entry.key) && !_isOssField(entry.key)).map((entry) {
+                        // Handle both List and String types - hanya ambil local paths
                         List<String> photoPaths = [];
+                        
+                        // Helper function to check if a path is local
+                        bool isLocalPath(String path) {
+                          final lowerPath = path.toLowerCase();
+                          // Check if it's NOT a URL or OSS key
+                          return !lowerPath.startsWith('http://') && 
+                                 !lowerPath.startsWith('https://') &&
+                                 !lowerPath.contains('aliyuncs.com') &&
+                                 !lowerPath.startsWith('oss-') &&
+                                 // Tambahan: pastikan path seperti file system path
+                                 (lowerPath.contains('/') || lowerPath.contains('\\'));
+                        }
+                        
                         if (entry.value is List) {
-                          photoPaths = (entry.value as List).map((e) => e.toString()).toList();
+                          final list = entry.value as List;
+                          
+                          for (var item in list) {
+                            // Handle if item is a Map (e.g., {local_path: ..., oss_url: ..., oss_key: ...})
+                            if (item is Map) {
+                              // Try to get local_path or localPath key
+                              final localPath = item['local_path'] ?? item['localPath'] ?? item['path'];
+                              if (localPath != null && localPath.toString().isNotEmpty) {
+                                final pathStr = localPath.toString();
+                                if (isLocalPath(pathStr)) {
+                                  photoPaths.add(pathStr);
+                                }
+                              }
+                            }
+                            // Handle if item is a String
+                            else if (item is String && item.isNotEmpty) {
+                              if (isLocalPath(item)) {
+                                photoPaths.add(item);
+                              }
+                            }
+                          }
+                        } else if (entry.value is Map) {
+                          final map = entry.value as Map;
+                          // Try to get local_path or localPath key
+                          final localPath = map['local_path'] ?? map['localPath'] ?? map['path'];
+                          if (localPath != null && localPath.toString().isNotEmpty) {
+                            final pathStr = localPath.toString();
+                            if (isLocalPath(pathStr)) {
+                              photoPaths = [pathStr];
+                            }
+                          }
                         } else if (entry.value is String && entry.value.toString().isNotEmpty) {
-                          photoPaths = [entry.value.toString()];
+                          final path = entry.value.toString();
+                          
+                          if (isLocalPath(path)) {
+                            photoPaths = [path];
+                          }
                         }
                         
                         if (photoPaths.isNotEmpty) {
@@ -747,7 +805,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                       }),
         
         // Non-photo form fields
-        if (data.formData.entries.any((entry) => !_isPhotoField(entry.key))) ...[
+        if (data.formData.entries.any((entry) => !_isPhotoField(entry.key) && !_isOssField(entry.key))) ...[
           const Row(
             children: [
               Icon(Icons.description_outlined, size: 20, color: AppTheme.primaryColor),
@@ -756,7 +814,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
             ],
           ),
           const SizedBox(height: 12),
-          ...data.formData.entries.where((entry) => !_isPhotoField(entry.key)).map((entry) {
+          ...data.formData.entries.where((entry) => !_isPhotoField(entry.key) && !_isOssField(entry.key)).map((entry) {
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(14),
