@@ -16,15 +16,18 @@ import '../../models/form_field_model.dart';
 import '../../services/location_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/basemap_service.dart';
-import '../../services/tile_providers/local_file_tile_provider.dart';
 import '../../services/tile_cache_sqlite_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
+import '../../services/tile_providers/geopdf_overlay_provider.dart';
 import '../../widgets/dynamic_form.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../theme/app_theme.dart';
 import 'widgets/collapsible_bottom_controls.dart';
 import 'widgets/user_location_marker.dart';
 import '../basemap/basemap_management_screen.dart';
+import '../../services/auth_service.dart';
+import '../../services/settings_service.dart';
+import '../../models/settings/app_settings.dart';
 
 
 
@@ -47,6 +50,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
   final StorageService _storageService = StorageService();
   final BasemapService _basemapService = BasemapService();
   final TileCacheSqliteService _tileCacheService = TileCacheSqliteService();
+  final SettingsService _settingsService = SettingsService();
   final MapController _mapController = MapController();
   final _formKey = GlobalKey<FormState>();
   final _uuid = const Uuid();
@@ -76,10 +80,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
   @override
   void initState() {
     super.initState();
+    _initializeSettings();
     _initializeLocation();
     _loadBasemap();
     _loadExistingData();
     _initCompass();
+  }
+
+  Future<void> _initializeSettings() async {
+    await _settingsService.initialize();
   }
 
   void _initCompass() {
@@ -119,7 +128,49 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
 
   Future<void> _loadBasemap() async {
     final basemap = await _basemapService.getSelectedBasemap();
-    setState(() => _selectedBasemap = basemap);
+    
+    if (mounted) {
+      setState(() => _selectedBasemap = basemap);
+      
+      // Jika PDF basemap dengan georeferencing, zoom ke bounds PDF
+      if (basemap.type == BasemapType.pdf && basemap.hasPdfGeoreferencing) {
+        print('📍 PDF Basemap loaded, will zoom to bounds...');
+        print('   Bounds: Lat[${basemap.pdfMinLat}, ${basemap.pdfMaxLat}] Lon[${basemap.pdfMinLon}, ${basemap.pdfMaxLon}]');
+        
+        // PENTING: Delay lebih lama dan pastikan map controller ready
+        Future.delayed(const Duration(milliseconds: 1000), () {
+          if (mounted && _mapController.camera != null) {
+            try {
+              // FIX: LatLngBounds constructor menerima southwest dan northeast corners
+              // southwest = LatLng(minLat, minLon)
+              // northeast = LatLng(maxLat, maxLon)
+              final bounds = LatLngBounds(
+                LatLng(basemap.pdfMinLat!, basemap.pdfMinLon!),  // southwest corner
+                LatLng(basemap.pdfMaxLat!, basemap.pdfMaxLon!),  // northeast corner
+              );
+              
+              print('🔍 Fitting map to PDF bounds...');
+              print('   Southwest: ${bounds.southWest}');
+              print('   Northeast: ${bounds.northEast}');
+              
+              // Fit bounds dengan padding
+              _mapController.fitCamera(
+                CameraFit.bounds(
+                  bounds: bounds,
+                  padding: const EdgeInsets.all(50),
+                ),
+              );
+              
+              print('✅ Map zoomed to PDF bounds');
+              print('📷 New camera center: ${_mapController.camera.center}');
+              print('📷 New camera zoom: ${_mapController.camera.zoom}');
+            } catch (e) {
+              print('❌ Error fitting bounds: $e');
+            }
+          }
+        });
+      }
+    }
   }
 
   Future<void> _initializeLocation() async {
@@ -397,6 +448,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
     setState(() => _isSaving = true);
 
     try {
+      // Ambil username dari AuthService
+      final authService = AuthService();
+      final user = await authService.getUser();
+      final username = user?.username;
+
       final geoData = GeoData(
         id: _uuid.v4(),
         projectId: widget.project.id,
@@ -404,6 +460,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         points: _collectedPoints,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        collectedBy: username, // Set username sebagai collectedBy
       );
 
       await _storageService.saveGeoData(geoData);
@@ -604,57 +661,36 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
       children: [
         // Photo fields
         ...data.formData.entries.where((entry) => _isPhotoField(entry.key) && !_isOssField(entry.key)).map((entry) {
-                        // Handle both List and String types - hanya ambil local paths
+                        // Handle PhotoMetadata format
                         List<String> photoPaths = [];
-                        
-                        // Helper function to check if a path is local
-                        bool isLocalPath(String path) {
-                          final lowerPath = path.toLowerCase();
-                          // Check if it's NOT a URL or OSS key
-                          return !lowerPath.startsWith('http://') && 
-                                 !lowerPath.startsWith('https://') &&
-                                 !lowerPath.contains('aliyuncs.com') &&
-                                 !lowerPath.startsWith('oss-') &&
-                                 // Tambahan: pastikan path seperti file system path
-                                 (lowerPath.contains('/') || lowerPath.contains('\\'));
-                        }
                         
                         if (entry.value is List) {
                           final list = entry.value as List;
                           
                           for (var item in list) {
-                            // Handle if item is a Map (e.g., {local_path: ..., oss_url: ..., oss_key: ...})
+                            // Handle PhotoMetadata format
                             if (item is Map) {
-                              // Try to get local_path or localPath key
-                              final localPath = item['local_path'] ?? item['localPath'] ?? item['path'];
+                              final localPath = item['localPath'];
                               if (localPath != null && localPath.toString().isNotEmpty) {
                                 final pathStr = localPath.toString();
-                                if (isLocalPath(pathStr)) {
+                                final file = File(pathStr);
+                                if (file.existsSync()) {
                                   photoPaths.add(pathStr);
                                 }
                               }
                             }
-                            // Handle if item is a String
+                            // Handle old string format (backward compatibility)
                             else if (item is String && item.isNotEmpty) {
-                              if (isLocalPath(item)) {
+                              final file = File(item);
+                              if (file.existsSync()) {
                                 photoPaths.add(item);
                               }
                             }
                           }
-                        } else if (entry.value is Map) {
-                          final map = entry.value as Map;
-                          // Try to get local_path or localPath key
-                          final localPath = map['local_path'] ?? map['localPath'] ?? map['path'];
-                          if (localPath != null && localPath.toString().isNotEmpty) {
-                            final pathStr = localPath.toString();
-                            if (isLocalPath(pathStr)) {
-                              photoPaths = [pathStr];
-                            }
-                          }
                         } else if (entry.value is String && entry.value.toString().isNotEmpty) {
                           final path = entry.value.toString();
-                          
-                          if (isLocalPath(path)) {
+                          final file = File(path);
+                          if (file.existsSync()) {
                             photoPaths = [path];
                           }
                         }
@@ -982,7 +1018,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                                 color: AppTheme.primaryColor.withOpacity(0.3),
                               ),
                             ),
-                            child: Row(
+                            child: const Row(
                               children: [
                                 Icon(
                                   Icons.info_outline,
@@ -1064,7 +1100,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                                     ),
                                   ],
                                 )
-                              : Row(
+                              : const Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     const Icon(Icons.check_circle_outline, size: 22),
@@ -1091,6 +1127,132 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
     ).then((_) {
       setState(() => _showForm = false);
     });
+  }
+
+  List<Widget> _buildBasemapLayers(Basemap basemap) {
+    // Check if this is an overlay-mode PDF basemap
+    if (basemap.useOverlayMode && 
+        basemap.pdfOverlayImagePath != null &&
+        basemap.hasPdfGeoreferencing) {
+      
+      //print('⚡ Using Overlay Mode for ${basemap.name}');
+      
+      // VALIDASI: Cek apakah file image ada
+      final imageFile = File(basemap.pdfOverlayImagePath!);
+      if (!imageFile.existsSync()) {
+        //print('❌ ERROR: Image file not found at: ${basemap.pdfOverlayImagePath}');
+        // Fallback ke OSM jika file tidak ada
+        return [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: ApiConfig.bundleName,
+          ),
+        ];
+      }
+      
+     
+      
+      // VALIDASI: Cek bounds tidak null
+      if (basemap.pdfMinLat == null || basemap.pdfMinLon == null ||
+          basemap.pdfMaxLat == null || basemap.pdfMaxLon == null) {
+        //print('❌ ERROR: Invalid bounds (null values)');
+        return [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: ApiConfig.bundleName,
+          ),
+        ];
+      }
+      
+      // VALIDASI: Cek min < max untuk latitude dan longitude
+      if (basemap.pdfMinLat! >= basemap.pdfMaxLat! || 
+          basemap.pdfMinLon! >= basemap.pdfMaxLon!) {
+        print('❌ ERROR: Invalid bounds (min >= max)');
+        print('   MinLat (${basemap.pdfMinLat}) should be < MaxLat (${basemap.pdfMaxLat})');
+        print('   MinLon (${basemap.pdfMinLon}) should be < MaxLon (${basemap.pdfMaxLon})');
+        return [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: ApiConfig.bundleName,
+          ),
+        ];
+      }
+      
+      try {
+        // Use OverlayImageLayer for PDF overlay mode (FAST!)
+        print('✅ Creating OverlayImageLayer...');
+        
+        // FIX: LatLngBounds constructor order is (southwest, northeast)
+        final bounds = LatLngBounds(
+          LatLng(basemap.pdfMinLat!, basemap.pdfMinLon!),  // southwest corner (minLat, minLon)
+          LatLng(basemap.pdfMaxLat!, basemap.pdfMaxLon!),  // northeast corner (maxLat, maxLon)
+        );
+        
+        print('✅ Bounds created successfully');
+        print('   Southwest corner: ${bounds.southWest}');
+        print('   Northeast corner: ${bounds.northEast}');
+        print('📷 Current map center: ${_mapController.camera.center}');
+        print('📷 Current map zoom: ${_mapController.camera.zoom}');
+        
+        // Cek apakah image bisa di-decode
+        try {
+          final bytes = imageFile.readAsBytesSync();
+          print('🖼️ Image bytes read: ${bytes.length}');
+          print('🖼️ First bytes: ${bytes.take(20).toList()}');
+        } catch (e) {
+          print('❌ Error reading image bytes: $e');
+        }
+        
+        return [
+          // Base layer OSM (optional, untuk konteks)
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: ApiConfig.bundleName,
+            tileProvider: NetworkTileProvider(),
+          ),
+          // PDF Overlay layer
+          OverlayImageLayer(
+            overlayImages: [
+              OverlayImage(
+                bounds: bounds,
+                imageProvider: FileImage(imageFile),
+                opacity: 1.0,  // Full opacity untuk PDF map
+                gaplessPlayback: true,
+              ),
+            ],
+          ),
+        ];
+      } catch (e, stackTrace) {
+        print('❌ ERROR creating OverlayImageLayer: $e');
+        print('Stack trace: $stackTrace');
+        
+        // Fallback ke OSM
+        return [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: ApiConfig.bundleName,
+          ),
+        ];
+      }
+    } else {
+      // Use TileLayer for TMS or tile-based PDF basemaps
+      //print('🗺️ Using TileLayer for ${basemap.name}');
+      
+      return [
+        TileLayer(
+          urlTemplate: basemap.urlTemplate.startsWith('sqlite://') || basemap.urlTemplate.startsWith('overlay://')
+              ? '' // PDF basemap from SQLite or overlay - URL not used
+              : basemap.urlTemplate, // TMS basemap URL
+          userAgentPackageName: ApiConfig.bundleName,
+          minZoom: basemap.minZoom.toDouble(),
+          maxZoom: basemap.maxZoom.toDouble(),
+          tileProvider: SqliteCachedTileProvider(
+            basemapId: basemap.id,
+            maxStale: const Duration(days: 30),
+          ),
+        ),
+      ];
+    }
   }
 
   List<Widget> _buildExistingDataLayers() {
@@ -1320,10 +1482,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
               child: FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
-                  initialCenter: _currentLocation != null
-                      ? LatLng(_currentLocation!.latitude, _currentLocation!.longitude)
-                      : const LatLng(-6.2088, 106.8456),
-                  initialZoom: 15,
+                  initialCenter: _selectedBasemap?.type == BasemapType.pdf && _selectedBasemap!.hasPdfGeoreferencing
+                      ? LatLng(
+                          (_selectedBasemap!.pdfMinLat! + _selectedBasemap!.pdfMaxLat!) / 2,
+                          (_selectedBasemap!.pdfMinLon! + _selectedBasemap!.pdfMaxLon!) / 2,
+                        )
+                      : (_currentLocation != null
+                          ? LatLng(_currentLocation!.latitude, _currentLocation!.longitude)
+                          : const LatLng(-6.2088, 106.8456)),
+                  initialZoom: _selectedBasemap?.type == BasemapType.pdf && _selectedBasemap!.hasPdfGeoreferencing
+                      ? 13  // PDF basemap: zoom level yang reasonable
+                      : 15,  // Non-PDF: zoom lebih tinggi ke user location
                   onTap: _onMapTap,
                   onPositionChanged: (position, hasGesture) {
                     setState(() {
@@ -1332,33 +1501,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                   },
                 ),
               children: [
-                // Basemap Layer dengan SQLite Cache - SUPER CEPAT!
-                if (_selectedBasemap != null)
-                  _selectedBasemap!.isPdfBasemap
-                      ? TileLayer(
-                          urlTemplate: '',
-                          minZoom: _selectedBasemap!.minZoom.toDouble(),
-                          maxZoom: _selectedBasemap!.maxZoom.toDouble(),
-                          tileProvider: LocalFileTileProvider(
-                            _selectedBasemap!.urlTemplate,
-                          ),
-                        )
-                      : TileLayer(
-                          urlTemplate: _selectedBasemap!.urlTemplate,
-                          userAgentPackageName: ApiConfig.bundleName,
-                          minZoom: _selectedBasemap!.minZoom.toDouble(),
-                          maxZoom: _selectedBasemap!.maxZoom.toDouble(),
-                          tileProvider: SqliteCachedTileProvider(
-                            basemapId: _selectedBasemap!.id,
-                            maxStale: const Duration(days: 30),
-                          ),
-                        )
+                // Basemap Layer - Support both Tile and Overlay modes
+                if (_selectedBasemap != null) ..._buildBasemapLayers(_selectedBasemap!)
                 else
                   TileLayer(
                     urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: ApiConfig.bundleName,
                     tileProvider: SqliteCachedTileProvider(
-                      basemapId: 'osm_road', // Gunakan ID dari default basemap
+                      basemapId: 'osm_road',
                       maxStale: const Duration(days: 30),
                     ),
                   ),
@@ -1378,9 +1528,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                                 .map((p) => LatLng(p.latitude, p.longitude))
                                 .toList(),
                             color: widget.project.geometryType == GeometryType.line
-                                ? AppTheme.lineColor
-                                : AppTheme.polygonColor,
-                            strokeWidth: 3,
+                                ? _settingsService.settings.lineColor
+                                : _settingsService.settings.polygonColor,
+                            strokeWidth: _settingsService.settings.lineWidth,
                           ),
                         ],
                       ),
@@ -1394,9 +1544,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                             points: _collectedPoints
                                 .map((p) => LatLng(p.latitude, p.longitude))
                                 .toList(),
-                            color: AppTheme.polygonColor.withOpacity(0.3),
-                            borderColor: AppTheme.polygonColor,
-                            borderStrokeWidth: 3,
+                            color: _settingsService.settings.polygonColor.withOpacity(_settingsService.settings.polygonOpacity),
+                            borderColor: _settingsService.settings.polygonColor,
+                            borderStrokeWidth: _settingsService.settings.lineWidth,
                           ),
                         ],
                       ),
@@ -1410,11 +1560,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                             _collectedPoints.first.latitude,
                             _collectedPoints.first.longitude,
                           ),
-                          width: 24,
-                          height: 24,
+                          width: _settingsService.settings.pointSize * 2,
+                          height: _settingsService.settings.pointSize * 2,
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.green, // bisa beda warna
+                              color: _settingsService.settings.pointColor,
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 2),
                             ),
@@ -1437,11 +1587,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                               _collectedPoints.last.latitude,
                               _collectedPoints.last.longitude,
                             ),
-                            width: 24,
-                            height: 24,
+                            width: _settingsService.settings.pointSize * 2,
+                            height: _settingsService.settings.pointSize * 2,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: Colors.red, // beda warna dari first
+                                color: Colors.red, // Last point tetap merah untuk dibedakan
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 2),
                               ),
@@ -1678,8 +1828,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
               const SizedBox(height: 4),
               Text('Tap on map to add points', style: TextStyle(fontSize: 11, color: Colors.grey[600], fontStyle: FontStyle.italic)),
             ],
-            if (distance != null) ...[const SizedBox(height: 8), Text('Distance: ${distance.toStringAsFixed(2)} m')],
-            if (area != null) ...[const SizedBox(height: 8), Text('Area: ${area.toStringAsFixed(2)} m²')],
+            if (distance != null) ...[const SizedBox(height: 8), Text('Distance: ${_settingsService.settings.formatDistance(distance)}')],
+            if (area != null) ...[const SizedBox(height: 8), Text('Area: ${_settingsService.settings.formatArea(area)}')],
             if (_currentLocation != null) ...[
               const SizedBox(height: 8),
               Text('Accuracy: ±${_currentLocation!.accuracy?.toStringAsFixed(1) ?? 'N/A'} m',

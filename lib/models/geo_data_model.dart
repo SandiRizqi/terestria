@@ -43,6 +43,7 @@ class GeoData {
   final DateTime updatedAt;
   final bool isSynced;
   final DateTime? syncedAt;
+  final String? collectedBy; // username yang mengumpulkan data
 
   GeoData({
     required this.id,
@@ -53,6 +54,7 @@ class GeoData {
     required this.updatedAt,
     this.isSynced = false,
     this.syncedAt,
+    this.collectedBy,
   });
 
   Map<String, dynamic> toJson() {
@@ -65,19 +67,23 @@ class GeoData {
       'updatedAt': updatedAt.toIso8601String(),
       'isSynced': isSynced,
       'syncedAt': syncedAt?.toIso8601String(),
+      'collectedBy': collectedBy, // Save as camelCase for local storage consistency
     };
   }
 
   factory GeoData.fromJson(Map<String, dynamic> json) {
     return GeoData(
       id: json['id'],
-      projectId: json['projectId'],
-      formData: json['formData'],
+      projectId: json['projectId'] ?? json['project_id'], // Support both formats
+      formData: json['formData'] ?? json['form_data'] ?? {}, // Support both formats
       points: (json['points'] as List).map((p) => GeoPoint.fromJson(p)).toList(),
-      createdAt: DateTime.parse(json['createdAt']),
-      updatedAt: DateTime.parse(json['updatedAt']),
-      isSynced: json['isSynced'] ?? false,
-      syncedAt: json['syncedAt'] != null ? DateTime.parse(json['syncedAt']) : null,
+      createdAt: DateTime.parse(json['createdAt'] ?? json['created_at']), // Support both formats
+      updatedAt: DateTime.parse(json['updatedAt'] ?? json['updated_at']), // Support both formats
+      isSynced: json['isSynced'] ?? json['is_synced'] ?? false, // Support both formats
+      syncedAt: (json['syncedAt'] ?? json['synced_at']) != null 
+          ? DateTime.parse(json['syncedAt'] ?? json['synced_at']) 
+          : null,
+      collectedBy: json['collectedBy'] ?? json['collected_by'], // Support both snake_case and camelCase
     );
   }
 
@@ -91,6 +97,7 @@ class GeoData {
     DateTime? updatedAt,
     bool? isSynced,
     DateTime? syncedAt,
+    String? collectedBy,
   }) {
     return GeoData(
       id: id ?? this.id,
@@ -101,6 +108,7 @@ class GeoData {
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
       syncedAt: syncedAt ?? this.syncedAt,
+      collectedBy: collectedBy ?? this.collectedBy,
     );
   }
 }

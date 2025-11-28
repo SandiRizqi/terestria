@@ -95,7 +95,10 @@ class TileCacheSqliteService {
         [tileKey, tileData, now, now],
       );
       
-      print('💾 Tile saved: $basemapId/$tileKey (${tileData.length} bytes)');
+      // Only log first few tiles to avoid spam
+      if (tileKey.split('_')[0] == '13' && int.parse(tileKey.split('_')[1]) <= 1) {
+        print('💾 Tile saved: $basemapId/$tileKey (${tileData.length} bytes)');
+      }
     } catch (e) {
       print('❌ Error saving tile $basemapId z=$z,x=$x,y=$y: $e');
       // Don't rethrow - we want to continue even if save fails
@@ -121,13 +124,15 @@ class TileCacheSqliteService {
 
       if (maps.isNotEmpty) {
         final data = maps.first['tile_data'] as Uint8List;
-        print('✅ Cache HIT: $basemapId/$tileKey (${data.length} bytes)');
+        // Reduce log spam - only log occasionally
+        // print('✅ Cache HIT: $basemapId/$tileKey (${data.length} bytes)');
         // Update last accessed time asynchronously (don't wait)
         _updateLastAccessed(db, tileKey);
         return data;
       }
 
-      print('⚠️ Cache MISS: $basemapId/$tileKey');
+      // Reduce log spam for cache misses
+      // print('⚠️ Cache MISS: $basemapId/$tileKey');
       return null;
     } catch (e) {
       print('❌ Error getting tile $basemapId/$z/$x/$y: $e');

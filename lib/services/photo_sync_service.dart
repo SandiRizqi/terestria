@@ -1,11 +1,71 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../config/api_config.dart';
 import '../models/form_field_model.dart';
 import '../models/project_model.dart';
 import 'api_service.dart';
+
+/// Photo metadata model
+class PhotoMetadata {
+  final String name;
+  final String localPath;
+  final String? serverUrl;
+  final String? serverKey; // OSS key for stable reference
+  final DateTime created;
+  final DateTime updated;
+
+  PhotoMetadata({
+    required this.name,
+    required this.localPath,
+    this.serverUrl,
+    this.serverKey,
+    required this.created,
+    required this.updated,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'localPath': localPath,
+      'serverUrl': serverUrl,
+      'serverKey': serverKey,
+      'created': created.toIso8601String(),
+      'updated': updated.toIso8601String(),
+    };
+  }
+
+  factory PhotoMetadata.fromJson(Map<String, dynamic> json) {
+    return PhotoMetadata(
+      name: json['name'],
+      localPath: json['localPath'],
+      serverUrl: json['serverUrl'],
+      serverKey: json['serverKey'],
+      created: DateTime.parse(json['created']),
+      updated: DateTime.parse(json['updated']),
+    );
+  }
+
+  PhotoMetadata copyWith({
+    String? name,
+    String? localPath,
+    String? serverUrl,
+    String? serverKey,
+    DateTime? created,
+    DateTime? updated,
+  }) {
+    return PhotoMetadata(
+      name: name ?? this.name,
+      localPath: localPath ?? this.localPath,
+      serverUrl: serverUrl ?? this.serverUrl,
+      serverKey: serverKey ?? this.serverKey,
+      created: created ?? this.created,
+      updated: updated ?? this.updated,
+    );
+  }
+}
 
 class PhotoSyncService {
   static final PhotoSyncService _instance = PhotoSyncService._internal();
@@ -77,7 +137,12 @@ class PhotoSyncService {
 
       // Download from OSS
       print('Downloading photo from: $ossUrl');
-      final response = await http.get(Uri.parse(ossUrl));
+      final response = await http.get(Uri.parse(ossUrl)).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException('Photo download timeout: $ossUrl');
+        },
+      );
       
       if (response.statusCode == 200) {
         // Ensure directory exists
@@ -85,14 +150,14 @@ class PhotoSyncService {
         
         // Write file
         await file.writeAsBytes(response.bodyBytes);
-        print('Photo downloaded successfully: $localPath');
+        //print('Photo downloaded successfully: $localPath (${response.bodyBytes.length} bytes)');
         return localPath;
       } else {
         print('Download failed with status: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      print('Error downloading photo: $e');
+      print('Error downloading photo from $ossUrl: $e');
       return null;
     }
   }
@@ -115,6 +180,7 @@ class PhotoSyncService {
   }
 
   /// Process form data for push (upload photos and get OSS URLs)
+  /// NEW FORMAT: Returns array of PhotoMetadata objects
   Future<Map<String, dynamic>> processFormDataForPush(
     Map<String, dynamic> formData,
     Project project,
@@ -124,42 +190,84 @@ class PhotoSyncService {
     for (var field in project.formFields) {
       if (field.type == FieldType.photo && formData.containsKey(field.label)) {
         final photoValue = formData[field.label];
+        final List<PhotoMetadata> photoMetadataList = [];
 
-        // Skip if already has OSS URL
-        if (formData.containsKey('${field.label}_oss_url') || 
-            formData.containsKey('${field.label}_oss_urls')) {
-          continue;
-        }
-
-        if (photoValue is String && photoValue.isNotEmpty && !photoValue.startsWith('http')) {
-          // Single photo - upload if not already uploaded
-          print('Uploading single photo for ${field.label}: $photoValue');
-          final ossData = await uploadSinglePhoto(photoValue);
-          
-          if (ossData != null) {
-            updatedFormData['${field.label}_oss_url'] = ossData['file_url'];
-            updatedFormData['${field.label}_oss_key'] = ossData['key'];
-            print('Photo uploaded: ${ossData['file_url']}');
-          }
-        } else if (photoValue is List && photoValue.isNotEmpty) {
-          // Multiple photos - filter out http URLs (already uploaded)
-          final localPaths = photoValue
-              .where((p) => p is String && p.isNotEmpty && !p.startsWith('http'))
-              .map((p) => p.toString())
-              .toList();
-
-          if (localPaths.isNotEmpty) {
-            print('Uploading ${localPaths.length} photos for ${field.label}');
-            final ossDataList = await uploadMultiplePhotos(localPaths);
+        // Handle existing PhotoMetadata array format
+        if (photoValue is List) {
+          for (var item in photoValue) {
+            PhotoMetadata? metadata;
             
-            if (ossDataList.isNotEmpty) {
-              updatedFormData['${field.label}_oss_urls'] = 
-                  ossDataList.map((o) => o['file_url']).toList();
-              updatedFormData['${field.label}_oss_keys'] = 
-                  ossDataList.map((o) => o['key']).toList();
-              print('${ossDataList.length} photos uploaded');
+            if (item is Map) {
+              // Already in PhotoMetadata format
+              try {
+                metadata = PhotoMetadata.fromJson(Map<String, dynamic>.from(item));
+              } catch (e) {
+                print('Error parsing PhotoMetadata: $e');
+                continue;
+              }
+            } else if (item is String && item.isNotEmpty) {
+              // Old format: string path
+              final file = File(item);
+              final filename = file.path.split('/').last;
+              metadata = PhotoMetadata(
+                name: filename,
+                localPath: item,
+                serverUrl: null,
+                created: DateTime.now(),
+                updated: DateTime.now(),
+              );
+            }
+
+            if (metadata != null) {
+              // Upload if not yet uploaded (serverUrl is null)
+              if (metadata.serverUrl == null && !metadata.localPath.startsWith('http')) {
+                print('Uploading photo: ${metadata.name}');
+                final ossData = await uploadSinglePhoto(metadata.localPath);
+                
+                if (ossData != null) {
+                  metadata = metadata.copyWith(
+                    serverUrl: ossData['file_url'],
+                    serverKey: ossData['key'],
+                    updated: DateTime.now(),
+                  );
+                  print('Photo uploaded: ${metadata.name} -> ${ossData['file_url']}');
+                }
+              }
+              photoMetadataList.add(metadata);
             }
           }
+        } else if (photoValue is String && photoValue.isNotEmpty) {
+          // Single photo - old format
+          final file = File(photoValue);
+          final filename = file.path.split('/').last;
+          var metadata = PhotoMetadata(
+            name: filename,
+            localPath: photoValue,
+            serverUrl: null,
+            created: DateTime.now(),
+            updated: DateTime.now(),
+          );
+
+          // Upload if local path
+          if (!photoValue.startsWith('http')) {
+            print('Uploading single photo: ${metadata.name}');
+            final ossData = await uploadSinglePhoto(photoValue);
+            
+            if (ossData != null) {
+              metadata = metadata.copyWith(
+                serverUrl: ossData['file_url'],
+                serverKey: ossData['key'],
+                updated: DateTime.now(),
+              );
+              print('Photo uploaded: ${metadata.name} -> ${ossData['file_url']}');
+            }
+          }
+          photoMetadataList.add(metadata);
+        }
+
+        // Update form data with PhotoMetadata array
+        if (photoMetadataList.isNotEmpty) {
+          updatedFormData[field.label] = photoMetadataList.map((m) => m.toJson()).toList();
         }
       }
     }
@@ -168,62 +276,160 @@ class PhotoSyncService {
   }
 
   /// Process form data for pull (download photos from OSS)
+  /// NEW FORMAT: Handles array of PhotoMetadata objects
   Future<Map<String, dynamic>> processFormDataForPull(
     Map<String, dynamic> formData,
     Project? project,
   ) async {
     final updatedFormData = Map<String, dynamic>.from(formData);
 
-    // Process each entry in form data
-    for (var entry in formData.entries) {
-      // Single photo
-      if (entry.key.endsWith('_oss_url') && entry.value is String) {
-        final fieldName = entry.key.replaceAll('_oss_url', '');
-        final ossUrl = entry.value as String;
+    // Get photo fields from project
+    final photoFields = project?.formFields
+        .where((f) => f.type == FieldType.photo)
+        .map((f) => f.label)
+        .toSet() ?? <String>{};
 
-        // Download and save locally
-        print('Downloading photo for $fieldName from: $ossUrl');
-        final localPath = await downloadPhoto(ossUrl, fieldName);
+    print('📥 Processing form data for pull. Photo fields: $photoFields');
+
+    // Process each photo field
+    for (var fieldName in photoFields) {
+      if (!updatedFormData.containsKey(fieldName)) continue;
+
+      final photoValue = updatedFormData[fieldName];
+      final List<PhotoMetadata> photoMetadataList = [];
+
+      if (photoValue is List) {
+        for (var item in photoValue) {
+          PhotoMetadata? metadata;
+
+          if (item is Map) {
+            // PhotoMetadata format
+            try {
+              metadata = PhotoMetadata.fromJson(Map<String, dynamic>.from(item));
+              
+              // Check if we need to download
+              if (metadata.serverUrl != null) {
+                final localFile = File(metadata.localPath);
+                
+                // Download only if file doesn't exist locally
+                if (!localFile.existsSync()) {
+                  print('📥 Downloading new photo: ${metadata.name} (key: ${metadata.serverKey})');
+                  final downloadedPath = await downloadPhoto(metadata.serverUrl!, fieldName);
+                  
+                  if (downloadedPath != null) {
+                    metadata = metadata.copyWith(
+                      localPath: downloadedPath,
+                      updated: DateTime.now(),
+                    );
+                    print('✅ Downloaded: ${metadata.name}');
+                  } else {
+                    print('❌ Failed to download: ${metadata.name}');
+                  }
+                } else {
+                  print('⏭️ Skipping existing photo: ${metadata.name} (key: ${metadata.serverKey})');
+                }
+              }
+            } catch (e) {
+              print('Error parsing PhotoMetadata: $e');
+              continue;
+            }
+          } else if (item is String && item.isNotEmpty) {
+            // Old format: string path or URL
+            if (item.startsWith('http')) {
+              // It's a server URL - download it
+              final filename = item.split('/').last;
+              final localPath = await downloadPhoto(item, fieldName);
+              
+              if (localPath != null) {
+                metadata = PhotoMetadata(
+                  name: filename,
+                  localPath: localPath,
+                  serverUrl: item,
+                  created: DateTime.now(),
+                  updated: DateTime.now(),
+                );
+              }
+            } else {
+              // It's a local path
+              final file = File(item);
+              if (file.existsSync()) {
+                final filename = file.path.split('/').last;
+                metadata = PhotoMetadata(
+                  name: filename,
+                  localPath: item,
+                  serverUrl: null,
+                  created: DateTime.now(),
+                  updated: DateTime.now(),
+                );
+              }
+            }
+          }
+
+          if (metadata != null) {
+            photoMetadataList.add(metadata);
+          }
+        }
+      } else if (photoValue is String && photoValue.isNotEmpty) {
+        // Single photo - old format
+        PhotoMetadata? metadata;
         
-        if (localPath != null) {
-          updatedFormData[fieldName] = localPath;
-          print('Photo saved locally: $localPath');
+        if (photoValue.startsWith('http')) {
+          // Server URL
+          final filename = photoValue.split('/').last;
+          final localPath = await downloadPhoto(photoValue, fieldName);
+          
+          if (localPath != null) {
+            metadata = PhotoMetadata(
+              name: filename,
+              localPath: localPath,
+              serverUrl: photoValue,
+              created: DateTime.now(),
+              updated: DateTime.now(),
+            );
+          }
+        } else {
+          // Local path
+          final file = File(photoValue);
+          if (file.existsSync()) {
+            final filename = file.path.split('/').last;
+            metadata = PhotoMetadata(
+              name: filename,
+              localPath: photoValue,
+              serverUrl: null,
+              created: DateTime.now(),
+              updated: DateTime.now(),
+            );
+          }
+        }
+
+        if (metadata != null) {
+          photoMetadataList.add(metadata);
         }
       }
 
-      // Multiple photos
-      if (entry.key.endsWith('_oss_urls') && entry.value is List) {
-        final fieldName = entry.key.replaceAll('_oss_urls', '');
-        final ossUrls = (entry.value as List)
-            .where((url) => url is String && url.isNotEmpty)
-            .map((url) => url.toString())
-            .toList();
-
-        if (ossUrls.isNotEmpty) {
-          print('Downloading ${ossUrls.length} photos for $fieldName');
-          final localPaths = await downloadMultiplePhotos(ossUrls, fieldName);
-          
-          if (localPaths.isNotEmpty) {
-            updatedFormData[fieldName] = localPaths;
-            print('${localPaths.length} photos saved locally');
-          }
-        }
+      // Update form data with PhotoMetadata array
+      if (photoMetadataList.isNotEmpty) {
+        updatedFormData[fieldName] = photoMetadataList.map((m) => m.toJson()).toList();
+      } else {
+        updatedFormData[fieldName] = [];
       }
     }
 
     return updatedFormData;
   }
 
-  /// Get local path for photo storage
+  /// Get local path for photo storage (use cache directory like when uploading)
   Future<String> _getPhotoPath(String filename) async {
-    final directory = await getApplicationDocumentsDirectory();
-    final photosDir = Directory('${directory.path}/photos');
+    // Use cache directory to match the path format from server
+    // Server sends paths like: /data/user/0/com.example.geoform_app/cache/...
+    final directory = await getTemporaryDirectory();
+    final cacheDir = Directory(directory.path);
     
-    if (!photosDir.existsSync()) {
-      await photosDir.create(recursive: true);
+    if (!cacheDir.existsSync()) {
+      await cacheDir.create(recursive: true);
     }
     
-    return '${photosDir.path}/$filename';
+    return '${cacheDir.path}/$filename';
   }
 
   /// Clean up orphaned photos (photos not referenced in any geodata)
@@ -248,7 +454,7 @@ class PhotoSyncService {
         }
       }
 
-      print('Cleaned up $deletedCount orphaned photos');
+      //print('Cleaned up $deletedCount orphaned photos');
     } catch (e) {
       print('Error cleaning up photos: $e');
     }

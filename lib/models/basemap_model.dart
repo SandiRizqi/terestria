@@ -31,6 +31,10 @@ class Basemap {
   final double? pdfMaxLon;
   final double? pdfCenterLat;
   final double? pdfCenterLon;
+  
+  // PDF Overlay Mode (faster than tiles!)
+  final String? pdfOverlayImagePath;  // Path to overlay.png
+  final bool useOverlayMode;  // true = use overlay, false = use tiles
 
   Basemap({
     required this.id,
@@ -52,6 +56,8 @@ class Basemap {
     this.pdfMaxLon,
     this.pdfCenterLat,
     this.pdfCenterLon,
+    this.pdfOverlayImagePath,
+    this.useOverlayMode = true,  // Default to overlay mode
   });
 
   bool get isPdfBasemap => type == BasemapType.pdf;
@@ -86,6 +92,8 @@ class Basemap {
     double? pdfMaxLon,
     double? pdfCenterLat,
     double? pdfCenterLon,
+    String? pdfOverlayImagePath,
+    bool? useOverlayMode,
   }) {
     return Basemap(
       id: id ?? this.id,
@@ -107,6 +115,8 @@ class Basemap {
       pdfMaxLon: pdfMaxLon ?? this.pdfMaxLon,
       pdfCenterLat: pdfCenterLat ?? this.pdfCenterLat,
       pdfCenterLon: pdfCenterLon ?? this.pdfCenterLon,
+      pdfOverlayImagePath: pdfOverlayImagePath ?? this.pdfOverlayImagePath,
+      useOverlayMode: useOverlayMode ?? this.useOverlayMode,
     );
   }
 
@@ -131,6 +141,8 @@ class Basemap {
       'pdfMaxLon': pdfMaxLon,
       'pdfCenterLat': pdfCenterLat,
       'pdfCenterLon': pdfCenterLon,
+      'pdfOverlayImagePath': pdfOverlayImagePath,
+      'useOverlayMode': useOverlayMode,
     };
   }
 
@@ -163,6 +175,8 @@ class Basemap {
       pdfMaxLon: json['pdfMaxLon']?.toDouble(),
       pdfCenterLat: json['pdfCenterLat']?.toDouble(),
       pdfCenterLon: json['pdfCenterLon']?.toDouble(),
+      pdfOverlayImagePath: json['pdfOverlayImagePath'],
+      useOverlayMode: json['useOverlayMode'] ?? true,
     );
   }
 

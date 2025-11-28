@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/form_field_model.dart';
 import 'photo_field_widget.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 class DynamicForm extends StatefulWidget {
   final List<FormFieldModel> formFields;
@@ -44,6 +45,34 @@ class _DynamicFormState extends State<DynamicForm> with AutomaticKeepAliveClient
       controller.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _scanQRCode(FormFieldModel field) async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _QRScannerScreen(
+          fieldLabel: field.label,
+        ),
+      ),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      // Update text controller and form data
+      _textControllers[field.label]?.text = result;
+      _formData[field.label] = result;
+      widget.onSaved(_formData);
+      widget.onChanged?.call();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('QR Code scanned: $result'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -91,6 +120,11 @@ class _DynamicFormState extends State<DynamicForm> with AutomaticKeepAliveClient
       decoration: InputDecoration(
         labelText: field.label + (field.required ? ' *' : ''),
         border: const OutlineInputBorder(),
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.qr_code_scanner),
+          tooltip: 'Scan QR Code',
+          onPressed: () => _scanQRCode(field),
+        ),
       ),
       validator: (value) {
         if (field.required && (value == null || value.isEmpty)) {
@@ -305,19 +339,14 @@ class _DynamicFormState extends State<DynamicForm> with AutomaticKeepAliveClient
   }
 
   Widget _buildPhotoField(FormFieldModel field) {
-    // Get initial photos if exists
-    List<String> initialPhotos = [];
-    if (_formData[field.label] is List) {
-      initialPhotos = (_formData[field.label] as List)
-          .map((e) => e.toString())
-          .toList();
-    }
+    // Get initial photos - can be old format (List<String>) or new format (List<Map>)
+    dynamic initialPhotos = _formData[field.label];
     
     final minPhotos = field.minPhotos ?? (field.required ? 1 : 0);
     final maxPhotos = field.maxPhotos ?? 1;
 
-    return FormField<List<String>>(
-      initialValue: initialPhotos,
+    return FormField<List<Map<String, dynamic>>>(
+      initialValue: initialPhotos is List ? initialPhotos.cast<Map<String, dynamic>>() : [],
       validator: (value) {
         final photoCount = value?.length ?? 0;
         
@@ -339,17 +368,16 @@ class _DynamicFormState extends State<DynamicForm> with AutomaticKeepAliveClient
         _formData[field.label] = value ?? [];
         widget.onSaved(_formData);
       },
-      builder: (FormFieldState<List<String>> state) {
+      builder: (FormFieldState<List<Map<String, dynamic>>> state) {
         return PhotoFieldWidget(
           label: field.label,
           required: field.required,
           minPhotos: minPhotos,
           maxPhotos: maxPhotos,
-          initialPhotos: state.value,
+          initialPhotos: initialPhotos,
           errorText: state.errorText,
           onChanged: (photos) {
             state.didChange(photos);
-            // photoPaths = photos;
             _formData[field.label] = photos;
             widget.onSaved(_formData);
             widget.onChanged?.call();
@@ -358,4 +386,187 @@ class _DynamicFormState extends State<DynamicForm> with AutomaticKeepAliveClient
       },
     );
   }
+}
+
+// QR Scanner Screen Widget
+class _QRScannerScreen extends StatefulWidget {
+  final String fieldLabel;
+
+  const _QRScannerScreen({required this.fieldLabel});
+
+  @override
+  State<_QRScannerScreen> createState() => _QRScannerScreenState();
+}
+
+class _QRScannerScreenState extends State<_QRScannerScreen> {
+  MobileScannerController cameraController = MobileScannerController();
+  bool _isProcessing = false;
+  bool _isTorchOn = false;
+
+  @override
+  void dispose() {
+    cameraController.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_isProcessing) return;
+    
+    final List<Barcode> barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
+
+    final barcode = barcodes.first;
+    final String? code = barcode.rawValue;
+
+    if (code != null && code.isNotEmpty) {
+      setState(() => _isProcessing = true);
+      
+      // Vibrate or play sound (optional)
+      HapticFeedback.mediumImpact();
+      
+      // Return the scanned code
+      Navigator.pop(context, code);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Scan QR for "${widget.fieldLabel}"'),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _isTorchOn ? Icons.flash_on : Icons.flash_off,
+              color: _isTorchOn ? Colors.yellow : null,
+            ),
+            onPressed: () async {
+              await cameraController.toggleTorch();
+              setState(() {
+                _isTorchOn = !_isTorchOn;
+              });
+            },
+            tooltip: 'Toggle Flashlight',
+          ),
+          IconButton(
+            icon: const Icon(Icons.flip_camera_ios),
+            onPressed: () => cameraController.switchCamera(),
+            tooltip: 'Switch Camera',
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          // Camera preview
+          MobileScanner(
+            controller: cameraController,
+            onDetect: _onDetect,
+          ),
+          
+          // Overlay with scanning frame
+          CustomPaint(
+            painter: _ScannerOverlayPainter(),
+            child: Container(),
+          ),
+          
+          // Instructions
+          Positioned(
+            bottom: 100,
+            left: 0,
+            right: 0,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 40),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Position the QR code within the frame',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Custom painter for scanner overlay
+class _ScannerOverlayPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double scanAreaSize = size.width * 0.7;
+    final double left = (size.width - scanAreaSize) / 2;
+    final double top = (size.height - scanAreaSize) / 2;
+    final Rect scanArea = Rect.fromLTWH(left, top, scanAreaSize, scanAreaSize);
+
+    // Draw semi-transparent overlay
+    final Paint backgroundPaint = Paint()
+      ..color = Colors.black.withOpacity(0.5)
+      ..style = PaintingStyle.fill;
+
+    // Draw overlay with hole for scan area
+    canvas.drawPath(
+      Path.combine(
+        PathOperation.difference,
+        Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
+        Path()..addRRect(RRect.fromRectAndRadius(scanArea, const Radius.circular(12))),
+      ),
+      backgroundPaint,
+    );
+
+    // Draw corner brackets
+    final Paint cornerPaint = Paint()
+      ..color = Colors.greenAccent
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke;
+
+    const double cornerLength = 30;
+    
+    // Top-left corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left, top + cornerLength)
+        ..lineTo(left, top)
+        ..lineTo(left + cornerLength, top),
+      cornerPaint,
+    );
+
+    // Top-right corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left + scanAreaSize - cornerLength, top)
+        ..lineTo(left + scanAreaSize, top)
+        ..lineTo(left + scanAreaSize, top + cornerLength),
+      cornerPaint,
+    );
+
+    // Bottom-left corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left, top + scanAreaSize - cornerLength)
+        ..lineTo(left, top + scanAreaSize)
+        ..lineTo(left + cornerLength, top + scanAreaSize),
+      cornerPaint,
+    );
+
+    // Bottom-right corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left + scanAreaSize - cornerLength, top + scanAreaSize)
+        ..lineTo(left + scanAreaSize, top + scanAreaSize)
+        ..lineTo(left + scanAreaSize, top + scanAreaSize - cornerLength),
+      cornerPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

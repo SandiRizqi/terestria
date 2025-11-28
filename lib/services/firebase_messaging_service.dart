@@ -1,6 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'fcm_token_service.dart';
 
 // Background message handler - HARUS top-level function
 @pragma('vm:entry-point')
@@ -21,12 +22,16 @@ class FirebaseMessagingService {
 
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+  final FCMTokenService _fcmTokenService = FCMTokenService();
   
   String? _fcmToken;
+  String? _authToken;
+  
   String? get fcmToken => _fcmToken;
 
   // Initialize Firebase Messaging
-  Future<void> initialize() async {
+  Future<void> initialize({String? authToken}) async {
+    _authToken = authToken;
     try {
       // Request permission (penting untuk iOS, opsional untuk Android)
       NotificationSettings settings = await _firebaseMessaging.requestPermission(
@@ -38,6 +43,9 @@ class FirebaseMessagingService {
 
       print('🔔 Permission status: ${settings.authorizationStatus}');
 
+      // Initialize FCM Token Service
+      await _fcmTokenService.initialize();
+
       // Setup notification channel untuk Android
       await _setupNotificationChannel();
 
@@ -48,11 +56,19 @@ class FirebaseMessagingService {
       _fcmToken = await _firebaseMessaging.getToken();
       print('🔑 FCM Token: $_fcmToken');
 
+      // Register token to backend if auth token available
+      if (_fcmToken != null && _authToken != null) {
+        await _registerTokenToBackend(_fcmToken!, _authToken!);
+      }
+
       // Listen to token refresh
       _firebaseMessaging.onTokenRefresh.listen((newToken) {
         _fcmToken = newToken;
         print('🔄 Token refreshed: $newToken');
-        // TODO: Kirim token baru ke server Anda
+        // Register new token to backend
+        if (_authToken != null) {
+          _registerTokenToBackend(newToken, _authToken!);
+        }
       });
 
       // Handle foreground messages
@@ -91,7 +107,7 @@ class FirebaseMessagingService {
 
   // Initialize local notifications
   Future<void> _initializeLocalNotifications() async {
-    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@drawable/ic_stat_notification');
     
     const DarwinInitializationSettings iOSSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -192,5 +208,57 @@ class FirebaseMessagingService {
     await _firebaseMessaging.deleteToken();
     _fcmToken = null;
     print('🗑️ FCM token deleted');
+  }
+
+  // Register token to backend
+  Future<void> _registerTokenToBackend(String fcmToken, String authToken) async {
+    try {
+      final success = await _fcmTokenService.registerToken(fcmToken, authToken);
+      if (success) {
+        print('✅ Token registered to backend');
+      } else {
+        print('⚠️ Failed to register token to backend');
+      }
+    } catch (e) {
+      print('❌ Error registering token to backend: $e');
+    }
+  }
+
+  // Update auth token (call this after login)
+  Future<void> updateAuthToken(String authToken) async {
+    _authToken = authToken;
+    
+    // Register current FCM token to backend
+    if (_fcmToken != null) {
+      await _registerTokenToBackend(_fcmToken!, authToken);
+    } else {
+      // Get FCM token if not available
+      _fcmToken = await _firebaseMessaging.getToken();
+      if (_fcmToken != null) {
+        await _registerTokenToBackend(_fcmToken!, authToken);
+      }
+    }
+  }
+
+  // Deactivate token on logout
+  Future<void> deactivateToken(String authToken) async {
+    try {
+      await _fcmTokenService.deactivateToken(authToken);
+      _authToken = null;
+      print('✅ Token deactivated from backend');
+    } catch (e) {
+      print('❌ Error deactivating token: $e');
+    }
+  }
+
+  // Deactivate all tokens (global logout)
+  Future<void> deactivateAllTokens(String authToken) async {
+    try {
+      await _fcmTokenService.deactivateAllTokens(authToken);
+      _authToken = null;
+      print('✅ All tokens deactivated from backend');
+    } catch (e) {
+      print('❌ Error deactivating all tokens: $e');
+    }
   }
 }

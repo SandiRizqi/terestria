@@ -18,6 +18,7 @@ import '../../widgets/geo_data_list_item.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:convert';
 import 'dart:async';
+import '../../services/auth_service.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
@@ -47,6 +48,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   String _syncProgress = '';
   int _totalPhotosToProcess = 0;
   int _processedPhotos = 0;
+  String? _currentUsername;
 
   @override
   void initState() {
@@ -56,6 +58,48 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     _searchController.addListener(_filterGeoData);
     _initConnectivity();
     _scrollController.addListener(_onScroll);
+    _loadUsername();
+  }
+
+  Future<void> _loadUsername() async {
+    final authService = AuthService();
+    final user = await authService.getUser();
+    setState(() {
+      _currentUsername = user?.username;
+    });
+    //print('👤 Current logged in user: $_currentUsername');
+  }
+
+  bool _canEditProject() {
+    if (_currentUsername == null) return false;
+    return _currentProject.createdBy == _currentUsername;
+  }
+
+  bool _canEditGeoData(GeoData data) {
+    if (_currentUsername == null) {
+      //print('❌ Cannot edit - No username loaded');
+      return false;
+    }
+
+    // print(data);
+    
+    // Handle null collectedBy
+    if (data.collectedBy == null) {
+      //print('⚠️ Data has no collectedBy field - ID: ${data.id}');
+      return false;
+    }
+    
+    // Normalize untuk perbandingan (case-insensitive dan trim spaces)
+    final normalizedDataUser = data.collectedBy!.trim().toLowerCase();
+    final normalizedCurrentUser = _currentUsername!.trim().toLowerCase();
+    
+    final canEdit = normalizedDataUser == normalizedCurrentUser;
+    //print('🔍 Permission check:');
+    //print('   Data by: "${data.collectedBy}" (normalized: "$normalizedDataUser")');
+    //print('   Current user: "$_currentUsername" (normalized: "$normalizedCurrentUser")');
+    //print('   Can edit: $canEdit');
+    
+    return canEdit;
   }
 
   void _initConnectivity() {
@@ -119,11 +163,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     setState(() => _isLoading = true);
     try {
       final data = await _storageService.loadGeoData(_currentProject.id);
+    
+      
+      // Check if any data has null collectedBy (old data)
+      //final dataWithoutCollector = data.where((d) => d.collectedBy == null).length;
+      
       setState(() {
         _geoDataList = data;
         _filteredGeoDataList = data;
         _isLoading = false;
       });
+      
+      
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
@@ -149,30 +200,40 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         '${ApiConfig.syncDataEndpoint}by-project/?project_id=${_currentProject.id}',
       );
 
+      //print('Project ID:  ${_currentProject.id}');
+
       int newGeoDataCount = 0;
       int updatedGeoDataCount = 0;
-
+     
       if (_apiService.isSuccess(geoDataResponse)) {
         final geoDataList = jsonDecode(geoDataResponse.body);
-        
+        //print(geoDataList);
+
+        final dataList = geoDataList['data']; 
+        //print(dataList);
         // Load existing geodata
         final existingGeoData = await _storageService.loadGeoData(_currentProject.id);
         final existingGeoDataMap = {for (var g in existingGeoData) g.id: g};
 
+
         // Process geodata dari server
-        if (geoDataList is List && geoDataList.isNotEmpty) {
+        if (dataList is List && dataList.isNotEmpty) {
           setState(() {
-            _syncProgress = 'Processing ${geoDataList.length} records...';
+            _syncProgress = 'Processing ${dataList.length} records...';
           });
 
-          for (var i = 0; i < geoDataList.length; i++) {
+          for (var i = 0; i < dataList.length; i++) {
             try {
-              final geoDataJson = geoDataList[i];
+              final geoDataJson = dataList[i];
               setState(() {
-                _syncProgress = 'Processing record ${i + 1}/${geoDataList.length}...';
+                _syncProgress = 'Processing record ${i + 1}/${dataList.length}...';
               });
 
+              // Debug: print raw JSON
+              //print('🔍 Raw JSON from server: ${jsonEncode(geoDataJson)}');
+              
               final serverGeoData = GeoData.fromJson(geoDataJson);
+              //print('📥 Server data - ID: ${serverGeoData.id}, collectedBy: ${serverGeoData.collectedBy}');
               final existingGeoData = existingGeoDataMap[serverGeoData.id];
 
               if (existingGeoData == null) {
@@ -187,7 +248,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   _currentProject,
                 );
                 
-                final updatedGeoData = serverGeoData.copyWith(formData: processedFormData);
+                // Buat GeoData baru dengan formData yang sudah diproses
+                final updatedGeoData = GeoData(
+                  id: serverGeoData.id,
+                  projectId: serverGeoData.projectId,
+                  points: serverGeoData.points,
+                  formData: processedFormData,
+                  createdAt: serverGeoData.createdAt,
+                  updatedAt: serverGeoData.updatedAt,
+                  isSynced: serverGeoData.isSynced,
+                  syncedAt: serverGeoData.syncedAt,
+                  collectedBy: serverGeoData.collectedBy,
+                );
+                
                 await _storageService.saveGeoData(updatedGeoData);
                 newGeoDataCount++;
               } else if (serverGeoData.updatedAt.isAfter(existingGeoData.updatedAt)) {
@@ -202,7 +275,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   _currentProject,
                 );
                 
-                final updatedGeoData = serverGeoData.copyWith(formData: processedFormData);
+                // Buat GeoData baru dengan formData yang sudah diproses
+                final updatedGeoData = GeoData(
+                  id: serverGeoData.id,
+                  projectId: serverGeoData.projectId,
+                  points: serverGeoData.points,
+                  formData: processedFormData,
+                  createdAt: serverGeoData.createdAt,
+                  updatedAt: serverGeoData.updatedAt,
+                  isSynced: serverGeoData.isSynced,
+                  syncedAt: serverGeoData.syncedAt,
+                  collectedBy: serverGeoData.collectedBy,
+                );
+                
                 await _storageService.saveGeoData(updatedGeoData);
                 updatedGeoDataCount++;
               }
@@ -213,10 +298,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         }
       }
 
-      // Reload local data
-      await _loadGeoData();
-
-      // Show notification jika ada data baru
+      // Show notification jika ada data baru - tapi JANGAN reload di sini dulu
       if (mounted && (newGeoDataCount > 0 || updatedGeoDataCount > 0)) {
         String message = '';
         if (newGeoDataCount > 0) {
@@ -259,6 +341,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         );
       }
     } finally {
+      // PENTING: Reload data di finally block SEBELUM mengubah _isSyncing
+      // Beri waktu untuk memastikan file sudah tersimpan ke disk
+      await Future.delayed(const Duration(milliseconds: 150));
+      await _loadGeoData();
+      
       if (mounted) {
         setState(() {
           _isSyncing = false;
@@ -268,22 +355,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
-  Future<void> _editProject() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CreateProjectScreen(project: _currentProject),
-      ),
-    );
-
-    if (result == true) {
-      final projects = await _storageService.loadProjects();
-      final updatedProject = projects.firstWhere((p) => p.id == _currentProject.id);
-      setState(() {
-        _currentProject = updatedProject;
-      });
-    }
-  }
 
   /// Convert GeoData to GeoJSON Feature Collection
   Map<String, dynamic> _exportAsGeoJSON() {
@@ -944,6 +1015,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _deleteGeoData(GeoData data) async {
+    // Validasi akses delete
+    if (!_canEditGeoData(data)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.lock, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('You can only delete data you collected'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -983,6 +1073,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _editGeoData(GeoData data) async {
+    // Validasi akses edit
+    if (!_canEditGeoData(data)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.lock, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('You can only edit data you collected'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -1050,13 +1159,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             onPressed: _exportData,
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            elevation: 8,
-            offset: const Offset(0, 50),
-            itemBuilder: (context) => [
+          icon: const Icon(Icons.more_vert),
+          shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 8,
+          offset: const Offset(0, 50),
+          itemBuilder: (context) => [
+          // Edit Project - hanya tampil jika user adalah creator
+              
+              //if (_canEditProject())
+              const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'pull_from_server',
                 child: Row(
@@ -1141,6 +1254,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ],
                 ),
               ),
+              
               const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'info',
@@ -1262,12 +1376,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               itemCount: _filteredGeoDataList.length,
                               itemBuilder: (context, index) {
                                 final data = _filteredGeoDataList[index];
+                                final canEdit = _canEditGeoData(data);
                                 return GeoDataListItem(
                                   geoData: data,
                                   geometryType: _currentProject.geometryType,
                                   project: _currentProject,
-                                  onDelete: () => _deleteGeoData(data),
-                                  onEdit: () => _editGeoData(data),
+                                  onDelete: canEdit ? () => _deleteGeoData(data) : null,
+                                  onEdit: canEdit ? () => _editGeoData(data) : null,
                                   onTap: () => _showDataDetail(data),
                                 );
                               },
@@ -1508,7 +1623,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
     // Reload data jika ada perubahan (data baru ditambahkan)
     if (result == true) {
-      print('Data collection result: true, reloading data...');
+      //print('Data collection result: true, reloading data...');
       await _loadGeoData();
       
       // Scroll ke atas untuk melihat data terbaru
@@ -1525,54 +1640,469 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void _showProjectInfo() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_currentProject.name),
-        content: SingleChildScrollView(
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Description',
-                style: Theme.of(context).textTheme.titleSmall,
+              // Header with gradient
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: AppTheme.primaryGradient,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _getGeometryIconForType(),
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Project Info',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _currentProject.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 4),
-              Text(_currentProject.description),
-              const SizedBox(height: 16),
-              Text(
-                'Geometry Type',
-                style: Theme.of(context).textTheme.titleSmall,
+              
+              // Content
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Description Section
+                      _buildInfoSection(
+                        icon: Icons.description_outlined,
+                        iconColor: Colors.blue,
+                        title: 'Description',
+                        child: Text(
+                          _currentProject.description.isNotEmpty 
+                              ? _currentProject.description 
+                              : 'No description provided',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: _currentProject.description.isNotEmpty 
+                                ? const Color(0xFF374151) 
+                                : Colors.grey[500],
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      // Geometry Type Section
+                      _buildInfoSection(
+                        icon: _getGeometryIconForType(),
+                        iconColor: _getGeoColor(_currentProject.geometryType.toString().split('.').last.toUpperCase()),
+                        title: 'Geometry Type',
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _getGeoColor(_currentProject.geometryType.toString().split('.').last.toUpperCase()).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _getGeoColor(_currentProject.geometryType.toString().split('.').last.toUpperCase()).withOpacity(0.3),
+                            ),
+                          ),
+                          child: Text(
+                            _currentProject.geometryType.toString().split('.').last.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: _getGeoColor(_currentProject.geometryType.toString().split('.').last.toUpperCase()),
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      // Creator Section (if available)
+                      if (_currentProject.createdBy != null) ...[
+                        _buildInfoSection(
+                          icon: Icons.person_outline,
+                          iconColor: Colors.purple,
+                          title: 'Created By',
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.person,
+                                  size: 16,
+                                  color: Colors.purple[700],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                _currentProject.createdBy!,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF374151),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      
+                      // Form Fields Section
+                      _buildInfoSection(
+                        icon: Icons.view_list_outlined,
+                        iconColor: Colors.orange,
+                        title: 'Form Fields',
+                        subtitle: '${_currentProject.formFields.length} field${_currentProject.formFields.length > 1 ? "s" : ""}',
+                        child: _currentProject.formFields.isEmpty
+                            ? Text(
+                                'No form fields defined',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[500],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              )
+                            : Column(
+                                children: _currentProject.formFields.map((field) {
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[50],
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: Colors.grey[200]!),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          _getFieldIcon(field.type),
+                                          size: 18,
+                                          color: Colors.orange[700],
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                field.label,
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF374151),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                _getFieldTypeName(field.type),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (field.required)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red[50],
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              'Required',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.red[700],
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      // Metadata Section
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.grey[100]!,
+                              Colors.grey[50]!,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          children: [
+                            _buildMetadataRow(
+                              icon: Icons.calendar_today_outlined,
+                              label: 'Created',
+                              value: _formatDate(_currentProject.createdAt),
+                              iconColor: Colors.green,
+                            ),
+                            if (_currentProject.updatedAt != _currentProject.createdAt) ...[
+                              const SizedBox(height: 12),
+                              _buildMetadataRow(
+                                icon: Icons.update_outlined,
+                                label: 'Updated',
+                                value: _formatDate(_currentProject.updatedAt),
+                                iconColor: Colors.blue,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            _buildMetadataRow(
+                              icon: Icons.fingerprint_outlined,
+                              label: 'Project ID',
+                              value: _currentProject.id.substring(0, 8) + '...',
+                              iconColor: Colors.grey,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 4),
-              Text(_currentProject.geometryType.toString().split('.').last.toUpperCase()),
-              const SizedBox(height: 16),
-              Text(
-                'Form Fields',
-                style: Theme.of(context).textTheme.titleSmall,
+              
+              // Footer Actions
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  border: Border(
+                    top: BorderSide(color: Colors.grey[200]!),
+                  ),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              ..._currentProject.formFields.map((field) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text('• ${field.label} (${field.type.toString().split('.').last})'),
-                  )),
-              const SizedBox(height: 16),
-              Text(
-                'Created',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 4),
-              Text(_formatDate(_currentProject.createdAt)),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
+  }
+  
+  Widget _buildInfoSection({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    String? subtitle,
+    required Widget child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                size: 18,
+                color: iconColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6B7280),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
+    );
+  }
+  
+  Widget _buildMetadataRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color iconColor,
+  }) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: iconColor,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$label:',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF374151),
+            ),
+            textAlign: TextAlign.right,
+          ),
+        ),
+      ],
+    );
+  }
+  
+  IconData _getFieldIcon(FieldType type) {
+    switch (type) {
+      case FieldType.text:
+        return Icons.text_fields;
+      case FieldType.number:
+        return Icons.pin_outlined;
+      case FieldType.date:
+        return Icons.calendar_today;
+      case FieldType.checkbox:
+        return Icons.check_box_outlined;
+      case FieldType.dropdown:
+        return Icons.arrow_drop_down_circle_outlined;
+      case FieldType.photo:
+        return Icons.photo_camera_outlined;
+      default:
+        return Icons.help_outline;
+    }
+  }
+  
+  String _getFieldTypeName(FieldType type) {
+    switch (type) {
+      case FieldType.text:
+        return 'Text Input';
+      case FieldType.number:
+        return 'Number Input';
+      case FieldType.date:
+        return 'Date Picker';
+      case FieldType.checkbox:
+        return 'Checkbox';
+      case FieldType.dropdown:
+        return 'Dropdown';
+      case FieldType.photo:
+        return 'Photo Upload';
+      default:
+        return type.toString().split('.').last;
+    }
   }
 
   void _showDataDetail(GeoData data) {
@@ -1649,57 +2179,36 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     children: [
                       // Photo Section
                       ...data.formData.entries.where((entry) => _isPhotoField(entry.key) && !_isOssField(entry.key)).map((entry) {
-                        // Handle both List and String types - hanya ambil local paths
+                        // Handle PhotoMetadata format
                         List<String> photoPaths = [];
-                        
-                        // Helper function to check if a path is local
-                        bool isLocalPath(String path) {
-                          final lowerPath = path.toLowerCase();
-                          // Check if it's NOT a URL or OSS key
-                          return !lowerPath.startsWith('http://') && 
-                                 !lowerPath.startsWith('https://') &&
-                                 !lowerPath.contains('aliyuncs.com') &&
-                                 !lowerPath.startsWith('oss-') &&
-                                 // Tambahan: pastikan path seperti file system path
-                                 (lowerPath.contains('/') || lowerPath.contains('\\'));
-                        }
                         
                         if (entry.value is List) {
                           final list = entry.value as List;
                           
                           for (var item in list) {
-                            // Handle if item is a Map (e.g., {local_path: ..., oss_url: ..., oss_key: ...})
+                            // Handle PhotoMetadata format
                             if (item is Map) {
-                              // Try to get local_path or localPath key
-                              final localPath = item['local_path'] ?? item['localPath'] ?? item['path'];
+                              final localPath = item['localPath'];
                               if (localPath != null && localPath.toString().isNotEmpty) {
                                 final pathStr = localPath.toString();
-                                if (isLocalPath(pathStr)) {
+                                final file = File(pathStr);
+                                if (file.existsSync()) {
                                   photoPaths.add(pathStr);
                                 }
                               }
                             }
-                            // Handle if item is a String
+                            // Handle old string format (backward compatibility)
                             else if (item is String && item.isNotEmpty) {
-                              if (isLocalPath(item)) {
+                              final file = File(item);
+                              if (file.existsSync()) {
                                 photoPaths.add(item);
                               }
                             }
                           }
-                        } else if (entry.value is Map) {
-                          final map = entry.value as Map;
-                          // Try to get local_path or localPath key
-                          final localPath = map['local_path'] ?? map['localPath'] ?? map['path'];
-                          if (localPath != null && localPath.toString().isNotEmpty) {
-                            final pathStr = localPath.toString();
-                            if (isLocalPath(pathStr)) {
-                              photoPaths = [pathStr];
-                            }
-                          }
                         } else if (entry.value is String && entry.value.toString().isNotEmpty) {
                           final path = entry.value.toString();
-                          
-                          if (isLocalPath(path)) {
+                          final file = File(path);
+                          if (file.existsSync()) {
                             photoPaths = [path];
                           }
                         }

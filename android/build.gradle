@@ -3,12 +3,14 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        // maven { url "https://chaquo.com/maven" }  // Chaquopy - Not used anymore
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.1.0'
+        classpath 'com.android.tools.build:gradle:8.6.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         classpath "com.google.gms:google-services:4.4.0"
+        // classpath 'com.chaquo.python:gradle:15.0.1'  // Chaquopy - Not used anymore
     }
 
     
@@ -18,6 +20,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // maven { url "https://chaquo.com/maven" }  // Chaquopy - Not used anymore
     }
 }
 

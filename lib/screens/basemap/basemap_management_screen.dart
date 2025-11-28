@@ -4,14 +4,17 @@ import 'package:uuid/uuid.dart';
 import '../../models/basemap_model.dart';
 import '../../services/basemap_service.dart';
 import '../../services/pdf/pdf_basemap_service.dart';
-import '../../services/pdf/tile_generator.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../widgets/basemap/basemap_list_item.dart';
 import '../../widgets/basemap/add_basemap_type_dialog.dart';
 import '../../widgets/basemap/tms_basemap_dialog.dart';
-import '../../widgets/basemap/pdf_zoom_settings_dialog.dart';
 import 'cache_management_screen.dart';
+import '../../services/geopdf_service.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import '../../services/settings_service.dart';
 
 class BasemapManagementScreen extends StatefulWidget {
   const BasemapManagementScreen({Key? key}) : super(key: key);
@@ -24,6 +27,7 @@ class BasemapManagementScreen extends StatefulWidget {
 class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
   final BasemapService _basemapService = BasemapService();
   final PdfBasemapService _pdfService = PdfBasemapService();
+  final SettingsService _settingsService = SettingsService();
   final _uuid = const Uuid();
   
   List<Basemap> _basemaps = [];
@@ -101,6 +105,12 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
 
   Future<void> _addPdfBasemap() async {
     try {
+      // Check if iOS and show warning
+      if (Platform.isIOS) {
+        final proceed = await _showIosWarning();
+        if (proceed != true) return;
+      }
+
       // Pick PDF file
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -116,15 +126,16 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       }
 
       // Show loading
-      _showLoadingDialog('Validating PDF...');
+      _showLoadingDialog('Analyzing GeoPDF file...');
 
-      // Validate PDF
-      final validation = await _pdfService.validatePdf(filePath);
+      // Initialize GeoPDF service and extract metadata
+      //await GeoPdfService.initialize();
+      final metadata = await GeoPdfService.extractMetadata(filePath);
       
       if (mounted) Navigator.pop(context);
 
-      if (!validation.isValid) {
-        _showError(validation.error ?? 'Invalid PDF file');
+      if (metadata['success'] != true) {
+        _showError('Failed to read PDF: ${metadata['message']}');
         return;
       }
 
@@ -132,16 +143,8 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       final name = await _showNameDialog();
       if (name == null || name.isEmpty) return;
 
-      // Ask for zoom settings
-      TileGeneratorConfig? config;
-      if (mounted) {
-        config = await showDialog<TileGeneratorConfig>(
-          context: context,
-          builder: (context) => const PdfZoomSettingsDialog(),
-        );
-        
-        if (config == null) return;
-      }
+      // REMOVED: Dialog zoom settings (tidak perlu lagi untuk overlay mode)
+      // Langsung gunakan kualitas tinggi tanpa input user
 
       // Generate unique ID
       final basemapId = _uuid.v4();
@@ -155,7 +158,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         pdfPath: filePath,
         pdfStatus: PdfProcessingStatus.processing,
         processingProgress: 0.0,
-        processingMessage: 'Starting...',
+        processingMessage: 'Initializing Python processor...',
         createdAt: DateTime.now(),
       );
 
@@ -172,10 +175,11 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         );
       }
 
-      // Start tile generation in background with config
-      _processPdfBasemap(basemapId, filePath, config!);
+      // Start overlay processing with ORIGINAL quality (FAST!)
+      _processPdfBasemapWithOverlay(basemapId, filePath);
 
     } catch (e) {
+      debugPrint('❌ Error adding PDF basemap: $e');
       if (mounted) {
         Navigator.of(context).popUntil((route) => route.isFirst);
         _showError('Error: ${e.toString()}');
@@ -183,68 +187,233 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
     }
   }
 
-  Future<void> _processPdfBasemap(
-    String basemapId, 
+  // FIX: iOS-compatible path handling
+  Future<String> _getBasemapOutputDir(String basemapId) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    
+    // iOS: Langsung di Documents directory (sandbox-safe)
+    // Android: Tetap bisa gunakan Documents
+    final outputDir = Directory('${appDir.path}/basemaps/$basemapId');
+    
+    // Ensure directory exists
+    if (!await outputDir.exists()) {
+      await outputDir.create(recursive: true);
+    }
+    
+    debugPrint('📂 Basemap output dir: ${outputDir.path}');
+    return outputDir.path;
+  }
+
+  Future<bool?> _showIosWarning() async {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: AppTheme.primaryColor),
+            SizedBox(width: 12),
+            Text('iOS Notice'),
+          ],
+        ),
+        content: Text(
+          'GeoPDF processing on iOS may use adjusted resolution (max 200 DPI) to prevent memory issues. '
+          'Current setting: ${_settingsService.settings.pdfDpi} DPI. '
+          'You can change this in Settings > PDF Basemap Settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // GeoPDF processing with OVERLAY mode using ORIGINAL quality (FAST!)
+  Future<void> _processPdfBasemapWithOverlay(
+    String basemapId,
     String pdfPath,
-    TileGeneratorConfig config,
   ) async {
     try {
-      // Extract georeferencing first to get bounds
-      final georef = await _pdfService.extractGeoreferencing(pdfPath);
+      // FIX: Use iOS-compatible path
+      final outputDir = await _getBasemapOutputDir(basemapId);
       
-      await _pdfService.generateTilesFromPdf(
+      // Update status
+      var basemap = (await _basemapService.getBasemaps())
+          .firstWhere((b) => b.id == basemapId);
+      
+      if (mounted) {
+        await _basemapService.saveBasemap(
+          basemap.copyWith(
+            processingProgress: 0.1,
+            processingMessage: 'Extracting geographic coordinates...',
+          ),
+        );
+      }
+
+      // Extract coordinates using Python
+      final coords = await GeoPdfService.extractCoordinates(pdfPath);
+      
+      if (coords['success'] != true) {
+        throw Exception('Failed to extract coordinates: ${coords['message']}');
+      }
+
+      final bounds = coords['bounds'];
+      
+      // FIX: GeoPDF service returns coordinates, but we need to verify which is lat/lon
+      // Check if values are in valid range: lat (-90 to 90), lon (-180 to 180)
+      var minLat = bounds['min_lat']?.toDouble() ?? -6.3;
+      var minLon = bounds['min_lon']?.toDouble() ?? 106.7;
+      var maxLat = bounds['max_lat']?.toDouble() ?? -6.1;
+      var maxLon = bounds['max_lon']?.toDouble() ?? 106.9;
+      
+      // DETECT if coordinates are swapped (lat > 90 means it's actually lon)
+      if (minLat.abs() > 90 || maxLat.abs() > 90) {
+        debugPrint('⚠️ DETECTED SWAPPED COORDINATES! Fixing...');
+        debugPrint('   Before swap - minLat: $minLat, minLon: $minLon, maxLat: $maxLat, maxLon: $maxLon');
+        
+        // Swap lat and lon
+        final tempMinLat = minLat;
+        final tempMaxLat = maxLat;
+        minLat = minLon;
+        maxLat = maxLon;
+        minLon = tempMinLat;
+        maxLon = tempMaxLat;
+        
+        debugPrint('   After swap - minLat: $minLat, minLon: $minLon, maxLat: $maxLat, maxLon: $maxLon');
+      }
+
+      // Update with coordinates
+      if (mounted) {
+        basemap = (await _basemapService.getBasemaps())
+            .firstWhere((b) => b.id == basemapId);
+        
+        debugPrint('🗺️ Extracted bounds from PDF:');
+        debugPrint('   minLat: $minLat, minLon: $minLon');
+        debugPrint('   maxLat: $maxLat, maxLon: $maxLon');
+        debugPrint('   centerLat: ${(minLat + maxLat) / 2}, centerLon: ${(minLon + maxLon) / 2}');
+        
+        await _basemapService.saveBasemap(
+          basemap.copyWith(
+            processingProgress: 0.3,
+            processingMessage: 'Converting PDF to overlay image...',
+            pdfMinLat: minLat,
+            pdfMinLon: minLon,
+            pdfMaxLat: maxLat,
+            pdfMaxLon: maxLon,
+            pdfCenterLat: (minLat + maxLat) / 2,
+            pdfCenterLon: (minLon + maxLon) / 2,
+          ),
+        );
+      }
+
+      // FIX: iOS-optimized DPI settings with user preference
+      await _settingsService.initialize();
+      final userDpi = _settingsService.settings.pdfDpi;
+      final dpi = Platform.isIOS 
+          ? (userDpi > 200 ? 200 : userDpi) // iOS: cap at 200 DPI
+          : userDpi; // Android: use user setting
+      
+      debugPrint('🔧 Processing with DPI: $dpi (iOS: ${Platform.isIOS})');
+
+      // Process GeoPDF as overlay image with MOBILE-OPTIMIZED quality (MUCH FASTER!)
+      final result = await GeoPdfService.processGeoPdfAsOverlay(
         pdfPath: pdfPath,
-        basemapId: basemapId,
-        config: config,
-        onProgress: (progress, status) async {
-          final basemaps = await _basemapService.getBasemaps();
-          final basemap = basemaps.firstWhere((b) => b.id == basemapId);
+        outputDir: outputDir,
+        dpi: dpi,  // Explicit DPI untuk iOS
+        onProgress: (status) async {
+          if (!mounted) return;
           
-          final updated = basemap.copyWith(
-            processingProgress: progress,
-            processingMessage: status,
-            pdfStatus: progress < 0 
-                ? PdfProcessingStatus.failed
-                : progress >= 1.0 
-                    ? PdfProcessingStatus.completed 
-                    : PdfProcessingStatus.processing,
-          );
+          // Update progress
+          double progress = 0.3;
+          if (status.contains('metadata')) progress = 0.4;
+          else if (status.contains('coordinates')) progress = 0.5;
+          else if (status.contains('overlay')) progress = 0.7;
+          else if (status.contains('complete')) progress = 1.0;
 
-          if (progress >= 1.0) {
-            // Store SQLite reference and georeferencing bounds
-            final completed = updated.copyWith(
-              urlTemplate: 'sqlite://$basemapId/{z}/{x}/{y}',
-              minZoom: config.minZoom ?? georef?.calculateOptimalZoomLevels()['minZoom'],
-              maxZoom: config.maxZoom ?? georef?.calculateOptimalZoomLevels()['maxZoom'],
-              pdfMinLat: georef?.minLat,
-              pdfMinLon: georef?.minLon,
-              pdfMaxLat: georef?.maxLat,
-              pdfMaxLon: georef?.maxLon,
-              pdfCenterLat: georef?.centerLat,
-              pdfCenterLon: georef?.centerLon,
-            );
-            await _basemapService.saveBasemap(completed);
-          } else {
-            await _basemapService.saveBasemap(updated);
+          try {
+            final currentBasemap = (await _basemapService.getBasemaps())
+                .firstWhere((b) => b.id == basemapId);
+            
+            if (mounted) {
+              await _basemapService.saveBasemap(
+                currentBasemap.copyWith(
+                  processingProgress: progress,
+                  processingMessage: status,
+                ),
+              );
+            }
+          } catch (e) {
+            debugPrint('⚠️ Progress update error: $e');
           }
-
-          // No need to call _loadBasemaps here, auto-refresh will handle it
         },
       );
+
+      if (result['success'] != true) {
+        throw Exception('Overlay generation failed: ${result['message']}');
+      }
+
+      // FIX: Validate overlay path exists
+      final overlayPath = result['overlay_image'] as String?;
+      if (overlayPath == null || !await File(overlayPath).exists()) {
+        throw Exception('Overlay image not found at: $overlayPath');
+      }
+
+      debugPrint('✅ Overlay image created: $overlayPath');
+      
+      // Mark as completed with overlay mode
+      if (mounted) {
+        basemap = (await _basemapService.getBasemaps())
+            .firstWhere((b) => b.id == basemapId);
+        
+        final imageSizeMB = result['image_size_mb']?.toStringAsFixed(2) ?? '0';
+        final imageWidth = result['image_width'] ?? 0;
+        final imageHeight = result['image_height'] ?? 0;
+        final dpiUsed = dpi.toString();
+        
+        final completed = basemap.copyWith(
+          urlTemplate: 'overlay://$basemapId',  // Special URL for overlay mode
+          pdfOverlayImagePath: overlayPath,
+          useOverlayMode: true,
+          minZoom: 10,
+          maxZoom: 22,
+          pdfStatus: PdfProcessingStatus.completed,
+          processingProgress: 1.0,
+          processingMessage: '✅ Ready! (${imageWidth}x${imageHeight}, ${imageSizeMB} MB @ $dpiUsed DPI)'
+        );
+
+        await _basemapService.saveBasemap(completed);
+      }
+
     } catch (e) {
-      final basemaps = await _basemapService.getBasemaps();
-      final basemap = basemaps.firstWhere((b) => b.id == basemapId);
+      debugPrint('❌ Processing error: $e');
       
-      final failed = basemap.copyWith(
-        pdfStatus: PdfProcessingStatus.failed,
-        processingProgress: -1.0,
-        processingMessage: 'Error: ${e.toString()}',
-      );
-      
-      await _basemapService.saveBasemap(failed);
-      // No need to call _loadBasemaps here, auto-refresh will handle it
+      // Mark as failed
+      try {
+        final basemap = (await _basemapService.getBasemaps())
+            .firstWhere((b) => b.id == basemapId);
+        
+        if (mounted) {
+          final failed = basemap.copyWith(
+            pdfStatus: PdfProcessingStatus.failed,
+            processingProgress: -1.0,
+            processingMessage: '❌ Error: ${e.toString()}',
+          );
+          
+          await _basemapService.saveBasemap(failed);
+        }
+      } catch (saveError) {
+        debugPrint('❌ Failed to save error state: $saveError');
+      }
     }
   }
+
+
 
   Future<void> _editBasemap(Basemap basemap) async {
     final updated = await showDialog<Basemap>(

@@ -73,7 +73,7 @@ class AppTheme {
     ),
     
     // Card Theme - Elevated modern cards
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: elevationMedium,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadiusMedium),
@@ -167,7 +167,7 @@ class AppTheme {
     ),
     
     // Dialog Theme
-    dialogTheme: DialogTheme(
+    dialogTheme: DialogThemeData(
       elevation: elevationHigh,
       backgroundColor: cardBackground,
       shape: RoundedRectangleBorder(
@@ -251,7 +251,7 @@ class AppTheme {
       foregroundColor: textLight,
     ),
     
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: elevationMedium,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadiusMedium),

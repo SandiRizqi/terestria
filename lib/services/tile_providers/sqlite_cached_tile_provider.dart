@@ -73,7 +73,8 @@ class SqliteCachedTileImage extends ImageProvider<SqliteCachedTileImage> {
     
     try {
       // 1. PRIORITAS UTAMA: Coba load dari cache DULU - SUPER CEPAT!
-      print('🔍 Loading tile z=$z, x=$x, y=$y for basemap=$basemapId');
+      // Reduce log spam - only log occasionally
+      // print('🔍 Loading tile z=$z, x=$x, y=$y for basemap=$basemapId');
       
       final cachedTile = await cacheService.getTile(
         basemapId: basemapId,
@@ -84,14 +85,27 @@ class SqliteCachedTileImage extends ImageProvider<SqliteCachedTileImage> {
 
       if (cachedTile != null) {
         // ✅ Cache hit! Langsung return tanpa download
-        print('✅ CACHE HIT! Tile z=$z, x=$x, y=$y loaded from cache (${cachedTile.length} bytes)');
+        // print('✅ CACHE HIT! Tile z=$z, x=$x, y=$y loaded from cache (${cachedTile.length} bytes)');
         final buffer = await ui.ImmutableBuffer.fromUint8List(cachedTile);
         return decode(buffer);
       }
 
+      // Check if this is a PDF basemap (URL is empty, starts with sqlite:// or overlay://)
+      final isPdfBasemap = url.isEmpty || url.startsWith('sqlite://') || url.startsWith('overlay://');
+      
+      if (isPdfBasemap) {
+        // PDF basemap: tiles should be in SQLite OR use overlay mode
+        // If overlay mode (overlay://), this provider shouldn't be used at all
+        // Only log once per zoom level to avoid spam
+        if (z >= 16) { // Log only for high zoom levels (likely out of bounds)
+          print('⚠️ PDF basemap tile z=$z, x=$x, y=$y not in cache (zoom level may be too high)');
+        }
+        return _createPlaceholderTile(decode);
+      }
+
       print('⚠️ CACHE MISS! Tile z=$z, x=$x, y=$y not in cache, attempting download...');
 
-      // 2. Jika tidak ada di cache, coba download (dengan error handling)
+      // 2. TMS basemap: Download from URL if not in cache
       try {
         final client = httpClient ?? http.Client();
         final response = await client.get(

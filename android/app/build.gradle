@@ -5,29 +5,49 @@ plugins {
     // END: FlutterFire Configuration
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
-
+    // id 'com.chaquo.python'  // Chaquopy - Not used anymore
 }
 
 android {
     namespace = "com.example.geoform_app"
-    compileSdk = 35
-    ndkVersion = "25.1.8937393"
+    compileSdk = 36
+    ndkVersion = "26.1.10909125"
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
 
     defaultConfig {
         applicationId = "com.example.geoform_app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // Version akan otomatis diambil dari pubspec.yaml oleh Flutter
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        
+        ndk {
+            abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
+        }
+        
+        // python {
+        //     version "3.8"
+        //     
+        //     pip {
+        //         // Python packages yang akan diinstall
+        //         install "numpy==1.19.5"
+        //         install "pillow==9.2.0"
+        //         //install "PyMuPDF==1.18.19"  // For reading GeoPDF metadata
+        //         install "pdf2image==1.16.0"  // For PDF to image conversion
+        //         // GDAL tidak tersedia di Chaquopy PyPI
+        //         // Alternatif: rasterio (lebih ringan)
+        //     }
+        // }  // Chaquopy - Not used anymore
     }
 
     buildTypes {
@@ -35,9 +55,23 @@ android {
             signingConfig = signingConfigs.debug
         }
     }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def buildType = variant.buildType.name
+            def versionName = variant.versionName
+            
+            if (buildType == 'release') {
+                outputFileName = "Terestria-v${versionName}-release.apk"
+            } else {
+                outputFileName = "Terestria-v${versionName}-debug.apk"
+            }
+        }
+    }
 }
 
 dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
     implementation platform('com.google.firebase:firebase-bom:34.4.0')
     implementation 'com.google.firebase:firebase-analytics'
 }

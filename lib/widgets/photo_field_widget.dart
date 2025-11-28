@@ -2,14 +2,69 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
+/// Photo metadata for form data
+class PhotoData {
+  final String name;
+  final String localPath;
+  final String? serverUrl;
+  final String? serverKey; // OSS key for stable reference
+  final DateTime created;
+  final DateTime updated;
+
+  PhotoData({
+    required this.name,
+    required this.localPath,
+    this.serverUrl,
+    this.serverKey,
+    required this.created,
+    required this.updated,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'localPath': localPath,
+      'serverUrl': serverUrl,
+      'serverKey': serverKey,
+      'created': created.toIso8601String(),
+      'updated': updated.toIso8601String(),
+    };
+  }
+
+  factory PhotoData.fromJson(Map<String, dynamic> json) {
+    return PhotoData(
+      name: json['name'],
+      localPath: json['localPath'],
+      serverUrl: json['serverUrl'],
+      serverKey: json['serverKey'],
+      created: DateTime.parse(json['created']),
+      updated: DateTime.parse(json['updated']),
+    );
+  }
+
+  // For backward compatibility: create from string path
+  factory PhotoData.fromPath(String path) {
+    final file = File(path);
+    final filename = file.path.split('/').last;
+    return PhotoData(
+      name: filename,
+      localPath: path,
+      serverUrl: null,
+      serverKey: null,
+      created: DateTime.now(),
+      updated: DateTime.now(),
+    );
+  }
+}
+
 class PhotoFieldWidget extends StatefulWidget {
   final String label;
   final bool required;
   final int minPhotos;
   final int maxPhotos;
-  final List<String>? initialPhotos;
+  final dynamic initialPhotos; // Can be List<String> or List<Map>
   final String? errorText;
-  final Function(List<String>) onChanged;
+  final Function(List<Map<String, dynamic>>) onChanged; // Now returns PhotoData as JSON
 
   const PhotoFieldWidget({
     Key? key,
@@ -31,18 +86,38 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
   bool get wantKeepAlive => true;
   
   final ImagePicker _picker = ImagePicker();
-  List<String> _photoPaths = [];
+  List<PhotoData> _photos = [];
 
   @override
   void initState() {
     super.initState();
+    _initializePhotos();
+  }
+
+  void _initializePhotos() {
     if (widget.initialPhotos != null) {
-      _photoPaths = List.from(widget.initialPhotos!);
+      if (widget.initialPhotos is List) {
+        final list = widget.initialPhotos as List;
+        _photos = [];
+        for (var item in list) {
+          if (item is Map) {
+            // PhotoData format
+            try {
+              _photos.add(PhotoData.fromJson(Map<String, dynamic>.from(item)));
+            } catch (e) {
+              print('Error parsing PhotoData: $e');
+            }
+          } else if (item is String && item.isNotEmpty) {
+            // Old string format - convert to PhotoData
+            _photos.add(PhotoData.fromPath(item));
+          }
+        }
+      }
     }
   }
 
   Future<void> _takePhoto() async {
-    if (_photoPaths.length >= widget.maxPhotos) {
+    if (_photos.length >= widget.maxPhotos) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Maximum ${widget.maxPhotos} photo(s) allowed')),
       );
@@ -58,10 +133,11 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
       );
 
       if (photo != null) {
+        final photoData = PhotoData.fromPath(photo.path);
         setState(() {
-          _photoPaths.add(photo.path);
+          _photos.add(photoData);
         });
-        widget.onChanged(_photoPaths);
+        widget.onChanged(_photos.map((p) => p.toJson()).toList());
       }
     } catch (e) {
       if (mounted) {
@@ -73,7 +149,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
   }
 
   Future<void> _pickFromGallery() async {
-    if (_photoPaths.length >= widget.maxPhotos) {
+    if (_photos.length >= widget.maxPhotos) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Maximum ${widget.maxPhotos} photo(s) allowed')),
       );
@@ -89,10 +165,11 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
       );
 
       if (image != null) {
+        final photoData = PhotoData.fromPath(image.path);
         setState(() {
-          _photoPaths.add(image.path);
+          _photos.add(photoData);
         });
-        widget.onChanged(_photoPaths);
+        widget.onChanged(_photos.map((p) => p.toJson()).toList());
       }
     } catch (e) {
       if (mounted) {
@@ -105,9 +182,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
 
   void _removePhoto(int index) {
     setState(() {
-      _photoPaths.removeAt(index);
+      _photos.removeAt(index);
     });
-    widget.onChanged(_photoPaths);
+    widget.onChanged(_photos.map((p) => p.toJson()).toList());
   }
 
   void _viewPhoto(String path) {
@@ -123,12 +200,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
   void didUpdateWidget(PhotoFieldWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Update photos if initialPhotos changed
-    if (widget.initialPhotos != oldWidget.initialPhotos && 
-        widget.initialPhotos != null && 
-        widget.initialPhotos != _photoPaths) {
-      setState(() {
-        _photoPaths = List.from(widget.initialPhotos!);
-      });
+    if (widget.initialPhotos != oldWidget.initialPhotos) {
+      _initializePhotos();
+      setState(() {});
     }
   }
 
@@ -137,7 +211,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     
     // Check if photo count meets requirements
-    final photoCount = _photoPaths.length;
+    final photoCount = _photos.length;
     final hasError = widget.errorText != null;
     final hasWarning = widget.minPhotos > 0 && photoCount < widget.minPhotos;
     final isExceedingMax = photoCount > widget.maxPhotos;
@@ -196,7 +270,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
         const SizedBox(height: 8),
         
         // Photo Grid
-        if (_photoPaths.isNotEmpty)
+        if (_photos.isNotEmpty)
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -205,17 +279,18 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
             ),
-            itemCount: _photoPaths.length,
+            itemCount: _photos.length,
             itemBuilder: (context, index) {
+              final photo = _photos[index];
               return Stack(
                 fit: StackFit.expand,
                 children: [
                   InkWell(
-                    onTap: () => _viewPhoto(_photoPaths[index]),
+                    onTap: () => _viewPhoto(photo.localPath),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.file(
-                        File(_photoPaths[index]),
+                        File(photo.localPath),
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -244,10 +319,10 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
             },
           ),
         
-        if (_photoPaths.isNotEmpty) const SizedBox(height: 8),
+        if (_photos.isNotEmpty) const SizedBox(height: 8),
         
         // Add Photo Buttons
-        if (_photoPaths.length < widget.maxPhotos)
+        if (_photos.length < widget.maxPhotos)
           Row(
             children: [
               Expanded(

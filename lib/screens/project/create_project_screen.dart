@@ -8,6 +8,7 @@ import '../../services/connectivity_service.dart';
 import '../../widgets/form_field_builder.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:async';
+import '../../services/auth_service.dart';
 
 class CreateProjectScreen extends StatefulWidget {
   final Project? project; // for editing
@@ -90,6 +91,15 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     setState(() => _isSaving = true);
 
     try {
+      // Ambil username dari AuthService untuk project baru
+      String? createdBy = widget.project?.createdBy;
+      if (widget.project == null) {
+        // Hanya set createdBy untuk project baru
+        final authService = AuthService();
+        final user = await authService.getUser();
+        createdBy = user?.username;
+      }
+
       final project = Project(
         id: widget.project?.id ?? _uuid.v4(),
         name: _nameController.text,
@@ -98,6 +108,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         formFields: _formFields,
         createdAt: widget.project?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
+        createdBy: createdBy,
       );
 
       await _storageService.saveProject(project);

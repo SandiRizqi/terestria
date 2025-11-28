@@ -10,8 +10,8 @@ class PdfZoomSettingsDialog extends StatefulWidget {
 }
 
 class _PdfZoomSettingsDialogState extends State<PdfZoomSettingsDialog> {
-  int _minZoom = 14;
-  int _maxZoom = 18;
+  int _minZoom = 13;
+  int _maxZoom = 16;
   int _dpi = 150;
 
   String _getQualityLabel() {
@@ -22,12 +22,22 @@ class _PdfZoomSettingsDialogState extends State<PdfZoomSettingsDialog> {
   }
 
   String _getSizeEstimate() {
-    // Rough estimation
+    // Estimation dengan scaling
+    // Base zoom memiliki N tiles, setiap zoom level berikutnya = 4x tiles
     final zoomLevels = _maxZoom - _minZoom + 1;
-    final sizeMB = zoomLevels * 25; // Approximate 25MB per zoom level
+    
+    // Estimasi tiles per zoom level (scaled)
+    int totalTiles = 0;
+    for (int i = 0; i < zoomLevels; i++) {
+      int tilesAtZoom = (4 << (i * 2)); // 4, 16, 64, 256, 1024, ...
+      totalTiles += tilesAtZoom;
+    }
+    
+    // Average 50KB per tile (compressed PNG)
+    final sizeMB = (totalTiles * 50) / 1024;
     
     if (sizeMB < 100) {
-      return '~${sizeMB}MB';
+      return '~${sizeMB.round()}MB';
     } else if (sizeMB < 1000) {
       return '~${(sizeMB / 10).round() * 10}MB';
     } else {
@@ -37,12 +47,26 @@ class _PdfZoomSettingsDialogState extends State<PdfZoomSettingsDialog> {
 
   String _getTimeEstimate() {
     final zoomLevels = _maxZoom - _minZoom + 1;
-    final seconds = (zoomLevels * 15 * (_dpi / 150)).round();
     
-    if (seconds < 60) {
-      return '~$seconds seconds';
+    // Time increases exponentially with zoom levels
+    // Base time: 10 seconds per zoom level
+    // Each level takes longer due to more tiles
+    int totalSeconds = 0;
+    for (int i = 0; i < zoomLevels; i++) {
+      int secondsAtZoom = (10 * (1 << i)); // 10, 20, 40, 80, 160, ...
+      totalSeconds += secondsAtZoom;
+    }
+    
+    // Adjust for DPI
+    totalSeconds = (totalSeconds * (_dpi / 150)).round();
+    
+    if (totalSeconds < 60) {
+      return '~$totalSeconds seconds';
+    } else if (totalSeconds < 3600) {
+      return '~${(totalSeconds / 60).round()} minutes';
     } else {
-      return '~${(seconds / 60).round()} minutes';
+      final hours = (totalSeconds / 3600).round();
+      return '~$hours hour${hours > 1 ? "s" : ""}';
     }
   }
 
@@ -105,8 +129,8 @@ class _PdfZoomSettingsDialogState extends State<PdfZoomSettingsDialog> {
             Slider(
               value: _maxZoom.toDouble(),
               min: _minZoom.toDouble(),
-              max: 19,
-              divisions: (19 - _minZoom),
+              max: 22, // Support sampai zoom 22 untuk detail maksimal
+              divisions: (22 - _minZoom),
               label: _maxZoom.toString(),
               onChanged: (value) {
                 setState(() {
@@ -206,8 +230,32 @@ class _PdfZoomSettingsDialogState extends State<PdfZoomSettingsDialog> {
               ),
             ),
             const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'High zoom levels (>18) require significant processing time and storage. Consider your device capacity.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             const Text(
-              '💡 Tip: For quick preview, use zoom 14-16. For detailed work, use 14-18.',
+              '💡 Recommended: Zoom 13-16 (balanced), 13-18 (detailed), 13-22 (maximum detail).',
               style: TextStyle(
                 fontSize: 11,
                 color: AppTheme.textSecondary,

@@ -43,7 +43,8 @@ class DatabaseService {
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL,
         isSynced INTEGER DEFAULT 0,
-        syncedAt INTEGER
+        syncedAt INTEGER,
+        createdBy TEXT
       )
     ''');
 
@@ -58,6 +59,7 @@ class DatabaseService {
         updatedAt INTEGER NOT NULL,
         isSynced INTEGER DEFAULT 0,
         syncedAt INTEGER,
+        collectedBy TEXT NOT NULL,
         FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
       )
     ''');
@@ -103,6 +105,7 @@ class DatabaseService {
       'updatedAt': project.updatedAt.millisecondsSinceEpoch,
       'isSynced': project.isSynced ? 1 : 0,
       'syncedAt': project.syncedAt?.millisecondsSinceEpoch,
+      'createdBy': project.createdBy,
     };
 
     await db.insert(
@@ -193,6 +196,7 @@ class DatabaseService {
       'updatedAt': geoData.updatedAt.millisecondsSinceEpoch,
       'isSynced': geoData.isSynced ? 1 : 0,
       'syncedAt': geoData.syncedAt?.millisecondsSinceEpoch,
+      'collectedBy': geoData.collectedBy,
     };
 
     await db.insert(
@@ -344,6 +348,7 @@ class DatabaseService {
       syncedAt: map['syncedAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['syncedAt'])
           : null,
+      createdBy: map['createdBy'],
     );
   }
 
@@ -362,6 +367,7 @@ class DatabaseService {
       syncedAt: map['syncedAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['syncedAt'])
           : null,
+      collectedBy: map['collectedBy'],
     );
   }
 }

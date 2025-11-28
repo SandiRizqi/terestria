@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:geoform_app/theme/app_theme.dart';
 import '../models/project_model.dart';
+import '../services/auth_service.dart';
 
-class ProjectCard extends StatelessWidget {
+class ProjectCard extends StatefulWidget {
   final Project project;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -17,11 +18,88 @@ class ProjectCard extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<ProjectCard> createState() => _ProjectCardState();
+}
+
+class _ProjectCardState extends State<ProjectCard> {
+  String? _currentUsername;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsername();
+  }
+
+  Future<void> _loadUsername() async {
+    final authService = AuthService();
+    final user = await authService.getUser();
+    if (mounted) {
+      setState(() {
+        _currentUsername = user?.username;
+      });
+    }
+  }
+
+  bool _canEditProject() {
+    //print(widget.project.createdBy);
+    if (_currentUsername == null) return false;
+    if (widget.project.createdBy == null) return true; // Old data without creator
+    
+    // Normalize untuk perbandingan
+    final normalizedProjectCreator = widget.project.createdBy!.trim().toLowerCase();
+    final normalizedCurrentUser = _currentUsername!.trim().toLowerCase();
+    
+    return normalizedProjectCreator == normalizedCurrentUser;
+  }
+
+  void _handleEdit() {
+    if (_canEditProject()) {
+      widget.onEdit();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.lock, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('You don\'t have permission to edit this project'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _handleDelete() {
+    if (_canEditProject()) {
+      widget.onDelete();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.lock, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('You don\'t have permission to delete this project'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     IconData geometryIcon;
     Color geometryColor;
 
-    switch (project.geometryType) {
+    switch (widget.project.geometryType) {
       case GeometryType.point:
         geometryIcon = Icons.place;
         geometryColor = AppTheme.pointColor;
@@ -36,10 +114,12 @@ class ProjectCard extends StatelessWidget {
         break;
     }
 
+    final canEdit = _canEditProject();
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -66,14 +146,14 @@ class ProjectCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          project.name,
+                          widget.project.name,
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          project.geometryType.toString().split('.').last.toUpperCase(),
+                          widget.project.geometryType.toString().split('.').last.toUpperCase(),
                           style: TextStyle(
                             color: geometryColor,
                             fontSize: 12,
@@ -86,39 +166,53 @@ class ProjectCard extends StatelessWidget {
                   // Edit button
                   Container(
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.08),
+                      color: canEdit 
+                          ? AppTheme.primaryColor.withOpacity(0.08)
+                          : Colors.grey.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      color: AppTheme.primaryColor,
-                      onPressed: onEdit,
+                      icon: Icon(
+                        canEdit ? Icons.edit_outlined : Icons.lock_outline,
+                        size: 20,
+                      ),
+                      color: canEdit 
+                          ? AppTheme.primaryColor 
+                          : Colors.grey[400],
+                      onPressed: _handleEdit,
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
-                      tooltip: 'Edit Project',
+                      tooltip: canEdit ? 'Edit Project' : 'No permission to edit',
                     ),
                   ),
                   const SizedBox(width: 8),
                   // Delete button
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.08),
+                      color: canEdit 
+                          ? Colors.red.withOpacity(0.08)
+                          : Colors.grey.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      color: Colors.red[700],
-                      onPressed: onDelete,
+                      icon: Icon(
+                        canEdit ? Icons.delete_outline : Icons.lock_outline,
+                        size: 20,
+                      ),
+                      color: canEdit 
+                          ? Colors.red[700] 
+                          : Colors.grey[400],
+                      onPressed: _handleDelete,
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
-                      tooltip: 'Delete Project',
+                      tooltip: canEdit ? 'Delete Project' : 'No permission to delete',
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               Text(
-                project.description,
+                widget.project.description,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.grey[600],
                     ),
@@ -126,17 +220,20 @@ class ProjectCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 12),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   _buildInfoChip(
                     Icons.edit_note,
-                    '${project.formFields.length} fields',
+                    '${widget.project.formFields.length} fields',
                   ),
-                  const SizedBox(width: 8),
                   _buildInfoChip(
                     Icons.calendar_today,
-                    _formatDate(project.createdAt),
+                    _formatDate(widget.project.createdAt),
                   ),
+                  if (widget.project.createdBy != null)
+                    _buildCreatorChip(widget.project.createdBy!),
                 ],
               ),
             ],
@@ -163,6 +260,32 @@ class ProjectCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreatorChip(String creator) {
+    const color = Color(0xFF6366F1);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.person_outline, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            creator,
+            style: const TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

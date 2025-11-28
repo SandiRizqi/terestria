@@ -12,6 +12,7 @@ class Project {
   final DateTime updatedAt;
   final bool isSynced;
   final DateTime? syncedAt;
+  final String? createdBy; // username yang membuat project
 
   Project({
     required this.id,
@@ -23,6 +24,7 @@ class Project {
     required this.updatedAt,
     this.isSynced = false,
     this.syncedAt,
+    this.createdBy,
   });
 
   Map<String, dynamic> toJson() {
@@ -36,24 +38,35 @@ class Project {
       'updatedAt': updatedAt.toIso8601String(),
       'isSynced': isSynced,
       'syncedAt': syncedAt?.toIso8601String(),
+      'createdBy': createdBy,
     };
   }
 
   factory Project.fromJson(Map<String, dynamic> json) {
+    // Support both camelCase and snake_case from server
+    final geometryTypeStr = json['geometryType'] ?? json['geometry_type'];
+    final formFieldsData = json['formFields'] ?? json['form_fields'];
+    final createdAtStr = json['createdAt'] ?? json['created_at'];
+    final updatedAtStr = json['updatedAt'] ?? json['updated_at'];
+    final isSyncedData = json['isSynced'] ?? json['is_synced'];
+    final syncedAtStr = json['syncedAt'] ?? json['synced_at'];
+    final createdByData = json['createdBy'] ?? json['created_by'];
+    
     return Project(
       id: json['id'],
       name: json['name'],
-      description: json['description'],
+      description: json['description'] ?? '',
       geometryType: GeometryType.values.firstWhere(
-        (e) => e.toString().split('.').last == json['geometryType'],
+        (e) => e.toString().split('.').last == geometryTypeStr,
       ),
-      formFields: (json['formFields'] as List)
+      formFields: (formFieldsData as List)
           .map((f) => FormFieldModel.fromJson(f))
           .toList(),
-      createdAt: DateTime.parse(json['createdAt']),
-      updatedAt: DateTime.parse(json['updatedAt']),
-      isSynced: json['isSynced'] ?? false,
-      syncedAt: json['syncedAt'] != null ? DateTime.parse(json['syncedAt']) : null,
+      createdAt: DateTime.parse(createdAtStr),
+      updatedAt: DateTime.parse(updatedAtStr),
+      isSynced: isSyncedData ?? false,
+      syncedAt: syncedAtStr != null ? DateTime.parse(syncedAtStr) : null,
+      createdBy: createdByData,
     );
   }
 
@@ -65,6 +78,7 @@ class Project {
     DateTime? updatedAt,
     bool? isSynced,
     DateTime? syncedAt,
+    String? createdBy,
   }) {
     return Project(
       id: id,
@@ -76,6 +90,7 @@ class Project {
       updatedAt: updatedAt ?? this.updatedAt,
       isSynced: isSynced ?? this.isSynced,
       syncedAt: syncedAt ?? this.syncedAt,
+      createdBy: createdBy ?? this.createdBy,
     );
   }
 }

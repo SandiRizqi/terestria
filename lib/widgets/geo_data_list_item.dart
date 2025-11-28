@@ -8,8 +8,8 @@ import '../models/form_field_model.dart';
 class GeoDataListItem extends StatelessWidget {
   final GeoData geoData;
   final GeometryType geometryType;
-  final VoidCallback onDelete;
-  final VoidCallback onEdit; // Add edit callback
+  final VoidCallback? onDelete; // Nullable - null jika tidak bisa delete
+  final VoidCallback? onEdit; // Nullable - null jika tidak bisa edit
   final VoidCallback onTap;
   final Project? project;
 
@@ -17,14 +17,21 @@ class GeoDataListItem extends StatelessWidget {
     Key? key,
     required this.geoData,
     required this.geometryType,
-    required this.onDelete,
-    required this.onEdit, // Add edit parameter
+    this.onDelete, // Optional
+    this.onEdit, // Optional
     required this.onTap,
     this.project,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    // Debug log untuk melihat status button
+    //print('📋 Rendering GeoDataListItem:');
+    //print('   ID: ${geoData.id}');
+    //print('   CollectedBy: ${geoData.collectedBy}');
+    //print('   onEdit: ${onEdit != null ? "enabled" : "disabled"}');
+    //print('   onDelete: ${onDelete != null ? "enabled" : "disabled"}');
+    
     IconData icon;
     Color color;
 
@@ -142,32 +149,46 @@ class GeoDataListItem extends StatelessWidget {
                       // Edit button
                       Container(
                         decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withOpacity(0.08),
+                          color: onEdit != null 
+                              ? AppTheme.primaryColor.withOpacity(0.08)
+                              : Colors.grey.withOpacity(0.05),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 20),
-                          color: AppTheme.primaryColor,
+                          icon: Icon(
+                            onEdit != null ? Icons.edit_outlined : Icons.lock_outline,
+                            size: 20,
+                          ),
+                          color: onEdit != null 
+                              ? AppTheme.primaryColor 
+                              : Colors.grey[400],
                           onPressed: onEdit,
                           padding: const EdgeInsets.all(8),
                           constraints: const BoxConstraints(),
-                          tooltip: 'Edit',
+                          tooltip: onEdit != null ? 'Edit' : 'No permission to edit',
                         ),
                       ),
                       const SizedBox(width: 8),
                       // Delete button
                       Container(
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.08),
+                          color: onDelete != null 
+                              ? Colors.red.withOpacity(0.08)
+                              : Colors.grey.withOpacity(0.05),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                          color: Colors.red[700],
+                          icon: Icon(
+                            onDelete != null ? Icons.delete_outline : Icons.lock_outline,
+                            size: 20,
+                          ),
+                          color: onDelete != null 
+                              ? Colors.red[700] 
+                              : Colors.grey[400],
                           onPressed: onDelete,
                           padding: const EdgeInsets.all(8),
                           constraints: const BoxConstraints(),
-                          tooltip: 'Delete',
+                          tooltip: onDelete != null ? 'Delete' : 'No permission to delete',
                         ),
                       ),
                     ],
@@ -195,6 +216,8 @@ class GeoDataListItem extends StatelessWidget {
                           const Color(0xFF8B5CF6),
                         ),
                       _buildSyncStatusChip(),
+                      if (geoData.collectedBy != null)
+                        _buildCollectorChip(),
                     ],
                   ),
                   if (geoData.formData.isNotEmpty && !hasPhoto) ...[
@@ -326,6 +349,33 @@ class GeoDataListItem extends StatelessWidget {
     );
   }
 
+  Widget _buildCollectorChip() {
+    const color = Color(0xFF6366F1);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.2), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.person_outline, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            geoData.collectedBy!,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _getTitle() {
     // Try to get first non-photo form field value as title
     if (geoData.formData.isNotEmpty) {
@@ -347,16 +397,32 @@ class GeoDataListItem extends StatelessWidget {
     // Look for photo fields in formData
     for (var entry in geoData.formData.entries) {
       if (_isPhotoField(entry.key) && entry.value != null) {
-        // Handle both List and String types
+        // Handle List (new PhotoMetadata format or old string format)
         if (entry.value is List) {
           final photos = (entry.value as List).where((p) => p != null).toList();
           if (photos.isNotEmpty) {
-            final firstPhoto = photos[0].toString();
-            if (firstPhoto.isNotEmpty && File(firstPhoto).existsSync()) {
-              return firstPhoto;
+            final firstPhoto = photos[0];
+            
+            // Handle PhotoMetadata format (Map)
+            if (firstPhoto is Map) {
+              final localPath = firstPhoto['localPath'];
+              if (localPath != null && localPath.toString().isNotEmpty) {
+                final pathStr = localPath.toString();
+                if (File(pathStr).existsSync()) {
+                  return pathStr;
+                }
+              }
+            }
+            // Handle old string format
+            else if (firstPhoto is String && firstPhoto.isNotEmpty) {
+              if (File(firstPhoto).existsSync()) {
+                return firstPhoto;
+              }
             }
           }
-        } else {
+        }
+        // Handle single string (old format)
+        else if (entry.value is String) {
           final value = entry.value.toString();
           if (value.isNotEmpty && File(value).existsSync()) {
             return value;

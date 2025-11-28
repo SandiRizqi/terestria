@@ -10,6 +10,7 @@ import '../auth/login_screen.dart';
 import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
 import '../basemap/basemap_management_screen.dart';
+import '../settings/settings_screen.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../widgets/search_bar.dart' as custom;
@@ -92,8 +93,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _filteredProjects = _projects.where((project) {
           final nameLower = project.name.toLowerCase();
           final descLower = project.description.toLowerCase();
+          final createdLower = project.createdBy?.toLowerCase();
           final searchLower = query.toLowerCase();
-          return nameLower.contains(searchLower) || descLower.contains(searchLower);
+          return nameLower.contains(searchLower) || descLower.contains(searchLower) || createdLower != null && createdLower.contains(searchLower);
         }).toList();
       }
     });
@@ -231,7 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } catch (e) {
-      print('Error syncing projects from server: $e');
+      //print('Error syncing projects from server: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -539,7 +541,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 onChanged: _filterProjects,
               )
-            : const Text('Terestria'),
+            : const Text('Projects'),
         actions: [
           if (!_isSearching) ...[
             const ConnectivityIndicator(
@@ -553,6 +555,11 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 setState(() => _isSearching = true);
               },
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: () => _navigateToSettings(),
             ),
             IconButton(
               icon: const Icon(Icons.map),
@@ -907,6 +914,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _navigateToSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SettingsScreen(),
+      ),
+    );
+  }
+
   void _navigateToBasemapManagement() {
     Navigator.push(
       context,
@@ -979,7 +995,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Version 1.0.0',
+                'Version ${ApiConfig.appVersion}',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey,
@@ -1010,6 +1026,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
+          // TextButton(
+          //   onPressed: () {
+          //     Navigator.pop(context);
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(builder: (context) => const PythonTestScreen()),
+          //     );
+          //   },
+          //   child: const Text('PYTHON TEST'),
+          // ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('CLOSE'),

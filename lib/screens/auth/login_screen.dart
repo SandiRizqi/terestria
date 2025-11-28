@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geoform_app/config/api_config.dart';
 import '../../services/auth_service.dart';
 import '../home/home_screen.dart';
 
@@ -339,7 +340,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Version Info
                   Text(
-                    'Version 1.0.0',
+                    'Version ${ApiConfig.appVersion}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.white.withOpacity(0.7),

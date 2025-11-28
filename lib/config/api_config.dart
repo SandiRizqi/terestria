@@ -1,15 +1,21 @@
 class ApiConfig {
   // Base URL backend
-  static const String baseUrl = 'https://django.tap-agri.com';
+  static const String baseUrl = 'https://jango-dev1.tap-agri.com';
 
-  static const String authUrl = 'https://django.tap-agri.com/loginldap/';
+  static const String authUrl = '${baseUrl}/loginldap/';
 
   static const String bundleName = 'com.sandi.geoformApp';
 
-  
+  static const String appVersion = '1.7-dev';
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';
+  
+  // FCM Token Endpoints
+  static const String fcmTokenRegisterEndpoint = '/mobile/fcm-tokens/register/';
+  static const String fcmTokenListEndpoint = '/mobile/fcm-tokens/';
+  static const String fcmTokenDeactivateByDeviceEndpoint = '/mobile/fcm-tokens/deactivate_by_device/';
+  static const String fcmTokenDeactivateAllEndpoint = '/mobile/fcm-tokens/deactivate_all/';
   
   // Timeout settings
   static const Duration connectionTimeout = Duration(seconds: 30);

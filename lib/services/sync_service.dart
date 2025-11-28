@@ -47,6 +47,7 @@ class SyncService {
         'created_at': geoData.createdAt.toIso8601String(),
         'updated_at': geoData.updatedAt.toIso8601String(),
         'synced_at': DateTime.now().toIso8601String(),
+        //'project_id': geoData.projectId,
       };
 
       // Gunakan ApiService yang sudah include token
@@ -281,13 +282,16 @@ class SyncService {
 
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
-        final projectsList = responseData['data'] as List? ?? responseData['projects'] as List? ?? [];
+        final projectsList = responseData['data'] as List? ?? [];
 
         int savedCount = 0;
         for (var projectJson in projectsList) {
+          print(projectJson);
           try {
             // Parse project from server format
             final project = _parseProjectFromServer(projectJson);
+
+        
             
             // Check if project exists locally
             final existingProject = await _storageService.getProjectById(project.id);
@@ -503,6 +507,7 @@ class SyncService {
       syncedAt: json['synced_at'] != null 
           ? DateTime.parse(json['synced_at'])
           : DateTime.now(),
+      createdBy: json['created_by'],
     );
   }
 
@@ -529,6 +534,7 @@ class SyncService {
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
       isSynced: true,
+      collectedBy: json['collected_by'],
       syncedAt: json['synced_at'] != null 
           ? DateTime.parse(json['synced_at'])
           : DateTime.now(),

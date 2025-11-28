@@ -2,7 +2,7 @@ name: geoform_app
 description: "Terestria - Agricultural and Environmental Mapping App"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.7.0+1
 
 environment:
   sdk: ^3.5.1
@@ -18,7 +18,7 @@ dependencies:
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
 
-  # Location - alternative yang lebih simple
+  # Location
   location: ^6.0.2
   flutter_compass: ^0.8.0
 
@@ -26,21 +26,26 @@ dependencies:
   shared_preferences: ^2.3.2
   sqflite: ^2.3.0
 
-  image_picker: ^1.0.4  # Untuk mengambil foto dari kamera/galeri
-  flutter_map_cache: ^1.5.1  # Untuk offline tile caching
-  dio_cache_interceptor: ^3.5.0  # Required by flutter_map_cache
-  dio_cache_interceptor_hive_store: ^3.2.2  # Hive storage backend
-  path_provider: ^2.1.2  # For getting cache directory
+  # File & Image
+  image_picker: ^1.0.7
+  file_picker: ^8.1.4
+  mobile_scanner: ^6.0.0
+  
+  # Cache
+  flutter_map_cache: ^1.5.1
+  dio_cache_interceptor: ^3.5.0
+  dio_cache_interceptor_hive_store: ^3.2.2
+  path_provider: ^2.1.2
+  
+  # Background Services
   flutter_background_service: ^5.0.10
   flutter_local_notifications: ^17.2.3
-  flutter_python_bridge: ^0.2.0
-  
 
-  file_picker: ^6.1.1
+  # PDF
   pdf: ^3.10.7
   printing: ^5.12.0
   image: ^4.1.7
-  path: ^1.8.3
+  path: ^1.9.1
 
   # Utilities
   uuid: ^4.5.1
@@ -48,34 +53,30 @@ dependencies:
   firebase_core: ^3.4.0
   firebase_messaging: ^15.1.0
 
+  flutter_colorpicker: ^1.0.3
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
-
   flutter_launcher_icons: "^0.13.1"
 
-dependency_overrides:
-  path: ^1.9.1
-
 flutter_launcher_icons:
-  android: "launcher_icon" # Nama file ikon di Android Studio
-  ios: true                 # Generasi ikon untuk iOS
-  image_path: "assets/terestria_logo_square.png" # Path ke gambar ikon sumber Anda
-  min_sdk_android: 21       # Versi minimum Android SDK (21 = Android 5.0 Lollipop)
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/terestria_logo_square.png"
+  min_sdk_android: 21
   
-  # Konfigurasi Adaptive Icons (disarankan untuk Android modern)
-  adaptive_icon_foreground: "/Users/sandi/VScode/Android/geoform_app/assets/terestria_logo.png" # Lapisan depan
-  adaptive_icon_background: "#FFFFFF" # Atau path ke gambar latar belakang
-  notification_icon: "/Users/sandi/VScode/Android/geoform_app/assets/terestria_logo.png"
+  adaptive_icon_foreground: "assets/terestria_logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  notification_icon: "assets/terestria_logo.png"
 
 flutter:
   uses-material-design: true
   
-  # Assets
   assets:
     - assets/
-    - assets/python3.10.zip
     - assets/terestria_logo.png
     - assets/terestria_logo_square.png
     - assets/terestria_logo_square-removebg-preview.png

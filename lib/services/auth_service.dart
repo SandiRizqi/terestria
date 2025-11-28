@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import '../config/api_config.dart';
+import '../app_initializer.dart';
 
 class AuthService {
   static const String _userKey = 'user_data';
@@ -48,7 +49,7 @@ class AuthService {
     return null;
   }
 
-  // Login
+  // Login with FCM token registration
   Future<AuthResult> login(String username, String password) async {
     // If no authUrl, accept any credentials without backend validation
     if (!isAuthRequired) {
@@ -98,6 +99,17 @@ class AuthService {
         
         // Save credentials
         await _saveCredentials(user);
+        
+        // Register FCM token after successful login
+        if (user.token != null) {
+          try {
+            await AppInitializer().updateFCMAuthToken(user.token!);
+            print('✅ FCM token registered after login');
+          } catch (e) {
+            print('⚠️ Failed to register FCM token: $e');
+            // Don't fail login if FCM registration fails
+          }
+        }
         
         return AuthResult(
           success: true,
@@ -149,8 +161,20 @@ class AuthService {
     return prefs.getBool(_isLoggedInKey) ?? false;
   }
 
-  // Logout
+  // Logout with FCM token deactivation
   Future<void> logout() async {
+    // Deactivate FCM token before logout
+    try {
+      final token = await getToken();
+      if (token != null) {
+        await AppInitializer().deactivateFCMToken(token);
+        print('✅ FCM token deactivated on logout');
+      }
+    } catch (e) {
+      print('⚠️ Failed to deactivate FCM token: $e');
+      // Continue with logout even if FCM deactivation fails
+    }
+    
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);
     await prefs.remove(_tokenKey);
