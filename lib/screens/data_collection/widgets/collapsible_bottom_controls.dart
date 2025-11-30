@@ -87,7 +87,9 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
       onVerticalDragStart: _handleVerticalDragStart,
       onVerticalDragUpdate: _handleVerticalDragUpdate,
       onVerticalDragEnd: _handleVerticalDragEnd,
-      child: AnimatedContainer(
+      child: Transform.translate(
+        offset: const Offset(0, 0),
+        child: AnimatedContainer(
         duration: _isDragging ? Duration.zero : const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
         height: currentHeight,
@@ -314,6 +316,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
           ],
         ),
       ),
+      )
     );
   }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geoform_app/config/api_config.dart';
 import '../../services/auth_service.dart';
-import '../home/home_screen.dart';
+import '../menu_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Navigate to home
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          MaterialPageRoute(builder: (context) => const MenuScreen()),
         );
       } else {
         // Show error

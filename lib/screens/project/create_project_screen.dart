@@ -12,8 +12,9 @@ import '../../services/auth_service.dart';
 
 class CreateProjectScreen extends StatefulWidget {
   final Project? project; // for editing
+  final bool isFromTemplate; // to indicate if project is from template
 
-  const CreateProjectScreen({Key? key, this.project}) : super(key: key);
+  const CreateProjectScreen({Key? key, this.project, this.isFromTemplate = false}) : super(key: key);
 
   @override
   State<CreateProjectScreen> createState() => _CreateProjectScreenState();

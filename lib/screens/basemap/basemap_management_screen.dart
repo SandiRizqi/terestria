@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:async';
 import '../../models/basemap_model.dart';
 import '../../services/basemap_service.dart';
 import '../../services/pdf/pdf_basemap_service.dart';
@@ -104,6 +105,8 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
   }
 
   Future<void> _addPdfBasemap() async {
+    bool isShowingDialog = false;
+    
     try {
       // Check if iOS and show warning
       if (Platform.isIOS) {
@@ -126,13 +129,22 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       }
 
       // Show loading
+      isShowingDialog = true;
       _showLoadingDialog('Analyzing GeoPDF file...');
 
       // Initialize GeoPDF service and extract metadata
       //await GeoPdfService.initialize();
-      final metadata = await GeoPdfService.extractMetadata(filePath);
+      final metadata = await GeoPdfService.extractMetadata(filePath).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException('PDF analysis timed out. The file may be too large or corrupted.');
+        },
+      );
       
-      if (mounted) Navigator.pop(context);
+      if (mounted && isShowingDialog) {
+        Navigator.pop(context);
+        isShowingDialog = false;
+      }
 
       if (metadata['success'] != true) {
         _showError('Failed to read PDF: ${metadata['message']}');
@@ -158,7 +170,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         pdfPath: filePath,
         pdfStatus: PdfProcessingStatus.processing,
         processingProgress: 0.0,
-        processingMessage: 'Initializing Python processor...',
+        processingMessage: 'Initializing processor...',
         createdAt: DateTime.now(),
       );
 
@@ -178,10 +190,21 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       // Start overlay processing with ORIGINAL quality (FAST!)
       _processPdfBasemapWithOverlay(basemapId, filePath);
 
-    } catch (e) {
-      debugPrint('❌ Error adding PDF basemap: $e');
+    } on TimeoutException catch (e) {
+      debugPrint('❌ Timeout error: $e');
       if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (isShowingDialog) {
+          Navigator.of(context).popUntil((route) => route.isFirst || !route.navigator!.canPop());
+        }
+        _showError('Operation timed out: ${e.message}');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error adding PDF basemap: $e');
+      debugPrint('Stack trace: $stackTrace');
+      if (mounted) {
+        if (isShowingDialog) {
+          Navigator.of(context).popUntil((route) => route.isFirst || !route.navigator!.canPop());
+        }
         _showError('Error: ${e.toString()}');
       }
     }
@@ -239,13 +262,20 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
     String basemapId,
     String pdfPath,
   ) async {
+    Basemap? basemap;
+    
     try {
       // FIX: Use iOS-compatible path
       final outputDir = await _getBasemapOutputDir(basemapId);
       
       // Update status
-      var basemap = (await _basemapService.getBasemaps())
-          .firstWhere((b) => b.id == basemapId);
+      try {
+        basemap = (await _basemapService.getBasemaps())
+            .firstWhere((b) => b.id == basemapId);
+      } catch (e) {
+        debugPrint('⚠️ Basemap not found: $basemapId');
+        return; // Basemap was deleted, stop processing
+      }
       
       if (mounted) {
         await _basemapService.saveBasemap(
@@ -256,8 +286,13 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         );
       }
 
-      // Extract coordinates using Python
-      final coords = await GeoPdfService.extractCoordinates(pdfPath);
+      // Extract coordinates using Python with timeout
+      final coords = await GeoPdfService.extractCoordinates(pdfPath).timeout(
+        const Duration(minutes: 2),
+        onTimeout: () {
+          throw TimeoutException('Coordinate extraction timed out.');
+        },
+      );
       
       if (coords['success'] != true) {
         throw Exception('Failed to extract coordinates: ${coords['message']}');
@@ -290,8 +325,13 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
 
       // Update with coordinates
       if (mounted) {
-        basemap = (await _basemapService.getBasemaps())
-            .firstWhere((b) => b.id == basemapId);
+        try {
+          basemap = (await _basemapService.getBasemaps())
+              .firstWhere((b) => b.id == basemapId);
+        } catch (e) {
+          debugPrint('⚠️ Basemap not found during update: $basemapId');
+          return; // Basemap was deleted, stop processing
+        }
         
         debugPrint('🗺️ Extracted bounds from PDF:');
         debugPrint('   minLat: $minLat, minLon: $minLon');
@@ -321,7 +361,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       
       debugPrint('🔧 Processing with DPI: $dpi (iOS: ${Platform.isIOS})');
 
-      // Process GeoPDF as overlay image with MOBILE-OPTIMIZED quality (MUCH FASTER!)
+      // Process GeoPDF as overlay image with MOBILE-OPTIMIZED quality (MUCH FASTER!) with timeout
       final result = await GeoPdfService.processGeoPdfAsOverlay(
         pdfPath: pdfPath,
         outputDir: outputDir,
@@ -350,7 +390,13 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
             }
           } catch (e) {
             debugPrint('⚠️ Progress update error: $e');
+            // Don't throw, just log - basemap might have been deleted
           }
+        },
+      ).timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {
+          throw TimeoutException('PDF processing timed out. Try a smaller file or lower DPI.');
         },
       );
 
@@ -368,8 +414,13 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       
       // Mark as completed with overlay mode
       if (mounted) {
-        basemap = (await _basemapService.getBasemaps())
-            .firstWhere((b) => b.id == basemapId);
+        try {
+          basemap = (await _basemapService.getBasemaps())
+              .firstWhere((b) => b.id == basemapId);
+        } catch (e) {
+          debugPrint('⚠️ Basemap not found at completion: $basemapId');
+          return; // Basemap was deleted, stop processing
+        }
         
         final imageSizeMB = result['image_size_mb']?.toStringAsFixed(2) ?? '0';
         final imageWidth = result['image_width'] ?? 0;
@@ -388,15 +439,46 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         );
 
         await _basemapService.saveBasemap(completed);
+        
+        // Reload to show updated status
+        if (mounted) {
+          _loadBasemaps();
+        }
       }
 
-    } catch (e) {
-      debugPrint('❌ Processing error: $e');
+    } on TimeoutException catch (e) {
+      debugPrint('❌ Processing timeout: $e');
       
       // Mark as failed
       try {
-        final basemap = (await _basemapService.getBasemaps())
-            .firstWhere((b) => b.id == basemapId);
+        if (basemap == null) {
+          basemap = (await _basemapService.getBasemaps())
+              .firstWhere((b) => b.id == basemapId);
+        }
+        
+        if (mounted) {
+          final failed = basemap.copyWith(
+            pdfStatus: PdfProcessingStatus.failed,
+            processingProgress: -1.0,
+            processingMessage: '❌ Timeout: ${e.message}',
+          );
+          
+          await _basemapService.saveBasemap(failed);
+          _loadBasemaps();
+        }
+      } catch (saveError) {
+        debugPrint('❌ Failed to save timeout state: $saveError');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ Processing error: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      // Mark as failed
+      try {
+        if (basemap == null) {
+          basemap = (await _basemapService.getBasemaps())
+              .firstWhere((b) => b.id == basemapId);
+        }
         
         if (mounted) {
           final failed = basemap.copyWith(
@@ -406,6 +488,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
           );
           
           await _basemapService.saveBasemap(failed);
+          _loadBasemaps();
         }
       } catch (saveError) {
         debugPrint('❌ Failed to save error state: $saveError');

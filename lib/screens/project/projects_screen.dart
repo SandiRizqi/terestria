@@ -9,22 +9,21 @@ import '../../config/api_config.dart';
 import '../auth/login_screen.dart';
 import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
-import '../basemap/basemap_management_screen.dart';
-import '../settings/settings_screen.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
-import '../../widgets/search_bar.dart' as custom;
+import '../../services/project_template_service.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 import 'dart:async';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+class ProjectsScreen extends StatefulWidget {
+  const ProjectsScreen({Key? key}) : super(key: key);
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<ProjectsScreen> createState() => _ProjectsScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _ProjectsScreenState extends State<ProjectsScreen> {
   final StorageService _storageService = StorageService();
   final AuthService _authService = AuthService();
   final ConnectivityService _connectivityService = ConnectivityService();
@@ -533,10 +532,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                style: const TextStyle(color: Colors.black45),
+                style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
                   hintText: 'Search projects...',
-                  hintStyle: TextStyle(color: Colors.black45),
+                  hintStyle: TextStyle(color: Colors.white70),
                   border: InputBorder.none,
                 ),
                 onChanged: _filterProjects,
@@ -556,16 +555,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 setState(() => _isSearching = true);
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: 'Settings',
-              onPressed: () => _navigateToSettings(),
-            ),
-            IconButton(
-              icon: const Icon(Icons.map),
-              tooltip: 'Basemap Management',
-              onPressed: () => _navigateToBasemapManagement(),
-            ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               shape: RoundedRectangleBorder(
@@ -578,10 +567,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   _syncProjectsFromServer();
                 } else if (value == 'sync_to_server') {
                   _syncProjectsToServer();
-                } else if (value == 'about') {
-                  _showAboutDialog();
-                } else if (value == 'logout') {
-                  _logout();
                 }
               },
               itemBuilder: (context) => [
@@ -658,93 +643,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             SizedBox(height: 2),
                             Text(
                               'Upload projects to cloud',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                PopupMenuItem(
-                  value: 'about',
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.info_outline_rounded,
-                          color: Colors.blue,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'About',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'App information',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                PopupMenuItem(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.logout_rounded,
-                          color: Colors.red,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Logout',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: Colors.red,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Sign out from account',
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.grey,
@@ -889,15 +787,283 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navigateToCreateProject() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const CreateProjectScreen(),
+    // Show dialog to choose between new project or from template
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.add_circle_outline),
+            SizedBox(width: 8),
+            Text('Create Project'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('How would you like to create your project?'),
+            const SizedBox(height: 24),
+            // Create New button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context, 'new'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.add),
+                label: const Text(
+                  'Create New Project',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // From Template button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pop(context, 'template'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Theme.of(context).primaryColor,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: BorderSide(
+                    color: Theme.of(context).primaryColor,
+                    width: 2,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.upload_file),
+                label: const Text(
+                  'Import from Template',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
     );
 
-    if (result == true) {
-      _loadProjects();
+    if (choice == null) return;
+
+    if (choice == 'new') {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const CreateProjectScreen(),
+        ),
+      );
+
+      if (result == true) {
+        _loadProjects();
+      }
+    } else if (choice == 'template') {
+      _showTemplateImportOptions();
+    }
+  }
+
+  void _showTemplateImportOptions() async {
+    // Pick JSON file
+    try {
+      // For now, we'll use file picker
+      // You need to add file_picker package to pubspec.yaml
+      // For simplicity, I'll show dialog to enter file path or use a simple approach
+      
+      final result = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.upload_file),
+              SizedBox(width: 8),
+              Text('Import Template'),
+            ],
+          ),
+          content: const Text(
+            'Please select a template JSON file from your device.\n\nTemplate files are usually located in your Download folder.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, 'select'),
+              child: const Text('Select File'),
+            ),
+          ],
+        ),
+      );
+
+      if (result == 'select') {
+        _selectAndImportTemplateFile();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _selectAndImportTemplateFile() async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Please select template file...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Use file_picker to select JSON file
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+      }
+
+      if (result != null && result.files.single.path != null) {
+        final filePath = result.files.single.path!;
+        await _importTemplateFromFile(filePath);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading if still open
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error selecting file: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _importTemplateFromFile(String filePath) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading template...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final templateService = ProjectTemplateService();
+      final templateData = await templateService.loadTemplateFromFile(filePath);
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+
+        // Get current user
+        final user = await _authService.getUser();
+        final username = user?.username ?? 'unknown';
+
+        // Create project from template
+        final project = templateService.importFromTemplate(templateData, username);
+
+        // Navigate to create screen with pre-filled data
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CreateProjectScreen(
+              project: project,
+              isFromTemplate: true,
+            ),
+          ),
+        );
+
+        if (result == true) {
+          _loadProjects();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error importing template: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -913,136 +1079,4 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadProjects();
     }
   }
-
-  void _navigateToSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const SettingsScreen(),
-      ),
-    );
-  }
-
-  void _navigateToBasemapManagement() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const BasemapManagementScreen(),
-      ),
-    );
-  }
-
-  void _logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      try {
-        await _authService.logout();
-        
-        if (mounted) {
-          // Navigate to login screen and clear stack
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (route) => false,
-          );
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Logged out successfully')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error during logout: $e')),
-          );
-        }
-      }
-    }
-  }
-
-  void _showAboutDialog() {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.eco, size: 32, color: Colors.green),
-            SizedBox(width: 12),
-            Text('Terestria'),
-          ],
-        ),
-        content: const SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Version ${ApiConfig.appVersion}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Agricultural and Environmental Mapping App',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'A professional geospatial data collection platform designed for agricultural and environmental field surveys.',
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Key Features:\n'
-                '• Custom survey forms\n'
-                '• Point, Line & Polygon mapping\n'
-                '• Real-time GPS tracking\n'
-                '• Offline functionality\n'
-                '• Multiple basemap support\n'
-                '• Data export capabilities',
-                style: TextStyle(fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          // TextButton(
-          //   onPressed: () {
-          //     Navigator.pop(context);
-          //     Navigator.push(
-          //       context,
-          //       MaterialPageRoute(builder: (context) => const PythonTestScreen()),
-          //     );
-          //   },
-          //   child: const Text('PYTHON TEST'),
-          // ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CLOSE'),
-          ),
-        ],
-      );
-    },
-  );
-}
 }

@@ -2,6 +2,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'fcm_token_service.dart';
+import 'database_service.dart';
+import 'notification_event_service.dart';
+import '../models/notification_model.dart';
 
 // Background message handler - HARUS top-level function
 @pragma('vm:entry-point')
@@ -12,6 +15,27 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   
   if (message.notification != null) {
     print('📱 Notification: ${message.notification!.title}');
+    
+    // Save notification to database
+    try {
+      final databaseService = DatabaseService();
+      final notification = NotificationModel(
+        id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        title: message.notification!.title ?? 'Notification',
+        body: message.notification!.body ?? '',
+        data: message.data.isNotEmpty ? message.data : null,
+        receivedAt: DateTime.now(),
+        isRead: false,
+      );
+      
+      await databaseService.saveNotification(notification);
+      print('✅ Background notification saved to database');
+      
+      // Notify listeners about new notification
+      NotificationEventService().notifyNewNotification();
+    } catch (e) {
+      print('❌ Error saving background notification: $e');
+    }
   }
 }
 
@@ -23,9 +47,14 @@ class FirebaseMessagingService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   final FCMTokenService _fcmTokenService = FCMTokenService();
+  final DatabaseService _databaseService = DatabaseService();
+  final NotificationEventService _notificationEventService = NotificationEventService();
   
   String? _fcmToken;
   String? _authToken;
+  
+  // Callback untuk notify UI tentang notifikasi baru
+  Function? onNewNotificationCallback;
   
   String? get fcmToken => _fcmToken;
 
@@ -127,11 +156,14 @@ class FirebaseMessagingService {
   }
 
   // Handle foreground messages
-  void _handleForegroundMessage(RemoteMessage message) {
+  void _handleForegroundMessage(RemoteMessage message) async {
     print('📨 Foreground message received');
     print('Title: ${message.notification?.title}');
     print('Body: ${message.notification?.body}');
     print('Data: ${message.data}');
+
+    // Save notification to database
+    await _saveNotificationToDatabase(message);
 
     // Tampilkan notification ketika app di foreground
     if (message.notification != null) {
@@ -140,9 +172,12 @@ class FirebaseMessagingService {
   }
 
   // Handle notification tap
-  void _handleMessageOpenedApp(RemoteMessage message) {
+  void _handleMessageOpenedApp(RemoteMessage message) async {
     print('🔔 Notification tapped!');
     print('Data: ${message.data}');
+    
+    // Save notification to database if not already saved
+    await _saveNotificationToDatabase(message);
     
     // TODO: Navigate ke screen tertentu berdasarkan data
     // Contoh: 
@@ -259,6 +294,33 @@ class FirebaseMessagingService {
       print('✅ All tokens deactivated from backend');
     } catch (e) {
       print('❌ Error deactivating all tokens: $e');
+    }
+  }
+
+  // Save notification to database
+  Future<void> _saveNotificationToDatabase(RemoteMessage message) async {
+    try {
+      final notification = NotificationModel(
+        id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        title: message.notification?.title ?? 'Notification',
+        body: message.notification?.body ?? '',
+        data: message.data.isNotEmpty ? message.data : null,
+        receivedAt: DateTime.now(),
+        isRead: false,
+      );
+
+      await _databaseService.saveNotification(notification);
+      print('✅ Notification saved to database');
+      
+      // Notify listeners about new notification
+      _notificationEventService.notifyNewNotification();
+      
+      // Call callback if set (for immediate UI update)
+      if (onNewNotificationCallback != null) {
+        onNewNotificationCallback!();
+      }
+    } catch (e) {
+      print('❌ Error saving notification to database: $e');
     }
   }
 }

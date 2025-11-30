@@ -125,9 +125,12 @@ class PhotoSyncService {
   Future<String?> downloadPhoto(String ossUrl, String fieldName) async {
     try {
       // Generate local filename from OSS URL
-      final filename = ossUrl.split('/').last;
+      
+      final filename = ossUrl.split('/').last.split('?').first;
       final localPath = await _getPhotoPath(filename);
       final file = File(localPath);
+
+      // print('FILE ; ${localPath}');
 
       // Check if already downloaded
       if (file.existsSync()) {
@@ -136,7 +139,7 @@ class PhotoSyncService {
       }
 
       // Download from OSS
-      print('Downloading photo from: $ossUrl');
+      // print('Downloading photo from: $ossUrl');
       final response = await http.get(Uri.parse(ossUrl)).timeout(
         const Duration(seconds: 30),
         onTimeout: () {
@@ -313,7 +316,7 @@ class PhotoSyncService {
                 
                 // Download only if file doesn't exist locally
                 if (!localFile.existsSync()) {
-                  print('📥 Downloading new photo: ${metadata.name} (key: ${metadata.serverKey})');
+                  // print('📥 Downloading new photo: ${metadata.name} (key: ${metadata.serverKey})');
                   final downloadedPath = await downloadPhoto(metadata.serverUrl!, fieldName);
                   
                   if (downloadedPath != null) {
@@ -321,7 +324,7 @@ class PhotoSyncService {
                       localPath: downloadedPath,
                       updated: DateTime.now(),
                     );
-                    print('✅ Downloaded: ${metadata.name}');
+                    // print('✅ Downloaded: ${metadata.name}');
                   } else {
                     print('❌ Failed to download: ${metadata.name}');
                   }

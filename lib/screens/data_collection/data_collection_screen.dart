@@ -1441,8 +1441,20 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
             ),
         ],
       ),
-      body: _buildMap(),
-      bottomNavigationBar: _buildBottomControls(),
+      body: Stack(
+          children: [
+            _buildMap(),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Transform.translate(
+                offset: Offset(0, 0),
+                child: _buildBottomControls(),
+              ),
+            ),
+          ],
+        ),
     );
   }
 
@@ -1451,7 +1463,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
       children: [
         // Clip map untuk menghilangkan celah putih di bawah
         Positioned.fill(
-          bottom: -10, // Extend map sedikit ke bawah untuk menutupi celah
+          bottom: 0, // Extend map sedikit ke bawah untuk menutupi celah
           child: ClipRect(
             child: Builder(
           builder: (context) {
@@ -1636,71 +1648,108 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         ),
         ),
         
-        // Center Crosshair Marker dengan koordinat
-        const Center(
-          child: IgnorePointer(
-            child: Padding(
-                    padding: EdgeInsets.only(top: 10), // geser ke bawah 16px
-                    child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Koordinat display
-                // Container(
-                //   margin: const EdgeInsets.only(bottom: 8),
-                //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                //   decoration: BoxDecoration(
-                //     color: Colors.black87,
-                //     borderRadius: BorderRadius.circular(8),
-                //     boxShadow: [
-                //       BoxShadow(
-                //         color: Colors.black.withOpacity(0.3),
-                //         blurRadius: 4,
-                //         offset: const Offset(0, 2),
-                //       ),
-                //     ],
-                //   ),
-                //   child: Text(
-                //     '${_centerCoordinates.latitude.toStringAsFixed(6)}, ${_centerCoordinates.longitude.toStringAsFixed(6)}',
-                //     style: const TextStyle(
-                //       color: Colors.white,
-                //       fontSize: 11,
-                //       fontWeight: FontWeight.w500,
-                //       fontFamily: 'monospace',
-                //     ),
-                //   ),
-                // ),
+        // Center Crosshair Marker dengan koordinat (hanya muncul setelah loading selesai)
+        if (!_isLoadingLocation)
+          const Center(
+            child: IgnorePointer(
+              child: Padding(
+                      padding: EdgeInsets.only(top: 0), // geser ke bawah 16px
+                      child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Koordinat display
+                  // Container(
+                  //   margin: const EdgeInsets.only(bottom: 8),
+                  //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  //   decoration: BoxDecoration(
+                  //     color: Colors.black87,
+                  //     borderRadius: BorderRadius.circular(8),
+                  //     boxShadow: [
+                  //       BoxShadow(
+                  //         color: Colors.black.withOpacity(0.3),
+                  //         blurRadius: 4,
+                  //         offset: const Offset(0, 2),
+                  //       ),
+                  //     ],
+                  //   ),
+                  //   child: Text(
+                  //     '${_centerCoordinates.latitude.toStringAsFixed(6)}, ${_centerCoordinates.longitude.toStringAsFixed(6)}',
+                  //     style: const TextStyle(
+                  //       color: Colors.white,
+                  //       fontSize: 11,
+                  //       fontWeight: FontWeight.w500,
+                  //       fontFamily: 'monospace',
+                  //     ),
+                  //   ),
+                  // ),
 
 
-                // Crosshair icon
-                SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: Icon(
-                    Icons.location_searching,
-                    size: 40,
-                    color: Colors.black87,
+                  // Crosshair icon
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Icon(
+                      Icons.location_searching,
+                      size: 40,
+                      color: Colors.black87,
+                    ),
                   ),
-                ),
-                    
-              ],
-              )
+                      
+                ],
+                )
+              ),
             ),
           ),
-        ),
         
        
         
         // Info Card Overlay
         Positioned(
-          top: AppTheme.spacingMedium,
+          top: AppTheme.spacingSmall,
           left: AppTheme.spacingMedium,
           right: AppTheme.spacingMedium,
-          child: _buildInfoCard(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildInfoCard(),
+              const SizedBox(height: 4),
+              // Koordinat Crosshair
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.gps_fixed,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${_centerCoordinates.latitude.toStringAsFixed(6)}, ${_centerCoordinates.longitude.toStringAsFixed(6)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'monospace',
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         
         // Zoom to User Location Button
         Positioned(
-          bottom: AppTheme.spacingLarge,
+          bottom: _isBottomSheetExpanded 
+              ? AppTheme.spacingLarge + 320  // Expanded: adjust upward
+              : AppTheme.spacingLarge + 50,   // Collapsed: normal position
           right: AppTheme.spacingMedium,
           child: FloatingActionButton(
             heroTag: 'userLocation',
@@ -1733,7 +1782,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         
         // Basemap Selector Button
         Positioned(
-          bottom : AppTheme.spacingLarge + 50,
+          bottom: _isBottomSheetExpanded 
+              ? AppTheme.spacingLarge + 380  // Expanded: adjust upward
+              : AppTheme.spacingLarge + 110,  // Collapsed: normal position
           right: AppTheme.spacingMedium,
           child: FloatingActionButton(
             heroTag: 'basemap',
@@ -1748,7 +1799,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         // Mode Toggle Button (only for line/polygon)
         if (widget.project.geometryType != GeometryType.point)
           Positioned(
-            bottom: AppTheme.spacingLarge + 110,
+            bottom: _isBottomSheetExpanded 
+                ? AppTheme.spacingLarge + 440  // Expanded: adjust upward
+                : AppTheme.spacingLarge + 170,  // Collapsed: normal position
             right: AppTheme.spacingMedium,
             child: FloatingActionButton(
               heroTag: 'mode',

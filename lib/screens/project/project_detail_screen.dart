@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geoform_app/theme/app_theme.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import '../../models/project_model.dart';
@@ -19,6 +20,8 @@ import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:convert';
 import 'dart:async';
 import '../../services/auth_service.dart';
+import '../../services/project_template_service.dart';
+import 'package:file_picker/file_picker.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
@@ -443,174 +446,75 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Future<void> _exportData() async {
     try {
-      // Export as GeoJSON Feature Collection
+      // Check if there's data to export
+      if (_geoDataList.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.warning, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('No data to export'),
+                ],
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Generate GeoJSON
       final geoJsonData = _exportAsGeoJSON();
       final jsonString = const JsonEncoder.withIndent('  ').convert(geoJsonData);
       
-      // Show export dialog
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.file_download, color: Theme.of(context).primaryColor),
-                const SizedBox(width: 8),
-                const Text('Export as GeoJSON'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Format: GeoJSON Feature Collection',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[700],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  'Features: ${_geoDataList.length}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[700],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      jsonString,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: Colors.grey[800],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Close'),
-                    ),
-                    const Spacer(),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: jsonString));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Row(
-                                children: [
-                                  Icon(Icons.check_circle, color: Colors.white),
-                                  SizedBox(width: 8),
-                                  Text('GeoJSON copied to clipboard'),
-                                ],
-                              ),
-                              backgroundColor: Colors.green,
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('Copy'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      await _downloadGeoJSON(jsonString);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    icon: const Icon(Icons.download, size: 18),
-                    label: const Text('Download'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error exporting data: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _downloadGeoJSON(String jsonString) async {
-    try {
-      // Generate filename with project name and timestamp
+      // Generate default filename
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final projectName = _currentProject.name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
-      final filename = '${projectName}_$timestamp.geojson';
+      final defaultFileName = '${projectName}_$timestamp.geojson';
 
-      // Get download directory
-      Directory? directory;
-      if (Platform.isAndroid) {
-        // Try multiple directories for Android
-        final downloadDir = Directory('/storage/emulated/0/Download');
-        
-        if (await downloadDir.exists()) {
-          directory = downloadDir;
-        } else {
-          // Fallback to app-specific external storage (no permission required)
-          directory = await getExternalStorageDirectory();
-          
-          // Create GeoJSON folder in app directory
-          if (directory != null) {
-            final geoJsonDir = Directory('${directory.path}/GeoJSON');
-            if (!await geoJsonDir.exists()) {
-              await geoJsonDir.create(recursive: true);
-            }
-            directory = geoJsonDir;
-          }
-        }
-      } else if (Platform.isIOS) {
-        // For iOS, use documents directory
-        directory = await getApplicationDocumentsDirectory();
+      // Convert to bytes
+      final bytes = Uint8List.fromList(utf8.encode(jsonString));
+
+      String? outputPath;
+      
+      // Platform-specific handling
+      if (Platform.isAndroid || Platform.isIOS) {
+        // For Android/iOS, use bytes parameter which handles saving automatically
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save GeoJSON As',
+          fileName: defaultFileName,
+          type: FileType.custom,
+          allowedExtensions: ['geojson', 'json'],
+          bytes: bytes, // This will save the file automatically on mobile
+        );
       } else {
-        // For other platforms
-        directory = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+        // For desktop platforms, get path and write manually
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save GeoJSON As',
+          fileName: defaultFileName,
+          type: FileType.custom,
+          allowedExtensions: ['geojson', 'json'],
+        );
+        
+        if (outputPath != null && outputPath.isNotEmpty) {
+          // Ensure proper extension
+          if (!outputPath.toLowerCase().endsWith('.geojson') && 
+              !outputPath.toLowerCase().endsWith('.json')) {
+            outputPath += '.geojson';
+          }
+          
+          // Write GeoJSON to selected file
+          final file = File(outputPath);
+          await file.writeAsString(jsonString);
+        }
       }
 
-      if (directory == null) {
-        throw Exception('Could not access storage directory');
+      if (outputPath == null) {
+        // User cancelled
+        return;
       }
-
-      // Create file path
-      final filePath = '${directory.path}/$filename';
-      final file = File(filePath);
-
-      // Write GeoJSON to file
-      await file.writeAsString(jsonString);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -624,20 +528,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     Icon(Icons.check_circle, color: Colors.white, size: 20),
                     SizedBox(width: 8),
                     Text(
-                      'GeoJSON downloaded successfully!',
+                      'GeoJSON exported successfully!',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Saved to: $filePath',
+                  'Features: ${_geoDataList.length}',
                   style: const TextStyle(fontSize: 12),
                 ),
               ],
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 3),
             action: SnackBarAction(
               label: 'OK',
               textColor: Colors.white,
@@ -654,7 +558,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error saving file: $e')),
+                Expanded(child: Text('Error exporting data: $e')),
               ],
             ),
             backgroundColor: Colors.red,
@@ -1942,8 +1846,33 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _exportProjectTemplate();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: const Icon(Icons.file_download, size: 18),
+                      label: const Text(
+                        'Export Template',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
                     TextButton(
                       onPressed: () => Navigator.pop(context),
                       style: TextButton.styleFrom(
@@ -2619,5 +2548,248 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _exportProjectTemplate() async {
+    try {
+      final templateService = ProjectTemplateService();
+      final templateData = templateService.exportAsTemplate(_currentProject);
+      final jsonString = const JsonEncoder.withIndent('  ').convert(templateData);
+
+      // Show export dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.file_download, color: Theme.of(context).primaryColor),
+                const SizedBox(width: 8),
+                const Text('Export Project Template'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Template: ${_currentProject.name}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Geometry: ${_currentProject.geometryType.toString().split('.').last.toUpperCase()}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                Text(
+                  'Fields: ${_currentProject.formFields.length}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      jsonString,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: () async {
+                        await templateService.copyTemplateToClipboard(templateData);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Colors.white),
+                                  SizedBox(width: 8),
+                                  Text('Template copied to clipboard'),
+                                ],
+                              ),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await _downloadTemplate(templateData);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.download, size: 18),
+                    label: const Text('Download'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error exporting template: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _downloadTemplate(Map<String, dynamic> templateData) async {
+    try {
+      // Generate default filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final projectName = _currentProject.name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
+      final defaultFileName = '${projectName}_template_$timestamp.json';
+
+      // Convert template to JSON string
+      final jsonString = const JsonEncoder.withIndent('  ').convert(templateData);
+      final bytes = Uint8List.fromList(utf8.encode(jsonString));
+
+      String? outputPath;
+      
+      // Platform-specific handling
+      if (Platform.isAndroid || Platform.isIOS) {
+        // For Android/iOS, use bytes parameter which handles saving automatically
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Template As',
+          fileName: defaultFileName,
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+          bytes: bytes, // This will save the file automatically on mobile
+        );
+      } else {
+        // For desktop platforms, get path and write manually
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Template As',
+          fileName: defaultFileName,
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+        
+        if (outputPath != null && outputPath.isNotEmpty) {
+          // Ensure .json extension
+          if (!outputPath.toLowerCase().endsWith('.json')) {
+            outputPath += '.json';
+          }
+          
+          // Write template to selected file
+          final file = File(outputPath);
+          await file.writeAsString(jsonString);
+        }
+      }
+
+      if (outputPath == null) {
+        // User cancelled
+        return;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Template saved successfully!',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Saved to: $outputPath',
+                  style: const TextStyle(fontSize: 12),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error saving file: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
   }
 }

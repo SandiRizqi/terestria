@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import '../models/project_model.dart';
 import '../models/geo_data_model.dart';
 import '../models/form_field_model.dart';
+import '../models/notification_model.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -11,7 +12,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 2;
   static const String _databaseName = 'geoform.db';
 
   Future<Database> get database async {
@@ -80,13 +81,51 @@ class DatabaseService {
     await db.execute('''
       CREATE INDEX idx_projects_isSynced ON projects(isSynced)
     ''');
+
+    // Notifications Table
+    await db.execute('''
+      CREATE TABLE notifications (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        data TEXT,
+        receivedAt INTEGER NOT NULL,
+        isRead INTEGER DEFAULT 0
+      )
+    ''');
+
+    // Create index for notifications
+    await db.execute('''
+      CREATE INDEX idx_notifications_receivedAt ON notifications(receivedAt)
+    ''');
+    
+    await db.execute('''
+      CREATE INDEX idx_notifications_isRead ON notifications(isRead)
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Handle database upgrades here
-    // For now, we'll just recreate tables
-    if (oldVersion < newVersion) {
-      // Add migration logic here when needed
+    if (oldVersion < 2) {
+      // Add notifications table
+      await db.execute('''
+        CREATE TABLE notifications (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          data TEXT,
+          receivedAt INTEGER NOT NULL,
+          isRead INTEGER DEFAULT 0
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX idx_notifications_receivedAt ON notifications(receivedAt)
+      ''');
+      
+      await db.execute('''
+        CREATE INDEX idx_notifications_isRead ON notifications(isRead)
+      ''');
     }
   }
 
@@ -368,6 +407,103 @@ class DatabaseService {
           ? DateTime.fromMillisecondsSinceEpoch(map['syncedAt'])
           : null,
       collectedBy: map['collectedBy'],
+    );
+  }
+
+  // ==================== NOTIFICATION OPERATIONS ====================
+
+  Future<void> saveNotification(NotificationModel notification) async {
+    final db = await database;
+    
+    final notificationMap = {
+      'id': notification.id,
+      'title': notification.title,
+      'body': notification.body,
+      'data': notification.data != null ? jsonEncode(notification.data) : null,
+      'receivedAt': notification.receivedAt.millisecondsSinceEpoch,
+      'isRead': notification.isRead ? 1 : 0,
+    };
+
+    await db.insert(
+      'notifications',
+      notificationMap,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<NotificationModel>> loadNotifications() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'notifications',
+      orderBy: 'receivedAt DESC',
+    );
+
+    return maps.map((map) => _notificationFromMap(map)).toList();
+  }
+
+  Future<List<NotificationModel>> loadUnreadNotifications() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'notifications',
+      where: 'isRead = ?',
+      whereArgs: [0],
+      orderBy: 'receivedAt DESC',
+    );
+
+    return maps.map((map) => _notificationFromMap(map)).toList();
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM notifications WHERE isRead = ?',
+      [0],
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<void> markNotificationAsRead(String notificationId) async {
+    final db = await database;
+    await db.update(
+      'notifications',
+      {'isRead': 1},
+      where: 'id = ?',
+      whereArgs: [notificationId],
+    );
+  }
+
+  Future<void> markAllNotificationsAsRead() async {
+    final db = await database;
+    await db.update(
+      'notifications',
+      {'isRead': 1},
+      where: 'isRead = ?',
+      whereArgs: [0],
+    );
+  }
+
+  Future<void> deleteNotification(String notificationId) async {
+    final db = await database;
+    await db.delete(
+      'notifications',
+      where: 'id = ?',
+      whereArgs: [notificationId],
+    );
+  }
+
+  Future<void> deleteAllNotifications() async {
+    final db = await database;
+    await db.delete('notifications');
+  }
+
+  NotificationModel _notificationFromMap(Map<String, dynamic> map) {
+    return NotificationModel(
+      id: map['id'],
+      title: map['title'],
+      body: map['body'],
+      data: map['data'] != null ? jsonDecode(map['data']) as Map<String, dynamic> : null,
+      receivedAt: DateTime.fromMillisecondsSinceEpoch(map['receivedAt']),
+      isRead: map['isRead'] == 1,
     );
   }
 }
