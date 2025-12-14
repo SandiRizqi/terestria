@@ -2,23 +2,24 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:http/http.dart' as http;
 import 'dart:ui' as ui;
 import '../tile_cache_sqlite_service.dart';
+import '../tile_download_manager.dart';
 
 /// Custom TileProvider dengan SQLite cache - SUPER CEPAT!
 /// Untuk mode offline, tile langsung dimuat dari SQLite tanpa delay
+/// Dengan download manager yang mengelola concurrent requests dan retry
 class SqliteCachedTileProvider extends TileProvider {
   final TileCacheSqliteService _cacheService;
+  final TileDownloadManager _downloadManager;
   final String basemapId;
   final Duration maxStale;
-  final http.Client? httpClient;
 
   SqliteCachedTileProvider({
     required this.basemapId,
     this.maxStale = const Duration(days: 30),
-    this.httpClient,
-  }) : _cacheService = TileCacheSqliteService();
+  })  : _cacheService = TileCacheSqliteService(),
+        _downloadManager = TileDownloadManager();
 
   @override
   ImageProvider getImage(TileCoordinates coordinates, TileLayer options) {
@@ -27,25 +28,25 @@ class SqliteCachedTileProvider extends TileProvider {
       coordinates: coordinates,
       basemapId: basemapId,
       cacheService: _cacheService,
-      httpClient: httpClient,
+      downloadManager: _downloadManager,
     );
   }
 }
 
-/// Custom ImageProvider untuk SQLite cache
+/// Custom ImageProvider untuk SQLite cache dengan download manager
 class SqliteCachedTileImage extends ImageProvider<SqliteCachedTileImage> {
   final String url;
   final TileCoordinates coordinates;
   final String basemapId;
   final TileCacheSqliteService cacheService;
-  final http.Client? httpClient;
+  final TileDownloadManager downloadManager;
 
   const SqliteCachedTileImage({
     required this.url,
     required this.coordinates,
     required this.basemapId,
     required this.cacheService,
-    this.httpClient,
+    required this.downloadManager,
   });
 
   @override
@@ -54,7 +55,8 @@ class SqliteCachedTileImage extends ImageProvider<SqliteCachedTileImage> {
   }
 
   @override
-  ImageStreamCompleter loadImage(SqliteCachedTileImage key, ImageDecoderCallback decode) {
+  ImageStreamCompleter loadImage(
+      SqliteCachedTileImage key, ImageDecoderCallback decode) {
     return MultiFrameImageStreamCompleter(
       codec: _loadAsync(key, decode),
       scale: 1.0,
@@ -66,16 +68,14 @@ class SqliteCachedTileImage extends ImageProvider<SqliteCachedTileImage> {
     );
   }
 
-  Future<ui.Codec> _loadAsync(SqliteCachedTileImage key, ImageDecoderCallback decode) async {
+  Future<ui.Codec> _loadAsync(
+      SqliteCachedTileImage key, ImageDecoderCallback decode) async {
     final z = coordinates.z.toInt();
     final x = coordinates.x.toInt();
     final y = coordinates.y.toInt();
-    
+
     try {
       // 1. PRIORITAS UTAMA: Coba load dari cache DULU - SUPER CEPAT!
-      // Reduce log spam - only log occasionally
-      // print('🔍 Loading tile z=$z, x=$x, y=$y for basemap=$basemapId');
-      
       final cachedTile = await cacheService.getTile(
         basemapId: basemapId,
         z: z,
@@ -85,66 +85,61 @@ class SqliteCachedTileImage extends ImageProvider<SqliteCachedTileImage> {
 
       if (cachedTile != null) {
         // ✅ Cache hit! Langsung return tanpa download
-        // print('✅ CACHE HIT! Tile z=$z, x=$x, y=$y loaded from cache (${cachedTile.length} bytes)');
         final buffer = await ui.ImmutableBuffer.fromUint8List(cachedTile);
         return decode(buffer);
       }
 
       // Check if this is a PDF basemap (URL is empty, starts with sqlite:// or overlay://)
-      final isPdfBasemap = url.isEmpty || url.startsWith('sqlite://') || url.startsWith('overlay://');
-      
+      final isPdfBasemap =
+          url.isEmpty || url.startsWith('sqlite://') || url.startsWith('overlay://');
+
       if (isPdfBasemap) {
         // PDF basemap: tiles should be in SQLite OR use overlay mode
         // If overlay mode (overlay://), this provider shouldn't be used at all
         // Only log once per zoom level to avoid spam
-        if (z >= 16) { // Log only for high zoom levels (likely out of bounds)
-          print('⚠️ PDF basemap tile z=$z, x=$x, y=$y not in cache (zoom level may be too high)');
+        if (z >= 16) {
+          // Log only for high zoom levels (likely out of bounds)
+          print(
+              '⚠️ PDF basemap tile z=$z, x=$x, y=$y not in cache (zoom level may be too high)');
         }
         return _createPlaceholderTile(decode);
       }
 
-      print('⚠️ CACHE MISS! Tile z=$z, x=$x, y=$y not in cache, attempting download...');
+      // 2. TMS basemap: Download from URL using download manager
+      print('⚠️ CACHE MISS! Tile z=$z, x=$x, y=$y - adding to download queue');
 
-      // 2. TMS basemap: Download from URL if not in cache
-      try {
-        final client = httpClient ?? http.Client();
-        final response = await client.get(
-          Uri.parse(url),
-          headers: {
-            'User-Agent': 'GeoformApp/1.0',
-          },
-        ).timeout(const Duration(seconds: 10));
+      final bytes = await downloadManager.downloadTile(
+        url: url,
+        z: z,
+        x: x,
+        y: y,
+        isVisible: true, // Assume visible since it's being loaded
+      );
 
-        if (response.statusCode == 200) {
-          final bytes = response.bodyBytes;
-          print('📥 Downloaded tile z=$z, x=$x, y=$y (${bytes.length} bytes)');
-          
-          // Save to cache asynchronously dengan proper error handling
-          try {
-            await cacheService.saveTile(
-              basemapId: basemapId,
-              z: z,
-              x: x,
-              y: y,
-              tileData: Uint8List.fromList(bytes),
-            );
-            print('💾 Saved tile z=$z, x=$x, y=$y to cache');
-          } catch (saveError) {
-            print('❌ Error saving tile to cache: $saveError');
-            // Continue even if save fails
-          }
+      if (bytes != null) {
+        print('📥 Downloaded tile z=$z, x=$x, y=$y (${bytes.length} bytes)');
 
-          // Return downloaded tile
-          final buffer = await ui.ImmutableBuffer.fromUint8List(Uint8List.fromList(bytes));
-          return decode(buffer);
-        } else {
-          throw Exception('HTTP ${response.statusCode}');
+        // Save to cache asynchronously dengan proper error handling
+        try {
+          await cacheService.saveTile(
+            basemapId: basemapId,
+            z: z,
+            x: x,
+            y: y,
+            tileData: bytes,
+          );
+          print('💾 Saved tile z=$z, x=$x, y=$y to cache');
+        } catch (saveError) {
+          print('❌ Error saving tile to cache: $saveError');
+          // Continue even if save fails
         }
-      } catch (downloadError) {
-        // Download failed (offline atau network error)
-        print('❌ Download failed for tile z=$z, x=$x, y=$y: $downloadError');
-        
-        // Return transparent placeholder tile untuk offline mode
+
+        // Return downloaded tile
+        final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+        return decode(buffer);
+      } else {
+        // Download failed after retries
+        print('❌ Failed to download tile z=$z, x=$x, y=$y - using placeholder');
         return _createPlaceholderTile(decode);
       }
     } catch (e) {
@@ -167,7 +162,7 @@ class SqliteCachedTileImage extends ImageProvider<SqliteCachedTileImage> {
       0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
       0x42, 0x60, 0x82, // IEND chunk
     ]);
-    
+
     final buffer = await ui.ImmutableBuffer.fromUint8List(placeholderBytes);
     return decode(buffer);
   }

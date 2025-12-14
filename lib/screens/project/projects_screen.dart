@@ -15,6 +15,8 @@ import '../../services/project_template_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 import 'dart:async';
+import '../../widgets/project/cloud_project_dialog.dart';
+import '../../theme/app_theme.dart';
 
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({Key? key}) : super(key: key);
@@ -532,10 +534,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Colors.black45),
                 decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(vertical: 2, horizontal: 8),
                   hintText: 'Search projects...',
-                  hintStyle: TextStyle(color: Colors.white70),
+                  hintStyle: TextStyle(color: Colors.black38),
                   border: InputBorder.none,
                 ),
                 onChanged: _filterProjects,
@@ -570,48 +573,48 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 }
               },
               itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'pull_from_server',
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.cloud_download_rounded,
-                          color: Colors.green,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Pull from Server',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Download projects from cloud',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // PopupMenuItem(
+                //   value: 'pull_from_server',
+                //   child: Row(
+                //     children: [
+                //       Container(
+                //         padding: const EdgeInsets.all(8),
+                //         decoration: BoxDecoration(
+                //           color: Colors.green.withOpacity(0.1),
+                //           borderRadius: BorderRadius.circular(8),
+                //         ),
+                //         child: const Icon(
+                //           Icons.cloud_download_rounded,
+                //           color: Colors.green,
+                //           size: 20,
+                //         ),
+                //       ),
+                //       const SizedBox(width: 12),
+                //       const Expanded(
+                //         child: Column(
+                //           crossAxisAlignment: CrossAxisAlignment.start,
+                //           children: [
+                //             Text(
+                //               'Pull from Server',
+                //               style: TextStyle(
+                //                 fontWeight: FontWeight.w600,
+                //                 fontSize: 14,
+                //               ),
+                //             ),
+                //             SizedBox(height: 2),
+                //             Text(
+                //               'Download projects from cloud',
+                //               style: TextStyle(
+                //                 fontSize: 11,
+                //                 color: Colors.grey,
+                //               ),
+                //             ),
+                //           ],
+                //         ),
+                //       ),
+                //     ],
+                //   ),
+                // ),
                 PopupMenuItem(
                   value: 'sync_to_server',
                   child: Row(
@@ -708,18 +711,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                     ? _buildEmptyState()
                     : RefreshIndicator(
                         onRefresh: () async {
-                          // Saat pull to refresh, sync projects dari server
-                          if (_isOnline) {
-                            await _syncProjectsFromServer();
-                          } else {
-                            await _loadProjects();
-                          }
+                          // Saat pull to refresh, hanya load dari local storage
+                          await _loadProjects();
                         },
                         child: ListView.builder(
                           padding: const EdgeInsets.only(
                             left: 16,
                             right: 16,
-                            top: 0,
+                            top: 16,
                             bottom: 80, // Padding untuk FAB
                           ),
                           itemCount: _filteredProjects.length,
@@ -787,7 +786,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   }
 
   void _navigateToCreateProject() async {
-    // Show dialog to choose between new project or from template
+    // Show dialog to choose between new project, from template, or from cloud
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -819,6 +818,33 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 icon: const Icon(Icons.add),
                 label: const Text(
                   'Create New Project',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // From Cloud button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pop(context, 'cloud'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.green,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(
+                    color: Colors.green,
+                    width: 2,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.cloud_download),
+                label: const Text(
+                  'Add from Cloud',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -882,8 +908,65 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       if (result == true) {
         _loadProjects();
       }
+    } else if (choice == 'cloud') {
+      _addProjectFromCloud();
     } else if (choice == 'template') {
       _showTemplateImportOptions();
+    }
+  }
+
+  /// Add project from cloud server
+  Future<void> _addProjectFromCloud() async {
+    // Check connectivity first
+    if (!_isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.cloud_off, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'You need to be online to add projects from cloud',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppTheme.errorColor,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show cloud project dialog
+    final addedCount = await showDialog<int>(
+      context: context,
+      builder: (context) => const CloudProjectDialog(),
+    );
+
+    if (addedCount != null && addedCount > 0) {
+      _loadProjects();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '$addedCount project${addedCount > 1 ? "s" : ""} added successfully',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     }
   }
 

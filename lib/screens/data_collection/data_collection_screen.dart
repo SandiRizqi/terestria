@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geoform_app/config/api_config.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -25,9 +26,12 @@ import '../../theme/app_theme.dart';
 import 'widgets/collapsible_bottom_controls.dart';
 import 'widgets/user_location_marker.dart';
 import '../basemap/basemap_management_screen.dart';
+import '../location/location_provider_screen.dart';
 import '../../services/auth_service.dart';
 import '../../services/settings_service.dart';
 import '../../models/settings/app_settings.dart';
+import '../../widgets/offline_download_dialog.dart';
+import '../../utils/lat_lng_bounds.dart' as custom_bounds;
 
 
 
@@ -57,8 +61,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
 
   List<GeoPoint> _collectedPoints = [];
   GeoPoint? _currentLocation;
-  StreamSubscription<GeoPoint>? _locationSubscription;
-  StreamSubscription? _backgroundServiceSubscription;
+  // 🔧 FIX: Single unified stream for both tracking and blue marker
+  StreamSubscription<GeoPoint>? _unifiedLocationSubscription;
   bool _isTracking = false;
   bool _isPaused = false;
   bool _isSaving = false;
@@ -80,11 +84,37 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
   @override
   void initState() {
     super.initState();
+    _setTransparentStatusBar();
     _initializeSettings();
     _initializeLocation();
     _loadBasemap();
     _loadExistingData();
     _initCompass();
+    
+    // 🔧 NEW: Restore tracking state if coming back to screen
+    _restoreTrackingState();
+  }
+  
+  void _setTransparentStatusBar() {
+    // Set status bar transparan
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+    ));
+  }
+  
+  void _restoreTrackingState() {
+    // Check if tracking was active when we left this screen
+    if (_locationService.isActivelyTracking) {
+      print('🔄 Restoring tracking state...');
+      setState(() {
+        _isTracking = true;
+        // Restore collected points from service
+        _collectedPoints = List.from(_locationService.activeTrackingPoints);
+      });
+      print('✅ Restored ${_collectedPoints.length} points');
+    }
   }
 
   Future<void> _initializeSettings() async {
@@ -117,12 +147,25 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
 
   @override
   void dispose() {
-    _locationSubscription?.cancel();
-    _backgroundServiceSubscription?.cancel();
+    // 🔧 CRITICAL FIX: DON'T stop tracking when navigating away
+    // Only cleanup UI-related streams
+    
+    // Cancel compass stream (UI only)
     _compassSubscription?.cancel();
-    if (_isTracking) {
-      _locationService.stopBackgroundTracking();
+    
+    // ⚠️ DON'T cancel location stream if tracking is active!
+    // Let it continue in background
+    if (!_isTracking) {
+      // Only cancel if NOT tracking (just viewing)
+      _unifiedLocationSubscription?.cancel();
+      print('🗑️ Cancelled location stream (not tracking)');
+    } else {
+      // Keep stream alive for background tracking
+      print('✅ Keeping location stream alive (tracking active)');
+      // DON'T cancel _unifiedLocationSubscription
+      // DON'T stop background service
     }
+    
     super.dispose();
   }
 
@@ -176,25 +219,48 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
   Future<void> _initializeLocation() async {
     setState(() => _isLoadingLocation = true);
     
-    final location = await _locationService.getCurrentLocation();
+    // Load provider settings first
+    await _locationService.loadLocationSettings();
     
-    if (mounted) {
-      setState(() => _isLoadingLocation = false);
-    }
+    // 🔧 FIX: Start unified persistent stream immediately
+    _startUnifiedLocationStream();
     
-    if (location != null) {
-      setState(() {
-        _currentLocation = location;
-      });
-      // Zoom hanya saat pertama kali
-      if (!_hasInitialZoom) {
-        _mapController.move(
-          LatLng(location.latitude, location.longitude), 15
+    // Try to get initial location for map centering
+    GeoPoint? location;
+    
+    if (_locationService.currentProvider == LocationProvider.emlid) {
+      // For Emlid, wait a bit for first data
+      if (_locationService.isEmlidConnected) {
+        try {
+          location = await _locationService.trackEmlidLocation()
+            .timeout(const Duration(seconds: 3))
+            .first;
+        } catch (e) {
+          print('Waiting for Emlid data: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Waiting for GPS data...'),
+                backgroundColor: Colors.blue,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ GPS not connected. Check Location Provider settings.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
         );
-        _hasInitialZoom = true;
       }
     } else {
-      if (mounted) {
+      // Use phone GPS
+      location = await _locationService.getCurrentLocation();
+      
+      if (location == null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Unable to get location. Please enable location services.'),
@@ -202,6 +268,74 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         );
       }
     }
+    
+    if (mounted) {
+      setState(() => _isLoadingLocation = false);
+    }
+    
+    if (location != null && !_hasInitialZoom) {
+      _mapController.move(
+        LatLng(location.latitude, location.longitude), 15
+      );
+      _hasInitialZoom = true;
+    }
+  }
+  
+  // 🔧 FIX: Unified persistent location stream
+  void _startUnifiedLocationStream() {
+    // Cancel existing stream if any
+    _unifiedLocationSubscription?.cancel();
+    
+    print('🔄 Starting unified location stream (provider: ${_locationService.currentProvider.name})');
+    
+    Stream<GeoPoint> locationStream;
+    
+    if (_locationService.currentProvider == LocationProvider.emlid) {
+      // Use Emlid stream
+      if (_locationService.isEmlidConnected) {
+        locationStream = _locationService.trackEmlidLocation();
+        print('📡 Using Emlid location stream');
+      } else {
+        print('⚠️ Emlid not connected, stream will be empty');
+        return;
+      }
+    } else {
+      // Use phone GPS stream
+      locationStream = _locationService.trackLocation();
+      print('📱 Using phone GPS stream');
+    }
+    
+    // Single stream listener for both blue marker AND tracking
+    _unifiedLocationSubscription = locationStream.listen(
+      (location) {
+        if (mounted) {
+          setState(() {
+            _currentLocation = location;
+          });
+          
+          // Add to collected points ONLY when tracking and not paused
+          if (_isTracking && !_isPaused) {
+            setState(() {
+              _collectedPoints.add(location);
+            });
+            // 🔧 NEW: Also save to service for persistence
+            _locationService.addTrackingPoint(location);
+            print('📍 Point collected: ${_collectedPoints.length} (lat: ${location.latitude.toStringAsFixed(6)})');
+          }
+        }
+      },
+      onError: (error) {
+        print('❌ Error in unified location stream: $error');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Location error: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      },
+    );
   }
 
   void _toggleTracking() {
@@ -221,100 +355,119 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
   }
 
   void _startTracking() async {
-    // iOS: Use native location background mode
-    // Android: Use background service
-    if (Platform.isIOS) {
-      // Enable iOS background location
-      await _locationService.location.enableBackgroundMode(enable: true);
-      
-      // Use regular location stream (iOS handles background automatically)
-      _locationSubscription = _locationService.trackLocation().listen((location) {
-        if (mounted) {
-          setState(() {
-            _currentLocation = location;
-            if (!_isPaused) {
-              _collectedPoints.add(location);
-            }
-          });
-          // Tidak zoom otomatis saat tracking
-        }
-      });
-    } else {
-      // Android: Start background service
-      await _locationService.startBackgroundTracking();
-      
-      // Listen to background location stream
-      _locationSubscription = _locationService.backgroundLocationStream.listen((location) {
-        if (mounted) {
-          setState(() {
-            _currentLocation = location;
-            if (!_isPaused) {
-              _collectedPoints.add(location);
-            }
-          });
-          // Tidak zoom otomatis saat tracking
-        }
-      });
+    // 🔧 FIX: Simplified tracking with proper background support
+    
+    // Check if using Emlid but not connected
+    if (_locationService.currentProvider == LocationProvider.emlid) {
+      if (!_locationService.isEmlidConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ GPS not connected! Please connect in Location Provider settings.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
     }
-
+    
+    // 🔧 CRITICAL FIX: Enable background mode for ALL providers
+    // For Phone GPS: use background service (Android) or background mode (iOS)
+    if (_locationService.currentProvider == LocationProvider.phone) {
+      if (Platform.isAndroid) {
+        await _locationService.startBackgroundTracking();
+      } else if (Platform.isIOS) {
+        await _locationService.location.enableBackgroundMode(enable: true);
+      }
+    }
+    // For Emlid GPS: also needs background mode to keep TCP connection alive
+    else if (_locationService.currentProvider == LocationProvider.emlid) {
+      if (Platform.isAndroid) {
+        // Android: Start background service to keep socket alive
+        await _locationService.startBackgroundTracking();
+        print('🔧 Started background service for Emlid TCP connection');
+      } else if (Platform.isIOS) {
+        // iOS: Enable background location to keep app active
+        await _locationService.location.enableBackgroundMode(enable: true);
+        print('🔧 Enabled background mode for Emlid TCP connection');
+      }
+    }
+    
+    // 🔧 NEW: Set persistent tracking state in service
+    _locationService.startActiveTracking();
+    
     setState(() {
       _isTracking = true;
       _isPaused = false;
     });
     
+    print('✅ Tracking started (provider: ${_locationService.currentProvider.name})');
+    
+    final providerName = _locationService.currentProvider == LocationProvider.emlid 
+        ? 'RTK GPS' 
+        : 'Phone GPS';
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(Platform.isIOS 
-          ? 'Tracking started - ensure "Always Allow" location permission'
-          : 'Tracking started - will continue in background'),
+        content: Text('📡 Tracking started using $providerName - will continue in background'),
         duration: const Duration(seconds: 3),
       ),
     );
   }
 
   void _pauseTracking() async {
-    if (Platform.isAndroid) {
-      await _locationService.pauseBackgroundTracking();
-    }
+    // 🔧 FIX: Just set pause flag, stream keeps running
     setState(() => _isPaused = true);
+    
+    print('⏸️ Tracking paused (stream continues)');
     
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Tracking paused'),
+        content: Text('⏸️ Tracking paused'),
         duration: Duration(seconds: 1),
       ),
     );
   }
 
   void _resumeTracking() async {
-    if (Platform.isAndroid) {
-      await _locationService.resumeBackgroundTracking();
-    }
+    // 🔧 FIX: Just clear pause flag, stream already running
     setState(() => _isPaused = false);
+    
+    print('▶️ Tracking resumed');
     
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Tracking resumed'),
+        content: Text('▶️ Tracking resumed'),
         duration: Duration(seconds: 1),
       ),
     );
   }
 
   void _finishTracking() async {
-    if (Platform.isIOS) {
-      await _locationService.location.enableBackgroundMode(enable: false);
-    } else {
+    // 🔧 FIX: Stop background services for ALL providers
+    
+    // Stop background service/mode for both Phone GPS and Emlid
+    if (Platform.isAndroid) {
       await _locationService.stopBackgroundTracking();
+      print('🔧 Stopped background service');
+    } else if (Platform.isIOS) {
+      await _locationService.location.enableBackgroundMode(enable: false);
+      print('🔧 Disabled background mode');
     }
-    _locationSubscription?.cancel();
+    
+    // 🔧 NEW: Stop persistent tracking in service
+    _locationService.stopActiveTracking();
+    
     setState(() {
       _isTracking = false;
       _isPaused = false;
     });
     
+    print('⏹️ Tracking finished (stream continues for blue marker)');
+    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Tracking finished'),
+        content: Text('⏹️ Tracking finished'),
         duration: Duration(seconds: 1),
       ),
     );
@@ -362,6 +515,43 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
     }
   }
 
+
+  bool _canSaveData() {
+    // Validator berdasarkan tipe geometri
+    if (widget.project.geometryType == GeometryType.point) {
+      return _collectedPoints.length >= 1;  // Point: minimal 1 titik
+    } else if (widget.project.geometryType == GeometryType.line) {
+      return _collectedPoints.length >= 2;  // Line: minimal 2 titik
+    } else if (widget.project.geometryType == GeometryType.polygon) {
+      return _collectedPoints.length >= 3;  // Polygon: minimal 3 titik
+    }
+    return false;
+  }
+
+  String _getConfirmTooltip() {
+    // Tooltip yang informatif berdasarkan kondisi
+    if (_collectedPoints.isEmpty) {
+      return 'No points collected';
+    }
+    
+    if (widget.project.geometryType == GeometryType.point) {
+      if (_collectedPoints.length >= 1) {
+        return 'Save Data';
+      }
+      return 'Collect 1 point first';
+    } else if (widget.project.geometryType == GeometryType.line) {
+      if (_collectedPoints.length >= 2) {
+        return 'Save Data';
+      }
+      return 'Need ${2 - _collectedPoints.length} more point(s)';
+    } else if (widget.project.geometryType == GeometryType.polygon) {
+      if (_collectedPoints.length >= 3) {
+        return 'Save Data';
+      }
+      return 'Need ${3 - _collectedPoints.length} more point(s)';
+    }
+    return 'Save Data';
+  }
 
   void _undoLastPoint() {
     if (_collectedPoints.isNotEmpty) {
@@ -555,6 +745,24 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         return Icons.timeline;
       case GeometryType.polygon:
         return Icons.pentagon_outlined;
+    }
+  }
+  
+  String _getLocationProviderName() {
+    switch (_locationService.currentProvider) {
+      case LocationProvider.phone:
+        return 'Phone GPS';
+      case LocationProvider.emlid:
+        return 'RTK GPS';
+    }
+  }
+  
+  IconData _getLocationProviderIcon() {
+    switch (_locationService.currentProvider) {
+      case LocationProvider.phone:
+        return Icons.smartphone;
+      case LocationProvider.emlid:
+        return Icons.router;
     }
   }
 
@@ -921,6 +1129,65 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
           setState(() => _selectedBasemap = basemap);
           _basemapService.setSelectedBasemap(basemap.id);
         },
+      ),
+    );
+  }
+
+  void _showOfflineDownloadDialog() {
+    // Check if basemap is suitable for offline download
+    if (_selectedBasemap == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a basemap first'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_selectedBasemap!.type == BasemapType.pdf) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF basemaps cannot be downloaded for offline use'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_selectedBasemap!.urlTemplate.isEmpty ||
+        _selectedBasemap!.urlTemplate.startsWith('sqlite://') ||
+        _selectedBasemap!.urlTemplate.startsWith('overlay://')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This basemap does not support offline download'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Get current visible bounds from flutter_map
+    final flutterMapBounds = _mapController.camera.visibleBounds;
+    
+    // Convert flutter_map LatLngBounds to our custom LatLngBounds
+    final customBounds = custom_bounds.LatLngBounds(
+      northWest: LatLng(
+        flutterMapBounds.north,
+        flutterMapBounds.west,
+      ),
+      southEast: LatLng(
+        flutterMapBounds.south,
+        flutterMapBounds.east,
+      ),
+    );
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => OfflineDownloadDialog(
+        visibleBounds: customBounds,
+        currentBasemap: _selectedBasemap!,
       ),
     );
   }
@@ -1411,33 +1678,221 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Collect ${widget.project.geometryType.toString().split('.').last.toUpperCase()}'),
-        actions: [
-          const ConnectivityIndicator(
-            showLabel: false,
-            iconSize: 24,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        clipBehavior: Clip.none, // Agar shadow tidak terpotong
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+        ),
+        leading: Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black87),
+            onPressed: () => Navigator.pop(context),
+            padding: EdgeInsets.zero,
+          ),
+        ),
+        title: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.85),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.grey.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _getGeometryIcon(),
+                size: 18,
+                color: AppTheme.primaryColor,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                widget.project.geometryType.toString().split('.').last.toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          // Connectivity Indicator (Status)
+          Container(
+            width: 40,
+            height: 40,
+            margin: const EdgeInsets.only(right: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.grey.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: const Center(
+              child: ConnectivityIndicator(
+                showLabel: false,
+                iconSize: 20,
+              ),
+            ),
+          ),
+          // Location Provider Button
+          Container(
+            width: 40,
+            height: 40,
+            margin: const EdgeInsets.only(right: 6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: Icon(
+                _locationService.currentProvider == LocationProvider.emlid
+                    ? Icons.satellite_alt
+                    : Icons.gps_fixed,
+                size: 20,
+                color: _locationService.currentProvider == LocationProvider.emlid
+                    ? (_locationService.isEmlidConnected && _locationService.isEmlidStreaming
+                        ? Colors.blue
+                        : Colors.orange)
+                    : Colors.black87,
+              ),
+              padding: EdgeInsets.zero,
+              tooltip: 'Location Provider Settings',
+              onPressed: () async {
+                // Navigate to Location Provider screen
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LocationProviderScreen(),
+                  ),
+                );
+                
+                // Reload if provider changed
+                if (result == true && mounted) {
+                  // Restart location stream with new provider
+                  _startUnifiedLocationStream();
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Location provider updated to ${_locationService.currentProvider.name}'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+          // Save/Loading Button
           if (_isSaving)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
+            Container(
+              width: 40,
+              height: 40,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Center(
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryColor),
                 ),
               ),
             )
           else
-            IconButton(
-              icon: const Icon(Icons.check),
-              onPressed: _collectedPoints.isEmpty ? null : () {
-                setState(() => _showForm = true);
-                _showFormBottomSheet();
-              },
-              tooltip: 'Save Data',
+            Container(
+              width: 40,
+              height: 40,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: _canSaveData() 
+                    ? Colors.green      // Hijau jika memenuhi syarat
+                    : Colors.grey[300], // Abu-abu jika belum memenuhi syarat
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: _canSaveData()
+                    ? [
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : [],  // Tidak ada shadow jika disabled
+              ),
+              child: IconButton(
+                icon: Icon(
+                  Icons.check, 
+                  size: 20, 
+                  color: _canSaveData()
+                      ? Colors.white      // Putih jika enabled
+                      : Colors.grey[600], // Abu-abu tua jika disabled
+                ),
+                padding: EdgeInsets.zero,
+                onPressed: _canSaveData() ? () {
+                  setState(() => _showForm = true);
+                  _showFormBottomSheet();
+                } : null,
+                tooltip: _getConfirmTooltip(),
+              ),
             ),
         ],
       ),
@@ -1636,6 +2091,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                         height: 60,
                         child: UserLocationMarker(
                           bearing: _currentBearing,
+                          isEmlidGPS: _locationService.currentProvider == LocationProvider.emlid,
                         ),
                       ),
                     ],
@@ -1703,9 +2159,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         
        
         
-        // Info Card Overlay
+        // Info Card Overlay (dengan padding top untuk status bar dan app bar)
         Positioned(
-          top: AppTheme.spacingSmall,
+          top: MediaQuery.of(context).padding.top + kToolbarHeight + AppTheme.spacingSmall,
           left: AppTheme.spacingMedium,
           right: AppTheme.spacingMedium,
           child: Column(
@@ -1755,6 +2211,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
             heroTag: 'userLocation',
             mini: true,
             backgroundColor: Colors.white,
+            elevation: 6,
             child: const Icon(Icons.my_location, color: AppTheme.primaryColor),
             onPressed: () {
               if (_currentLocation != null) {
@@ -1790,8 +2247,26 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
             heroTag: 'basemap',
             mini: true,
             backgroundColor: Colors.white,
+            elevation: 6,
             child: const Icon(Icons.layers, color: AppTheme.primaryColor),
             onPressed: _showBasemapSelector,
+          ),
+        ),
+        
+        // Offline Download Button
+        Positioned(
+          bottom: _isBottomSheetExpanded 
+              ? AppTheme.spacingLarge + 440  // Expanded: adjust upward
+              : AppTheme.spacingLarge + 170,  // Collapsed: normal position
+          right: AppTheme.spacingMedium,
+          child: FloatingActionButton(
+            heroTag: 'offline_download',
+            mini: true,
+            backgroundColor: Colors.white,
+            elevation: 6,
+            child: const Icon(Icons.download, color: Colors.green),
+            tooltip: 'Download for Offline',
+            onPressed: _showOfflineDownloadDialog,
           ),
         ),
         
@@ -1800,8 +2275,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
         if (widget.project.geometryType != GeometryType.point)
           Positioned(
             bottom: _isBottomSheetExpanded 
-                ? AppTheme.spacingLarge + 440  // Expanded: adjust upward
-                : AppTheme.spacingLarge + 170,  // Collapsed: normal position
+                ? AppTheme.spacingLarge + 500  // Expanded: adjust upward
+                : AppTheme.spacingLarge + 230,  // Collapsed: normal position
             right: AppTheme.spacingMedium,
             child: FloatingActionButton(
               heroTag: 'mode',
@@ -1809,6 +2284,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
               backgroundColor: _collectionMode == CollectionMode.drawing
                   ? AppTheme.primaryColor
                   : Colors.white,
+              elevation: 6,
               child: Icon(
                 _collectionMode == CollectionMode.drawing ? Icons.touch_app : Icons.edit,
                 color: _collectionMode == CollectionMode.drawing ? Colors.white : AppTheme.primaryColor,
@@ -1843,12 +2319,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
     }
 
     return Card(
+      color: Colors.white.withOpacity(0.85),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Baris pertama: Status tracking dan jumlah points
             Row(
               children: [
                 Icon(
@@ -1862,36 +2340,177 @@ class _DataCollectionScreenState extends State<DataCollectionScreen> with Automa
                     : _isTracking 
                       ? (_isPaused ? Colors.orange : Colors.green)
                       : Colors.grey,
-                  size: 20,
+                  size: 16,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  _collectionMode == CollectionMode.drawing 
-                    ? 'Drawing Mode' 
-                    : _isTracking 
-                      ? (_isPaused ? 'Tracking Paused' : 'Tracking Active')
-                      : 'Tracking Inactive',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _collectionMode == CollectionMode.drawing 
+                      ? 'Drawing Mode' 
+                      : _isTracking 
+                        ? (_isPaused ? 'Paused' : 'Tracking')
+                        : 'Inactive',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
-                const Spacer(),
-                Text('Points: ${_collectedPoints.length}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${_collectedPoints.length} pts',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
+                ),
               ],
             ),
+            
+            // Baris kedua: Location provider dan metric (distance/area)
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                // Location Provider
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _locationService.currentProvider == LocationProvider.emlid
+                        ? Colors.blue.withOpacity(0.1)
+                        : Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: _locationService.currentProvider == LocationProvider.emlid
+                          ? Colors.blue.withOpacity(0.3)
+                          : Colors.grey.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _getLocationProviderIcon(),
+                        size: 10,
+                        color: _locationService.currentProvider == LocationProvider.emlid
+                            ? Colors.blue[700]
+                            : Colors.grey[700],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _locationService.currentProvider == LocationProvider.emlid ? 'RTK' : 'GPS',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          color: _locationService.currentProvider == LocationProvider.emlid
+                              ? Colors.blue[700]
+                              : Colors.grey[700],
+                        ),
+                      ),
+                      // Warning indicator if Emlid but not streaming
+                      if (_locationService.currentProvider == LocationProvider.emlid &&
+                          (!_locationService.isEmlidConnected || !_locationService.isEmlidStreaming)) ...[
+                        const SizedBox(width: 3),
+                        Icon(
+                          Icons.warning_rounded,
+                          size: 10,
+                          color: Colors.orange[700],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(width: 8),
+                
+                // Distance or Area
+                if (distance != null)
+                  Expanded(
+                    child: Text(
+                      '📏 ${_settingsService.settings.formatDistance(distance)}',
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  )
+                else if (area != null)
+                  Expanded(
+                    child: Text(
+                      '📐 ${_settingsService.settings.formatArea(area)}',
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                
+                // Accuracy and Fix Quality
+                if (_currentLocation != null) ...[
+                  Text(
+                    '±${_currentLocation!.accuracy?.toStringAsFixed(1) ?? 'N/A'}m',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  // Show fix quality for Emlid
+                  if (_locationService.currentProvider == LocationProvider.emlid &&
+                      _currentLocation!.fixQuality != null) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _getFixQualityColor(_currentLocation!.fixQuality!),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        _currentLocation!.fixQuality!.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 8,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+            
+            // Drawing mode hint
             if (_collectionMode == CollectionMode.drawing) ...[
               const SizedBox(height: 4),
-              Text('Tap on map to add points', style: TextStyle(fontSize: 11, color: Colors.grey[600], fontStyle: FontStyle.italic)),
-            ],
-            if (distance != null) ...[const SizedBox(height: 8), Text('Distance: ${_settingsService.settings.formatDistance(distance)}')],
-            if (area != null) ...[const SizedBox(height: 8), Text('Area: ${_settingsService.settings.formatArea(area)}')],
-            if (_currentLocation != null) ...[
-              const SizedBox(height: 8),
-              Text('Accuracy: ±${_currentLocation!.accuracy?.toStringAsFixed(1) ?? 'N/A'} m',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              Text(
+                'Tap on map to add points',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
             ],
           ],
         ),
       ),
     );
+  }
+  
+  Color _getFixQualityColor(String fixQuality) {
+    switch (fixQuality.toLowerCase()) {
+      case 'fix':
+        return Colors.green;
+      case 'float':
+        return Colors.orange;
+      case 'autonomous':
+      case 'dgps':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildImageErrorWidget() {

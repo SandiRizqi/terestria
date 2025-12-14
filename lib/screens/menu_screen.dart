@@ -13,6 +13,7 @@ import 'basemap/basemap_management_screen.dart';
 import 'settings/settings_screen.dart';
 import 'profile/profile_screen.dart';
 import 'notifications/notifications_screen.dart';
+import 'location/location_provider_screen.dart';
 import 'dart:async';
 
 class MenuScreen extends StatefulWidget {
@@ -274,6 +275,21 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                 _loadUnreadNotificationCount();
               },
             ),
+            _buildMenuCard(
+              context,
+              icon: Icons.satellite_alt,
+              title: 'Location',
+              description: 'GPS provider',
+              color: Colors.teal,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LocationProviderScreen(),
+                  ),
+                );
+              },
+            ),
             // _buildMenuCard(
             //   context,
             //   icon: Icons.inventory_2_outlined,
@@ -388,24 +404,28 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                     ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: AppTheme.textPrimary,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
                 description,
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: AppTheme.textSecondary,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

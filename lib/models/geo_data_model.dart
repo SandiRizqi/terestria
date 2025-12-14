@@ -4,6 +4,8 @@ class GeoPoint {
   final double? altitude;
   final double? accuracy;
   final DateTime timestamp;
+  final String? fixQuality; // RTK fix quality: fix, float, autonomous, etc.
+  final int? satelliteCount; // Number of satellites used
 
   GeoPoint({
     required this.latitude,
@@ -11,6 +13,8 @@ class GeoPoint {
     this.altitude,
     this.accuracy,
     required this.timestamp,
+    this.fixQuality,
+    this.satelliteCount,
   });
 
   Map<String, dynamic> toJson() {
@@ -20,6 +24,8 @@ class GeoPoint {
       'altitude': altitude,
       'accuracy': accuracy,
       'timestamp': timestamp.toIso8601String(),
+      'fixQuality': fixQuality,
+      'satelliteCount': satelliteCount,
     };
   }
 
@@ -30,6 +36,8 @@ class GeoPoint {
       altitude: json['altitude'],
       accuracy: json['accuracy'],
       timestamp: DateTime.parse(json['timestamp']),
+      fixQuality: json['fixQuality'],
+      satelliteCount: json['satelliteCount'],
     );
   }
 }

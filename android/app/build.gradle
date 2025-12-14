@@ -35,25 +35,29 @@ android {
             abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
         }
         
-        // python {
-        //     version "3.8"
-        //     
-        //     pip {
-        //         // Python packages yang akan diinstall
-        //         install "numpy==1.19.5"
-        //         install "pillow==9.2.0"
-        //         //install "PyMuPDF==1.18.19"  // For reading GeoPDF metadata
-        //         install "pdf2image==1.16.0"  // For PDF to image conversion
-        //         // GDAL tidak tersedia di Chaquopy PyPI
-        //         // Alternatif: rasterio (lebih ringan)
-        //     }
-        // }  // Chaquopy - Not used anymore
+    }
+
+    def keystoreProperties = new Properties()
+    def keystorePropertiesFile = rootProject.file('key.properties')
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    }
+
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+            storePassword keystoreProperties['storePassword']
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
-        }
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        } 
     }
 
     applicationVariants.all { variant ->

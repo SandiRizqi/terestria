@@ -1,12 +1,12 @@
 class ApiConfig {
   // Base URL backend
-  static const String baseUrl = 'https://jango-dev1.tap-agri.com';
+  static const String baseUrl = 'https://django.tap-agri.com';
 
   static const String authUrl = '${baseUrl}/loginldap/';
 
   static const String bundleName = 'com.sandi.geoformApp';
 
-  static const String appVersion = '1.7-dev';
+  static const String appVersion = '2.0-prod';
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';

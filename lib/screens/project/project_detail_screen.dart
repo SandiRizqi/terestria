@@ -1968,14 +1968,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       children: [
         Icon(
           icon,
-          size: 16,
+          size: 14,
           color: iconColor,
         ),
         const SizedBox(width: 8),
         Text(
           '$label:',
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w500,
             color: Colors.grey[600],
           ),
@@ -1985,7 +1985,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           child: Text(
             value,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               color: Color(0xFF374151),
             ),

@@ -3,6 +3,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 class DirectionBeamPainter extends CustomPainter {
+  final Color color;
+  
+  DirectionBeamPainter({required this.color});
+  
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
@@ -20,9 +24,9 @@ class DirectionBeamPainter extends CustomPainter {
       begin: Alignment.bottomCenter,
       end: Alignment.topCenter,
       colors: [
-        const Color(0xFF4285F4).withOpacity(0.7), // Blue dengan opacity di tengah
-        const Color(0xFF4285F4).withOpacity(0.4), // Lebih tipis
-        const Color(0xFF4285F4).withOpacity(0.0), // Transparan di ujung
+        color.withOpacity(0.7), // Warna dengan opacity di tengah
+        color.withOpacity(0.4), // Lebih tipis
+        color.withOpacity(0.0), // Transparan di ujung
       ],
       stops: const [0.0, 0.6, 1.0],
     );
@@ -40,14 +44,21 @@ class DirectionBeamPainter extends CustomPainter {
 
 class UserLocationMarker extends StatelessWidget {
   final double bearing;
+  final bool isEmlidGPS;
 
   const UserLocationMarker({
     Key? key,
     required this.bearing,
+    this.isEmlidGPS = false,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    // Warna berbeda untuk Phone GPS (blue) vs Emlid GPS (green/teal)
+    final markerColor = isEmlidGPS 
+        ? const Color(0xFF00BFA5) // Teal/turquoise untuk Emlid RTK GPS
+        : const Color(0xFF4285F4); // Google Maps blue untuk Phone GPS
+    
     return Transform.rotate(
       angle: bearing * (math.pi / 180),
       child: Stack(
@@ -56,7 +67,7 @@ class UserLocationMarker extends StatelessWidget {
           // Direction beam (cahaya menyorot)
           CustomPaint(
             size: const Size(60, 60),
-            painter: DirectionBeamPainter(),
+            painter: DirectionBeamPainter(color: markerColor),
           ),
           // White shadow/border circle
           Container(
@@ -74,15 +85,32 @@ class UserLocationMarker extends StatelessWidget {
               ],
             ),
           ),
-          // Blue circle
+          // Colored circle (blue for phone, teal for Emlid)
           Container(
             width: 16,
             height: 16,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFF4285F4), // Google Maps blue
+              color: markerColor,
             ),
           ),
+          // Small icon indicator for Emlid GPS
+          if (isEmlidGPS)
+            Positioned(
+              bottom: -2,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.router,
+                  size: 8,
+                  color: Color(0xFF00BFA5),
+                ),
+              ),
+            ),
         ],
       ),
     );

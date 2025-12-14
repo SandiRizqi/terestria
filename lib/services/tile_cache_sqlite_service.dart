@@ -10,6 +10,7 @@ import '../screens/basemap/cache_management_screen.dart';
 class TileCacheSqliteService {
   static Database? _database;
   static final Map<String, Database?> _databaseCache = {};
+  static const int _maxOpenDatabases = 5; // Limit untuk mobile devices
 
   /// Get database instance for specific basemap (connection pooling)
   Future<Database> _getDatabase(String basemapId) async {
@@ -22,6 +23,18 @@ class TileCacheSqliteService {
         // Database was closed, remove from cache
         _databaseCache.remove(basemapId);
       }
+    }
+
+    // Enforce max open databases limit
+    if (_databaseCache.length >= _maxOpenDatabases) {
+      // Close least recently used database
+      final oldestKey = _databaseCache.keys.first;
+      final oldestDb = _databaseCache[oldestKey];
+      if (oldestDb != null && oldestDb.isOpen) {
+        await oldestDb.close();
+        print('🔒 Closed database $oldestKey to maintain connection limit');
+      }
+      _databaseCache.remove(oldestKey);
     }
 
     final directory = await getApplicationSupportDirectory();

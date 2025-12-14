@@ -16,6 +16,8 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../../services/settings_service.dart';
+import '../../services/connectivity_service.dart';
+import '../../widgets/basemap/cloud_basemap_dialog.dart';
 
 class BasemapManagementScreen extends StatefulWidget {
   const BasemapManagementScreen({Key? key}) : super(key: key);
@@ -29,6 +31,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
   final BasemapService _basemapService = BasemapService();
   final PdfBasemapService _pdfService = PdfBasemapService();
   final SettingsService _settingsService = SettingsService();
+  final ConnectivityService _connectivityService = ConnectivityService();
   final _uuid = const Uuid();
   
   List<Basemap> _basemaps = [];
@@ -84,6 +87,54 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       await _addTmsBasemap();
     } else if (type == 'pdf') {
       await _addPdfBasemap();
+    } else if (type == 'cloud') {
+      await _addFromCloud();
+    }
+  }
+
+  Future<void> _addFromCloud() async {
+    // Check connectivity first
+    final isOnline = await _connectivityService.checkConnection();
+    
+    if (!isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.cloud_off, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'You need to be online to add basemaps from cloud',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppTheme.errorColor,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show cloud basemap dialog
+    final addedCount = await showDialog<int>(
+      context: context,
+      builder: (context) => const CloudBasemapDialog(),
+    );
+
+    if (addedCount != null && addedCount > 0) {
+      _loadBasemaps();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$addedCount basemap(s) added successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     }
   }
 

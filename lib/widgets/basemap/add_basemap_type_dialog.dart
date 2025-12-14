@@ -12,6 +12,14 @@ class AddBasemapTypeDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _BasemapTypeCard(
+            icon: Icons.cloud_download,
+            title: 'From Cloud',
+            description: 'Add basemap from cloud repository',
+            color: AppTheme.primaryColor,
+            onTap: () => Navigator.pop(context, 'cloud'),
+          ),
+          const SizedBox(height: AppTheme.spacingMedium),
+          _BasemapTypeCard(
             icon: Icons.link,
             title: 'TMS URL',
             description: 'Add custom TMS basemap from URL',
