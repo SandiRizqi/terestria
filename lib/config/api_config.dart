@@ -1,6 +1,6 @@
 class ApiConfig {
   // Base URL backend
-  static const String baseUrl = 'https://django.tap-agri.com';
+  static const String baseUrl = 'https://jango-dev1.tap-agri.com';
 
   static const String authUrl = '${baseUrl}/loginldap/';
 
