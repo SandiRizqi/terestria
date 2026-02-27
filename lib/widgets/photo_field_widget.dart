@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 /// Photo metadata for form data
 class PhotoData {
@@ -116,6 +117,30 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
     }
   }
 
+  /// Copy photo from temporary to persistent storage
+  /// This ensures photos survive app updates and cache clearing
+  Future<String> _copyToPersistentStorage(String tempPath) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photoDir = Directory('${appDir.path}/photos/originals');
+    
+    if (!await photoDir.exists()) {
+      await photoDir.create(recursive: true);
+    }
+    
+    // Generate unique filename with timestamp
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final extension = tempPath.split('.').last;
+    final newFilename = 'IMG_$timestamp.$extension';
+    final newPath = '${photoDir.path}/$newFilename';
+    
+    // Copy file to persistent storage
+    final tempFile = File(tempPath);
+    await tempFile.copy(newPath);
+    
+    print('✅ Photo copied to persistent storage: $newPath');
+    return newPath;
+  }
+
   Future<void> _takePhoto() async {
     if (_photos.length >= widget.maxPhotos) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -133,7 +158,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
       );
 
       if (photo != null) {
-        final photoData = PhotoData.fromPath(photo.path);
+        // ✅ CHANGED: Copy to persistent storage instead of using temp path
+        final persistentPath = await _copyToPersistentStorage(photo.path);
+        final photoData = PhotoData.fromPath(persistentPath);
         setState(() {
           _photos.add(photoData);
         });
@@ -165,7 +192,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
       );
 
       if (image != null) {
-        final photoData = PhotoData.fromPath(image.path);
+        // ✅ CHANGED: Copy to persistent storage instead of using temp path
+        final persistentPath = await _copyToPersistentStorage(image.path);
+        final photoData = PhotoData.fromPath(persistentPath);
         setState(() {
           _photos.add(photoData);
         });
@@ -321,27 +350,26 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
         
         if (_photos.isNotEmpty) const SizedBox(height: 8),
         
-        // Add Photo Buttons
-        if (_photos.length < widget.maxPhotos)
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _takePhoto,
-                  icon: const Icon(Icons.camera_alt),
-                  label: const Text('Camera'),
-                ),
+        // Add Photo Buttons - Disabled when max reached
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _photos.length < widget.maxPhotos ? _takePhoto : null,
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Camera'),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickFromGallery,
-                  icon: const Icon(Icons.photo_library),
-                  label: const Text('Gallery'),
-                ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _photos.length < widget.maxPhotos ? _pickFromGallery : null,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Gallery'),
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
         
         const SizedBox(height: 4),
         Row(
@@ -381,8 +409,43 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
           ],
         ),
         
+        // Info message when max photos reached
+        if (photoCount >= widget.maxPhotos) ...[  
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: Colors.green.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check_circle_outline,
+                  size: 16,
+                  color: Colors.green[700],
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Maximum photos reached',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.green[900],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ]
         // Warning message for insufficient photos  
-        if (hasWarning) ...[
+        else if (hasWarning) ...[
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(8),
@@ -418,11 +481,8 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget> with AutomaticKeepA
             ),
           ),
         ],
-        
-        // Error message for exceeding max
-        if (hasError && widget.errorText != null) ...[
       ],
-    ]);
+    );
   }
 }
 

@@ -123,7 +123,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-      body: ListView(
+      body: SafeArea(child:
+      ListView(
         children: [
           _buildHeader(),
           const SizedBox(height: 8),
@@ -230,7 +231,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildPreviewCard(),
           
           const SizedBox(height: 24),
-        ],
+        ],)
       ),
     );
   }

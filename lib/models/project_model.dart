@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 import 'form_field_model.dart';
 
 enum GeometryType { point, line, polygon }
@@ -11,6 +13,7 @@ class Project {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isSynced;
+  final int? geoDataCount;
   final DateTime? syncedAt;
   final String? createdBy; // username yang membuat project
 
@@ -25,6 +28,7 @@ class Project {
     this.isSynced = false,
     this.syncedAt,
     this.createdBy,
+    this.geoDataCount,
   });
 
   Map<String, dynamic> toJson() {
@@ -39,6 +43,7 @@ class Project {
       'isSynced': isSynced,
       'syncedAt': syncedAt?.toIso8601String(),
       'createdBy': createdBy,
+      'geoDataCount': geoDataCount,
     };
   }
 
@@ -51,6 +56,7 @@ class Project {
     final isSyncedData = json['isSynced'] ?? json['is_synced'];
     final syncedAtStr = json['syncedAt'] ?? json['synced_at'];
     final createdByData = json['createdBy'] ?? json['created_by'];
+    final geoDataCount = json['geoDataCount'] ?? json['geo_data_count'];
     
     return Project(
       id: json['id'],
@@ -67,6 +73,7 @@ class Project {
       isSynced: isSyncedData ?? false,
       syncedAt: syncedAtStr != null ? DateTime.parse(syncedAtStr) : null,
       createdBy: createdByData,
+      geoDataCount: geoDataCount,
     );
   }
 

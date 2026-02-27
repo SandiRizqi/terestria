@@ -421,18 +421,36 @@ class PhotoSyncService {
     return updatedFormData;
   }
 
-  /// Get local path for photo storage (use cache directory like when uploading)
-  Future<String> _getPhotoPath(String filename) async {
-    // Use cache directory to match the path format from server
-    // Server sends paths like: /data/user/0/com.example.geoform_app/cache/...
-    final directory = await getTemporaryDirectory();
-    final cacheDir = Directory(directory.path);
+  /// Get persistent photo directory for originals (WILL NOT BE DELETED on update/cache clear)
+  Future<Directory> _getPersistentPhotoDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photoDir = Directory('${appDir.path}/photos/originals');
     
-    if (!cacheDir.existsSync()) {
-      await cacheDir.create(recursive: true);
+    if (!await photoDir.exists()) {
+      await photoDir.create(recursive: true);
     }
     
-    return '${cacheDir.path}/$filename';
+    return photoDir;
+  }
+
+  /// Get downloaded photo directory (persistent)
+  Future<Directory> _getDownloadedPhotoDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photoDir = Directory('${appDir.path}/photos/downloaded');
+    
+    if (!await photoDir.exists()) {
+      await photoDir.create(recursive: true);
+    }
+    
+    return photoDir;
+  }
+
+  /// Get local path for photo storage (use persistent directory instead of cache)
+  Future<String> _getPhotoPath(String filename) async {
+    // ✅ CHANGED: Use persistent storage instead of cache
+    // This ensures photos survive app updates and cache clearing
+    final photoDir = await _getDownloadedPhotoDirectory();
+    return '${photoDir.path}/$filename';
   }
 
   /// Clean up orphaned photos (photos not referenced in any geodata)
@@ -441,35 +459,57 @@ class PhotoSyncService {
       final directory = await getApplicationDocumentsDirectory();
       final photosDir = Directory('${directory.path}/photos');
       
-      if (!photosDir.existsSync()) return;
+      if (!await photosDir.exists()) return;
 
-      final files = photosDir.listSync();
+      // Clean both originals and downloaded folders
+      final originalsDir = Directory('${photosDir.path}/originals');
+      final downloadedDir = Directory('${photosDir.path}/downloaded');
+      
       int deletedCount = 0;
-
-      for (var file in files) {
-        if (file is File) {
-          final isReferenced = referencedPaths.any((path) => path == file.path);
-          
-          if (!isReferenced) {
-            await file.delete();
-            deletedCount++;
+      
+      // Clean originals folder
+      if (await originalsDir.exists()) {
+        final files = originalsDir.listSync();
+        for (var file in files) {
+          if (file is File) {
+            final isReferenced = referencedPaths.any((path) => path == file.path);
+            
+            if (!isReferenced) {
+              await file.delete();
+              deletedCount++;
+            }
+          }
+        }
+      }
+      
+      // Clean downloaded folder
+      if (await downloadedDir.exists()) {
+        final files = downloadedDir.listSync();
+        for (var file in files) {
+          if (file is File) {
+            final isReferenced = referencedPaths.any((path) => path == file.path);
+            
+            if (!isReferenced) {
+              await file.delete();
+              deletedCount++;
+            }
           }
         }
       }
 
-      //print('Cleaned up $deletedCount orphaned photos');
+      print('Cleaned up $deletedCount orphaned photos from persistent storage');
     } catch (e) {
       print('Error cleaning up photos: $e');
     }
   }
 
-  /// Get total size of photos directory
+  /// Get total size of photos directory (persistent storage)
   Future<int> getPhotoStorageSize() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final photosDir = Directory('${directory.path}/photos');
       
-      if (!photosDir.existsSync()) return 0;
+      if (!await photosDir.exists()) return 0;
 
       int totalSize = 0;
       final files = photosDir.listSync(recursive: true);

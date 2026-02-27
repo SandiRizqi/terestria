@@ -358,19 +358,29 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       var maxLat = bounds['max_lat']?.toDouble() ?? -6.1;
       var maxLon = bounds['max_lon']?.toDouble() ?? 106.9;
       
-      // DETECT if coordinates are swapped (lat > 90 means it's actually lon)
+      // Deteksi swap koordinat
+      bool needSwap = false;
       if (minLat.abs() > 90 || maxLat.abs() > 90) {
-        debugPrint('⚠️ DETECTED SWAPPED COORDINATES! Fixing...');
+        // lat out of range → jelas swap
+        needSwap = true;
+        debugPrint('⚠️ Lat out of range → swapping');
+      } else if (minLon.abs() <= 90 && maxLon.abs() <= 90) {
+        // Keduanya dalam -90..90: pakai heuristik magnitude
+        final avgAbsLat = (minLat.abs() + maxLat.abs()) / 2;
+        final avgAbsLon = (minLon.abs() + maxLon.abs()) / 2;
+        if (avgAbsLat > avgAbsLon) {
+          needSwap = true;
+          debugPrint('⚠️ Lat magnitude ($avgAbsLat) > Lon magnitude ($avgAbsLon) → swapping');
+        }
+      }
+      if (needSwap) {
         debugPrint('   Before swap - minLat: $minLat, minLon: $minLon, maxLat: $maxLat, maxLon: $maxLon');
-        
-        // Swap lat and lon
         final tempMinLat = minLat;
         final tempMaxLat = maxLat;
         minLat = minLon;
         maxLat = maxLon;
         minLon = tempMinLat;
         maxLon = tempMaxLat;
-        
         debugPrint('   After swap - minLat: $minLat, minLon: $minLon, maxLat: $maxLat, maxLon: $maxLon');
       }
 
@@ -707,16 +717,20 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                _buildHeader(),
-                Expanded(child: _buildBasemapList()),
-              ],
+          : SafeArea(
+              top: false, // AppBar sudah aman
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  Expanded(child: _buildBasemapList()),
+                ],
+              ),
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addBasemap,
         child: const Icon(Icons.add),
       ),
+
     );
   }
 

@@ -226,6 +226,8 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
         type: _parseFieldType(field.type),
         required: field.required,
         options: field.options,
+        minPhotos: field.minPhotos,
+        maxPhotos: field.maxPhotos,
       );
     }).toList();
   }

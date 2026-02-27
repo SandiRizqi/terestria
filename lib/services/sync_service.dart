@@ -121,6 +121,8 @@ class SyncService {
           'type': field.type.toString().split('.').last,
           'required': field.required,
           'options': field.options,
+          if (field.minPhotos != null) 'minPhotos': field.minPhotos,
+          if (field.maxPhotos != null) 'maxPhotos': field.maxPhotos,
         }).toList(),
         'created_at': project.createdAt.toIso8601String(),
         'updated_at': project.updatedAt.toIso8601String(),
@@ -492,6 +494,8 @@ class SyncService {
         options: fieldJson['options'] != null 
             ? List<String>.from(fieldJson['options'])
             : null,
+        minPhotos: fieldJson['minPhotos'] as int?,
+        maxPhotos: fieldJson['maxPhotos'] as int?,
       );
     }).toList();
 

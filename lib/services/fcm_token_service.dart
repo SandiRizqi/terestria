@@ -247,7 +247,7 @@ class FCMTokenService {
     try {
       // Return hardcoded version for now
       // You can update this manually or use package_info_plus later
-      return '1.0.0';
+      return ApiConfig.appVersion;
     } catch (e) {
       print('❌ Error getting app version: $e');
       return '1.0.0';

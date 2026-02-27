@@ -1,4 +1,4 @@
-package com.example.geoform_app
+package io.github.sandirizqi.terestria
 
 import android.os.Bundle
 import android.graphics.Bitmap
@@ -11,7 +11,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 class MainActivity: FlutterActivity() {
-    private val CHANNEL = "com.example.geoform_app/python"
+    private val CHANNEL = "io.github.sandirizqi.terestria/python"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

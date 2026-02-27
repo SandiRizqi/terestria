@@ -5,8 +5,13 @@ import '../theme/app_theme.dart';
 
 class FormFieldBuilderDialog extends StatefulWidget {
   final FormFieldModel? field;
+  final List<FormFieldModel>? existingFields; // untuk cek field photo yang sudah ada
 
-  const FormFieldBuilderDialog({Key? key, this.field}) : super(key: key);
+  const FormFieldBuilderDialog({
+    Key? key, 
+    this.field,
+    this.existingFields,
+  }) : super(key: key);
 
   @override
   State<FormFieldBuilderDialog> createState() => _FormFieldBuilderDialogState();
@@ -34,6 +39,11 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
       _maxPhotos = widget.field!.maxPhotos ?? 1;
       if (widget.field!.options != null) {
         _optionsController.text = widget.field!.options!.join('\n');
+      }
+    } else {
+      // Untuk field baru, jika type photo maka set label default
+      if (_selectedType == FieldType.photo) {
+        _labelController.text = 'Photo';
       }
     }
   }
@@ -90,9 +100,14 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
               // Label
               TextFormField(
                 controller: _labelController,
-                decoration: const InputDecoration(
+                enabled: _selectedType != FieldType.photo, // Disable untuk photo field
+                decoration: InputDecoration(
                   labelText: 'Field Label',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  filled: _selectedType == FieldType.photo,
+                  fillColor: _selectedType == FieldType.photo ? Colors.grey[100] : null,
+                  helperText: _selectedType == FieldType.photo ? 'Photo field label is fixed to "Photo"' : null,
+                  helperStyle: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -111,14 +126,54 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: FieldType.values.map((type) {
-                  String displayName = type.toString().split('.').last;
+                  String displayName;
+                  bool isDisabled = false;
+                  
+                  if (type == FieldType.photo) {
+                    displayName = 'Photo';
+                    // Disable photo option jika sudah ada photo field dan ini bukan edit field photo
+                    if (widget.existingFields != null) {
+                      final hasPhotoField = widget.existingFields!.any((f) => 
+                        f.type == FieldType.photo && f.id != widget.field?.id
+                      );
+                      isDisabled = hasPhotoField;
+                    }
+                  } else {
+                    displayName = type.toString().split('.').last;
+                    displayName = displayName[0].toUpperCase() + displayName.substring(1);
+                  }
+                  
                   return DropdownMenuItem(
                     value: type,
-                    child: Text(displayName[0].toUpperCase() + displayName.substring(1)),
+                    enabled: !isDisabled,
+                    child: Row(
+                      children: [
+                        Text(
+                          displayName,
+                          style: TextStyle(
+                            color: isDisabled ? Colors.grey : null,
+                          ),
+                        ),
+                        if (isDisabled) ...[
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.lock,
+                            size: 16,
+                            color: Colors.grey[400],
+                          ),
+                        ],
+                      ],
+                    ),
                   );
                 }).toList(),
                 onChanged: (value) {
-                  setState(() => _selectedType = value!);
+                  setState(() {
+                    _selectedType = value!;
+                    // Auto set label ke "Photo" jika photo type dipilih
+                    if (_selectedType == FieldType.photo) {
+                      _labelController.text = 'Photo';
+                    }
+                  });
                 },
               ),
               const SizedBox(height: AppTheme.spacingMedium),

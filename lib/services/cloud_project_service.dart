@@ -46,13 +46,15 @@ class CloudProjectService {
                     createdBy: project.createdBy ?? 'Unknown',
                     createdAt: project.createdAt,
                     updatedAt: project.updatedAt,
-                    dataCount: 0, // Server doesn't provide this in project list
+                    dataCount: project.geoDataCount ??  0, // Server doesn't provide this in project list
                     formFields: project.formFields.map((field) {
                       return FormFieldData(
                         label: field.label,
                         type: field.type.toString().split('.').last,
                         required: field.required,
                         options: field.options,
+                        minPhotos: field.minPhotos,
+                        maxPhotos: field.maxPhotos,
                       );
                     }).toList(),
                   );

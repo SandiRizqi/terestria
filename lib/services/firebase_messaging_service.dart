@@ -203,7 +203,7 @@ class FirebaseMessagingService {
       importance: Importance.high,
       priority: Priority.high,
       showWhen: true,
-      icon: '@drawable/ic_stat_notification',
+      icon: '@drawable/ic_stat_edit_location',
     );
 
     const DarwinNotificationDetails iOSDetails = DarwinNotificationDetails(

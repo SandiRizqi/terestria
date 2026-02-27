@@ -14,6 +14,7 @@ import 'settings/settings_screen.dart';
 import 'profile/profile_screen.dart';
 import 'notifications/notifications_screen.dart';
 import 'location/location_provider_screen.dart';
+import 'layers/layers_screen.dart';
 import 'dart:async';
 
 class MenuScreen extends StatefulWidget {
@@ -238,6 +239,21 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                   context,
                   MaterialPageRoute(
                     builder: (context) => const ProjectsScreen(),
+                  ),
+                );
+              },
+            ),
+            _buildMenuCard(
+              context,
+              icon: Icons.layers_outlined,
+              title: 'Layers',
+              description: 'Manage layers',
+              color: Colors.teal,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LayersScreen(),
                   ),
                 );
               },

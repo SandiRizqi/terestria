@@ -21,6 +21,10 @@ class ProjectTemplateService {
           'required': field.required,
           if (field.options != null && field.options!.isNotEmpty)
             'options': field.options,
+          if (field.minPhotos != null)
+            'minPhotos': field.minPhotos,
+          if (field.maxPhotos != null)
+            'maxPhotos': field.maxPhotos,
         };
       }).toList(),
     };
@@ -86,6 +90,8 @@ class ProjectTemplateService {
           options: fieldData['options'] != null
               ? List<String>.from(fieldData['options'])
               : null,
+          minPhotos: fieldData['minPhotos'] as int?,
+          maxPhotos: fieldData['maxPhotos'] as int?,
         );
       }).toList();
     }

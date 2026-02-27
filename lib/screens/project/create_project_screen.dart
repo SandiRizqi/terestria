@@ -336,7 +336,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   void _addFormField() async {
     final field = await showDialog<FormFieldModel>(
       context: context,
-      builder: (context) => const FormFieldBuilderDialog(),
+      builder: (context) => FormFieldBuilderDialog(
+        existingFields: _formFields, // Pass existing fields untuk validasi
+      ),
     );
 
     if (field != null) {
@@ -349,7 +351,10 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   void _editFormField(int index) async {
     final field = await showDialog<FormFieldModel>(
       context: context,
-      builder: (context) => FormFieldBuilderDialog(field: _formFields[index]),
+      builder: (context) => FormFieldBuilderDialog(
+        field: _formFields[index],
+        existingFields: _formFields, // Pass existing fields untuk validasi
+      ),
     );
 
     if (field != null) {

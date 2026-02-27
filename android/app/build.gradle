@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.geoform_app"
+    namespace = "io.github.sandirizqi.terestria"
     compileSdk = 36
     ndkVersion = "26.1.10909125"
 
@@ -24,7 +24,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.geoform_app"
+        applicationId = "io.github.sandirizqi.terestria"
         minSdk = 24
         targetSdk = 35
         // Version akan otomatis diambil dari pubspec.yaml oleh Flutter

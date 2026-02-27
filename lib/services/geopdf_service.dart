@@ -69,22 +69,59 @@ class GeoPdfService {
       final match = gptsPattern.firstMatch(content);
       
       if (match != null) {
-        // IMPORTANT: GPTS format in GeoPDF is [lon1 lat1 lon2 lat2 lon3 lat3 lon4 lat4]
-        // NOT [lat1 lon1 lat2 lon2 ...]
-        final coords = [
-          double.parse(match.group(1)!),  // lon1
-          double.parse(match.group(2)!),  // lat1
-          double.parse(match.group(3)!),  // lon2
-          double.parse(match.group(4)!),  // lat2
-          double.parse(match.group(5)!),  // lon3
-          double.parse(match.group(6)!),  // lat3
-          double.parse(match.group(7)!),  // lon4
-          double.parse(match.group(8)!),  // lat4
+        final raw = [
+          double.parse(match.group(1)!),
+          double.parse(match.group(2)!),
+          double.parse(match.group(3)!),
+          double.parse(match.group(4)!),
+          double.parse(match.group(5)!),
+          double.parse(match.group(6)!),
+          double.parse(match.group(7)!),
+          double.parse(match.group(8)!),
         ];
 
-        // Extract lons and lats (GPTS format: lon-lat pairs)
-        final lons = [coords[0], coords[2], coords[4], coords[6]];
-        final lats = [coords[1], coords[3], coords[5], coords[7]];
+        // GPTS bisa lat-lon atau lon-lat tergantung PDF producer.
+        // Deteksi otomatis: nilai pada index 0,2,4,6 adalah kandidat field pertama.
+        // Latitude valid: -90..90, Longitude valid: -180..180.
+        // Jika field pertama (index 0) nilainya di luar -90..90 → pasti longitude → format lon-lat.
+        // Jika field pertama nilainya di dalam -90..90 DAN field kedua (index 1) di luar -90..90
+        //   → field pertama adalah lat → format lat-lon.
+        // Jika keduanya dalam -90..90, gunakan magnitude: nilai yang lebih besar (abs) biasanya lon.
+
+        final a = [raw[0], raw[2], raw[4], raw[6]]; // field pertama tiap pasang
+        final b = [raw[1], raw[3], raw[5], raw[7]]; // field kedua tiap pasang
+
+        List<double> lats;
+        List<double> lons;
+
+        final aOutOfLatRange = a.any((v) => v.abs() > 90);
+        final bOutOfLatRange = b.any((v) => v.abs() > 90);
+
+        if (aOutOfLatRange && !bOutOfLatRange) {
+          // field a = lon, field b = lat  (format: lon-lat)
+          lons = a;
+          lats = b;
+          print('📐 GPTS detected: lon-lat format (a out of lat range)');
+        } else if (!aOutOfLatRange && bOutOfLatRange) {
+          // field a = lat, field b = lon  (format: lat-lon)
+          lats = a;
+          lons = b;
+          print('📐 GPTS detected: lat-lon format (b out of lat range)');
+        } else {
+          // Kedua field dalam range valid -90..90
+          // Gunakan heuristik: field dengan rata-rata abs lebih besar → longitude
+          final avgAbsA = a.map((v) => v.abs()).reduce((x, y) => x + y) / a.length;
+          final avgAbsB = b.map((v) => v.abs()).reduce((x, y) => x + y) / b.length;
+          if (avgAbsA > avgAbsB) {
+            lons = a;
+            lats = b;
+            print('📐 GPTS detected: lon-lat format (heuristic avgAbs: a=$avgAbsA > b=$avgAbsB)');
+          } else {
+            lats = a;
+            lons = b;
+            print('📐 GPTS detected: lat-lon format (heuristic avgAbs: b=$avgAbsB >= a=$avgAbsA)');
+          }
+        }
 
         bounds = {
           'min_lat': lats.reduce((a, b) => a < b ? a : b),
@@ -92,7 +129,7 @@ class GeoPdfService {
           'min_lon': lons.reduce((a, b) => a < b ? a : b),
           'max_lon': lons.reduce((a, b) => a > b ? a : b),
         };
-        
+
         print('✅ Extracted from GPTS pattern:');
         print('   Lons: $lons');
         print('   Lats: $lats');
@@ -158,21 +195,35 @@ class GeoPdfService {
         var maxLat = bounds['max_lat'] as double;
         var maxLon = bounds['max_lon'] as double;
         
-        // Check if lat values are out of valid range (> 90 or < -90)
+        // Validasi range: lat harus -90..90, lon harus -180..180
+        // Juga cek kasus swap di mana lat > 90 (jelas swap)
+        // ATAU keduanya valid tapi lon < lat (mis. lon=106 lat=-6 sudah benar,
+        // tapi lon=-6 lat=106 artinya swap)
+        bool needSwap = false;
+
         if (minLat.abs() > 90 || maxLat.abs() > 90) {
-          print('⚠️ WARNING: Latitude out of range (${minLat}, ${maxLat})');
-          print('   Detected swapped coordinates, fixing...');
-          
-          // Swap lat and lon
-          final temp = bounds['min_lat'];
-          bounds['min_lat'] = bounds['min_lon'];
-          bounds['min_lon'] = temp;
-          
-          final temp2 = bounds['max_lat'];
-          bounds['max_lat'] = bounds['max_lon'];
-          bounds['max_lon'] = temp2;
-          
-          print('✅ Coordinates fixed: $bounds');
+          // lat jelas out of range → swap
+          needSwap = true;
+          print('⚠️ Lat out of range (${minLat}, ${maxLat}) → swapping');
+        } else if (minLon.abs() <= 90 && maxLon.abs() <= 90) {
+          // Keduanya dalam -90..90: heuristik magnitude
+          // nilai abs lebih besar = longitude
+          final avgAbsLat = (minLat.abs() + maxLat.abs()) / 2;
+          final avgAbsLon = (minLon.abs() + maxLon.abs()) / 2;
+          if (avgAbsLat > avgAbsLon) {
+            needSwap = true;
+            print('⚠️ Lat magnitude > Lon magnitude (lat=$avgAbsLat, lon=$avgAbsLon) → swapping');
+          }
+        }
+
+        if (needSwap) {
+          final tempMin = minLat;
+          final tempMax = maxLat;
+          bounds['min_lat'] = minLon;
+          bounds['max_lat'] = maxLon;
+          bounds['min_lon'] = tempMin;
+          bounds['max_lon'] = tempMax;
+          print('✅ Coordinates swapped: $bounds');
         }
         
         print('✅ Final coordinates extracted: $bounds');

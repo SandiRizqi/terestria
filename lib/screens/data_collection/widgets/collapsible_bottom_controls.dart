@@ -78,9 +78,26 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
 
   @override
   Widget build(BuildContext context) {
-    final double targetHeight = widget.isExpanded ? 180.0 : 60.0;
+    // Get bottom safe area padding
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    
+    // Calculate height dynamically based on content
+    double contentHeight;
+    if (widget.geometryType != GeometryType.point &&
+        widget.collectionMode == CollectionMode.tracking) {
+      // Tracking mode: has Start/Finish + Pause/Resume row + Add/Undo/Clear row
+      contentHeight = 160.0; // Height for 2 rows of buttons
+    } else {
+      // Drawing mode or Point type: only has Add/Undo/Clear row
+      contentHeight = 110.0; // Height for 1 row of buttons
+    }
+    
+    final double collapsedHeight = 60.0 + bottomPadding;
+    final double expandedHeight = contentHeight + bottomPadding;
+    
+    final double targetHeight = widget.isExpanded ? expandedHeight : collapsedHeight;
     final double currentHeight = _isDragging 
-        ? (targetHeight - _dragPosition).clamp(60.0, 180.0)
+        ? (targetHeight - _dragPosition).clamp(collapsedHeight, expandedHeight)
         : targetHeight;
 
     return GestureDetector(
@@ -104,7 +121,9 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
             )
           ],
         ),
-        child: Column(
+        child: SafeArea(
+          top: false,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Drag Handle
@@ -314,6 +333,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                 ),
               ),
           ],
+        ),
         ),
       ),
       )

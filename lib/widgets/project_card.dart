@@ -52,6 +52,10 @@ class _ProjectCardState extends State<ProjectCard> {
     return normalizedProjectCreator == normalizedCurrentUser;
   }
 
+  bool _canDeleteProject() {
+    return true;
+  }
+
   void _handleEdit() {
     if (_canEditProject()) {
       widget.onEdit();
@@ -74,7 +78,7 @@ class _ProjectCardState extends State<ProjectCard> {
   }
 
   void _handleDelete() {
-    if (_canEditProject()) {
+    if (_canDeleteProject()) {
       widget.onDelete();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,6 +119,7 @@ class _ProjectCardState extends State<ProjectCard> {
     }
 
     final canEdit = _canEditProject();
+    final canDelete = _canDeleteProject();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -196,16 +201,16 @@ class _ProjectCardState extends State<ProjectCard> {
                     ),
                     child: IconButton(
                       icon: Icon(
-                        canEdit ? Icons.delete_outline : Icons.lock_outline,
+                        canDelete ? Icons.delete_outline : Icons.lock_outline,
                         size: 20,
                       ),
-                      color: canEdit 
+                      color: canDelete
                           ? Colors.red[700] 
                           : Colors.grey[400],
                       onPressed: _handleDelete,
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
-                      tooltip: canEdit ? 'Delete Project' : 'No permission to delete',
+                      tooltip: canDelete ? 'Delete Project' : 'No permission to delete',
                     ),
                   ),
                 ],

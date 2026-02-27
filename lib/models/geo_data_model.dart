@@ -40,6 +40,12 @@ class GeoPoint {
       satelliteCount: json['satelliteCount'],
     );
   }
+
+
+   @override
+  String toString() {
+    return 'GeoPoint(lat: $latitude, lng: $longitude, time: $timestamp)';
+  }
 }
 
 class GeoData {

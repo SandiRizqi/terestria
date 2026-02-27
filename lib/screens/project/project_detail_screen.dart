@@ -1215,7 +1215,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: SafeArea(
+        top: true,
+        child: 
+      Column(
         children: [
           // Sync Indicator
           if (_isSyncing)
@@ -1294,6 +1297,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           ),
           ),
         ],
+      )
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _navigateToDataCollection,
@@ -2564,8 +2568,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             title: Row(
               children: [
                 Icon(Icons.file_download, color: Theme.of(context).primaryColor),
-                const SizedBox(width: 8),
-                const Text('Export Project Template'),
+                const SizedBox(width: 6),
+                const Text('Export Template'),
               ],
             ),
             content: Column(

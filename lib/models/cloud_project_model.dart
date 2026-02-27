@@ -45,12 +45,16 @@ class FormFieldData {
   final String type;
   final bool required;
   final List<String>? options;
+  final int? minPhotos;
+  final int? maxPhotos;
 
   FormFieldData({
     required this.label,
     required this.type,
     required this.required,
     this.options,
+    this.minPhotos,
+    this.maxPhotos,
   });
 
   factory FormFieldData.fromJson(Map<String, dynamic> json) {
@@ -59,6 +63,8 @@ class FormFieldData {
       type: json['type'] as String,
       required: json['required'] as bool? ?? false,
       options: (json['options'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      minPhotos: json['min_photos'] as int? ?? json['minPhotos'] as int?,
+      maxPhotos: json['max_photos'] as int? ?? json['maxPhotos'] as int?,
     );
   }
 }

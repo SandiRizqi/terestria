@@ -26,18 +26,35 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	
+	<!-- Camera & Photo Library -->
 	<key>NSCameraUsageDescription</key>
 	<string>Terestria needs camera access to capture field survey photos</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Terestria needs continuous location access to track your survey path even when the app is in the background</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Terestria needs location access for accurate agricultural and environmental mapping</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Terestria needs location access to collect geospatial survey data</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Terestria needs photo library access to attach images to survey data</string>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
+	
+	<!-- Location Permissions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Terestria needs location access to collect geospatial survey data</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Terestria needs location access for accurate agricultural and environmental mapping</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Terestria needs continuous location access to track your survey path even when the app is in the background</string>
+	
+	<!-- ✅ TAMBAHAN PENTING: iOS 14+ Precise Location -->
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>PreciseLocationUsage</key>
+		<string>Terestria requires precise location to accurately map survey boundaries and collect geospatial data with centimeter-level accuracy</string>
+		<key>TrackingUsage</key>
+		<string>We need precise location to track your survey path with high accuracy GPS tracking</string>
+	</dict>
+	
+	<!-- ✅ TAMBAHAN: Default to Precise Location -->
+	<key>NSLocationDefaultAccuracyReduced</key>
+	<false/>
+	
+	<!-- Background Modes -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
@@ -45,6 +62,10 @@
 		<string>processing</string>
 		<string>remote-notification</string>
 	</array>
+	
+	<!-- UI Configuration -->
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -63,12 +84,13 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 
+	<!-- Network Configuration -->
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_dartobservatory._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>App needs access to local network devices.</string>
+	<string>App needs access to local network devices for RTK GPS connection.</string>
 	<key>NSAllowsArbitraryLoadsInWebContent</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
