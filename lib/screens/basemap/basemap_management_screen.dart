@@ -695,8 +695,13 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Basemap Management'),
+        backgroundColor: AppTheme.primaryGreen,
+        title: const Text(
+          'Basemap Management',
+          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
         elevation: 0,
         actions: [
           IconButton(
@@ -726,11 +731,17 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
                 ],
               ),
             ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _addBasemap,
-        child: const Icon(Icons.add),
+        backgroundColor: AppTheme.primaryColor,
+        foregroundColor: Colors.white,
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
-
     );
   }
 

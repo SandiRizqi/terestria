@@ -101,8 +101,14 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Edit Survey Data'),
+        backgroundColor: AppTheme.primaryGreen,
+        elevation: 0,
+        title: const Text(
+          'Edit Survey Data',
+          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
         actions: [
           if (_isSaving)
             const Center(
@@ -120,7 +126,7 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
             )
           else
             IconButton(
-              icon: const Icon(Icons.check),
+              icon: const Icon(Icons.check_rounded, size: 28),
               onPressed: _saveChanges,
               tooltip: 'Save Changes',
             ),

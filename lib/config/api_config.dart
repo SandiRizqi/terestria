@@ -6,7 +6,7 @@ class ApiConfig {
 
   static const String bundleName = 'com.sandi.geoformApp';
 
-  static const String appVersion = '3.2-prod';
+  static const String appVersion = '3.4-prod';
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';

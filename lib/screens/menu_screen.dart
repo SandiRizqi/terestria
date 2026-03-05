@@ -107,9 +107,12 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Terestria'),
+        title: Text('Terestria ${ApiConfig.appVersion}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.5)),
         automaticallyImplyLeading: false,
+        elevation: 0,
+        backgroundColor: AppTheme.primaryGreen,
         actions: [
           const ConnectivityIndicator(
             showLabel: true,
@@ -117,11 +120,11 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(width: 8),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert, color: Colors.white),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
-            elevation: 8,
+            elevation: 12,
             offset: const Offset(0, 50),
             onSelected: (value) async {
               if (value == 'about') {
@@ -139,7 +142,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(
                         Icons.info_outline_rounded,
@@ -147,24 +150,24 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                         size: 20,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'About',
+                            'About App',
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
+                              color: AppTheme.textPrimary,
                             ),
                           ),
-                          SizedBox(height: 2),
                           Text(
-                            'App information',
+                            'Version & Info',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.grey,
+                              color: AppTheme.textSecondary,
                             ),
                           ),
                         ],
@@ -182,7 +185,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(
                         Icons.logout_rounded,
@@ -190,7 +193,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                         size: 20,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,12 +206,11 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                               color: Colors.red,
                             ),
                           ),
-                          SizedBox(height: 2),
                           Text(
-                            'Sign out from account',
+                            'Sign out of account',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.grey,
+                              color: AppTheme.textSecondary,
                             ),
                           ),
                         ],
@@ -219,141 +221,181 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: GridView.count(
-          crossAxisCount: 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
+      body: SafeArea(
+        top: false,
+        child: Column(
           children: [
-            _buildMenuCard(
-              context,
-              icon: Icons.folder_outlined,
-              title: 'Projects',
-              description: 'Manage your projects',
+            // Premium Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+            decoration: const BoxDecoration(
               color: AppTheme.primaryGreen,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ProjectsScreen(),
-                  ),
-                );
-              },
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
             ),
-            _buildMenuCard(
-              context,
-              icon: Icons.layers_outlined,
-              title: 'Layers',
-              description: 'Manage layers',
-              color: Colors.teal,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const LayersScreen(),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome to',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.5,
                   ),
-                );
-              },
-            ),
-            _buildMenuCard(
-              context,
-              icon: Icons.map_outlined,
-              title: 'Basemaps',
-              description: 'Manage basemaps',
-              color: Colors.blue,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const BasemapManagementScreen(),
+                ),
+                SizedBox(height: 1),
+                Text(
+                  'Terestria',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
                   ),
-                );
-              },
-            ),
-            _buildMenuCard(
-              context,
-              icon: Icons.notifications_outlined,
-              title: 'Notifications',
-              description: 'View notifications',
-              color: Colors.deepOrange,
-              badge: _unreadNotificationCount > 0 ? _unreadNotificationCount : null,
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const NotificationsScreen(),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Agricultural & Environmental Data Collection',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
                   ),
-                );
-                // Reload unread count after returning from notifications screen
-                _loadUnreadNotificationCount();
-              },
+                ),
+              ],
             ),
-            _buildMenuCard(
-              context,
-              icon: Icons.satellite_alt,
-              title: 'Location',
-              description: 'GPS provider',
-              color: Colors.teal,
-              onTap: () {
-                Navigator.push(
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Menu Grid
+          Expanded(
+            child: GridView.count(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              crossAxisCount: 2,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 0.9,
+              children: [
+                _buildMenuCard(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const LocationProviderScreen(),
-                  ),
-                );
-              },
-            ),
-            // _buildMenuCard(
-            //   context,
-            //   icon: Icons.inventory_2_outlined,
-            //   title: 'Assets',
-            //   description: 'Manage assets',
-            //   color: Colors.orange,
-            //   onTap: () {
-            //     // TODO: Implement Assets screen
-            //     ScaffoldMessenger.of(context).showSnackBar(
-            //       const SnackBar(
-            //         content: Text('Assets feature coming soon!'),
-            //       ),
-            //     );
-            //   },
-            // ),
-            _buildMenuCard(
-              context,
-              icon: Icons.settings_outlined,
-              title: 'Settings',
-              description: 'App settings',
-              color: Colors.grey,
-              onTap: () {
-                Navigator.push(
+                  icon: Icons.folder_rounded,
+                  title: 'Projects',
+                  description: 'Manage data',
+                  color: AppTheme.primaryGreen,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProjectsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildMenuCard(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const SettingsScreen(),
-                  ),
-                );
-              },
-            ),
-            _buildMenuCard(
-              context,
-              icon: Icons.person_outlined,
-              title: 'Profile',
-              description: 'User profile',
-              color: Colors.purple,
-              onTap: () {
-                Navigator.push(
+                  icon: Icons.layers_rounded,
+                  title: 'Layers',
+                  description: 'Manage overlays',
+                  color: Colors.teal.shade600,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const LayersScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildMenuCard(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const ProfileScreen(),
-                  ),
-                );
-              },
+                  icon: Icons.map_rounded,
+                  title: 'Basemaps',
+                  description: 'Custom basemaps',
+                  color: Colors.blue.shade600,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const BasemapManagementScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildMenuCard(
+                  context,
+                  icon: Icons.notifications_rounded,
+                  title: 'Notifications',
+                  description: 'Stay updated',
+                  color: Colors.deepOrange.shade500,
+                  badge: _unreadNotificationCount > 0 ? _unreadNotificationCount : null,
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NotificationsScreen(),
+                      ),
+                    );
+                    _loadUnreadNotificationCount();
+                  },
+                ),
+                _buildMenuCard(
+                  context,
+                  icon: Icons.satellite_alt_rounded,
+                  title: 'Location',
+                  description: 'GPS Provider',
+                  color: Colors.indigo.shade500,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const LocationProviderScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildMenuCard(
+                  context,
+                  icon: Icons.settings_rounded,
+                  title: 'Settings',
+                  description: 'Preferences',
+                  color: Colors.blueGrey.shade600,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                // (Profile could go here if needed as an extra item, but generally Settings is enough.
+                // We will leave Profile in the grid to preserve full functionality.)
+                _buildMenuCard(
+                  context,
+                  icon: Icons.person_rounded,
+                  title: 'Profile',
+                  description: 'Account info',
+                  color: Colors.deepPurple.shade500,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    ),
     );
   }
 
@@ -366,84 +408,98 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     required VoidCallback onTap,
     int? badge,
   }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
+    return Container(
+      decoration: AppTheme.getCardDecoration,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-                    ),
-                    child: Icon(
-                      icon,
-                      size: 48,
-                      color: color,
-                    ),
-                  ),
-                  if (badge != null && badge > 0)
-                    Positioned(
-                      top: -4,
-                      right: -4,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 2,
-                          ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: color.withOpacity(0.15),
+                          width: 1,
                         ),
-                        child: Text(
-                          badge > 99 ? '99+' : badge.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                      ),
+                      child: Icon(
+                        icon,
+                        size: 32,
+                        color: color,
+                      ),
+                    ),
+                    if (badge != null && badge > 0)
+                      Positioned(
+                        top: -6,
+                        right: -6,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade600,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 2.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withOpacity(0.4),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            badge > 99 ? '99+' : badge.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  ],
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textSecondary,
+                const SizedBox(height: 18),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                    letterSpacing: 0.2,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ),
       ),

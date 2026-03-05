@@ -121,42 +121,54 @@ class _ProjectCardState extends State<ProjectCard> {
     final canEdit = _canEditProject();
     final canDelete = _canDeleteProject();
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      decoration: AppTheme.getCardDecoration,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: geometryColor.withOpacity(0.1),
+                      color: geometryColor.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: geometryColor.withOpacity(0.2),
+                        width: 1,
+                      ),
                     ),
                     child: Icon(
                       geometryIcon,
                       color: geometryColor,
-                      size: 28,
+                      size: 22,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           widget.project.name,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(
                           widget.project.geometryType.toString().split('.').last.toUpperCase(),
                           style: TextStyle(
@@ -170,64 +182,69 @@ class _ProjectCardState extends State<ProjectCard> {
                   ),
                   // Edit button
                   Container(
+                    width: 34,
+                    height: 34,
                     decoration: BoxDecoration(
                       color: canEdit 
                           ? AppTheme.primaryColor.withOpacity(0.08)
                           : Colors.grey.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: IconButton(
                       icon: Icon(
-                        canEdit ? Icons.edit_outlined : Icons.lock_outline,
-                        size: 20,
+                        canEdit ? Icons.edit_rounded : Icons.lock_outline_rounded,
+                        size: 16,
                       ),
                       color: canEdit 
                           ? AppTheme.primaryColor 
                           : Colors.grey[400],
                       onPressed: _handleEdit,
-                      padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
                       tooltip: canEdit ? 'Edit Project' : 'No permission to edit',
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   // Delete button
                   Container(
+                    width: 34,
+                    height: 34,
                     decoration: BoxDecoration(
-                      color: canEdit 
+                      color: canDelete 
                           ? Colors.red.withOpacity(0.08)
                           : Colors.grey.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: IconButton(
                       icon: Icon(
-                        canDelete ? Icons.delete_outline : Icons.lock_outline,
-                        size: 20,
+                        canDelete ? Icons.delete_outline_rounded : Icons.lock_outline_rounded,
+                        size: 16,
                       ),
                       color: canDelete
-                          ? Colors.red[700] 
+                          ? Colors.red[600] 
                           : Colors.grey[400],
                       onPressed: _handleDelete,
-                      padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
                       tooltip: canDelete ? 'Delete Project' : 'No permission to delete',
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Text(
-                widget.project.description,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 12),
+              if (widget.project.description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  widget.project.description,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 10),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   _buildInfoChip(
                     Icons.edit_note,
@@ -245,6 +262,7 @@ class _ProjectCardState extends State<ProjectCard> {
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -258,13 +276,14 @@ class _ProjectCardState extends State<ProjectCard> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.grey[600]),
+          Icon(icon, size: 12, color: Colors.grey[600]),
           const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[700],
             ),
           ),
         ],
@@ -283,12 +302,12 @@ class _ProjectCardState extends State<ProjectCard> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.person_outline, size: 14, color: color),
+          const Icon(Icons.person_outline, size: 12, color: color),
           const SizedBox(width: 4),
           Text(
             creator,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 10,
               color: color,
               fontWeight: FontWeight.w600,
             ),

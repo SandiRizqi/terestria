@@ -278,4 +278,35 @@ class AppTheme {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
+  
+  // ── Premium Container Decorations ──
+  
+  static BoxDecoration get getCardDecoration => BoxDecoration(
+    color: cardBackground,
+    borderRadius: BorderRadius.circular(borderRadiusMedium),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.04),
+        blurRadius: 10,
+        offset: const Offset(0, 4),
+      ),
+      BoxShadow(
+        color: Colors.black.withOpacity(0.02),
+        blurRadius: 4,
+        offset: const Offset(0, 2),
+      ),
+    ],
+  );
+
+  static BoxDecoration get getBottomSheetDecoration => BoxDecoration(
+    color: cardBackground,
+    borderRadius: const BorderRadius.vertical(top: Radius.circular(borderRadiusLarge)),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.08),
+        blurRadius: 20,
+        offset: const Offset(0, -4),
+      ),
+    ],
+  );
 }

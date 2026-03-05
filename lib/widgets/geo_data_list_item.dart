@@ -90,200 +90,132 @@ class GeoDataListItem extends StatelessWidget {
               ),
             
             // Content
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [color.withOpacity(0.15), color.withOpacity(0.05)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _getTitle(),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _formatDate(geoData.createdAt),
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
                           ),
-                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(icon, color: color, size: 24),
+                        // Actions (Edit/Delete icons styled like buttons)
+                        if (onEdit != null)
+                          _buildActionButton(
+                            icon: Icons.edit_rounded,
+                            color: AppTheme.primaryColor,
+                            onTap: onEdit!,
+                          ),
+                        if (onDelete != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: _buildActionButton(
+                              icon: Icons.delete_rounded,
+                              color: Colors.red[700]!,
+                              onTap: onDelete!,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Badges row - scalable and wrap
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        _buildInfoChip(
+                          Icons.my_location,
+                          '${geoData.points.length}',
+                          color,
+                        ),
+                        if (geoData.formData.isNotEmpty)
+                          _buildInfoChip(
+                            Icons.description_outlined,
+                            '${geoData.formData.length}',
+                            const Color(0xFF10B981),
+                          ),
+                        _buildSyncStatusChip(),
+                        if (geoData.collectedBy != null)
+                          _buildCollectorChip(),
+                      ],
+                    ),
+                    
+                    if (geoData.formData.isNotEmpty && !hasPhoto) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        height: 1,
+                        color: Colors.grey[200],
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
+                      const SizedBox(height: 8),
+                      // Just show the first field for compactness
+                      ...geoData.formData.entries.where((entry) => !_isPhotoField(entry.key)).take(1).map((entry) {
+                        return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _getTitle(),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                                letterSpacing: -0.3,
+                              '${entry.key}: ',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.access_time,
-                                  size: 14,
-                                  color: Colors.grey[500],
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _formatDate(geoData.createdAt),
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Edit button
-                      Container(
-                        decoration: BoxDecoration(
-                          color: onEdit != null 
-                              ? AppTheme.primaryColor.withOpacity(0.08)
-                              : Colors.grey.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: IconButton(
-                          icon: Icon(
-                            onEdit != null ? Icons.edit_outlined : Icons.lock_outline,
-                            size: 20,
-                          ),
-                          color: onEdit != null 
-                              ? AppTheme.primaryColor 
-                              : Colors.grey[400],
-                          onPressed: onEdit,
-                          padding: const EdgeInsets.all(8),
-                          constraints: const BoxConstraints(),
-                          tooltip: onEdit != null ? 'Edit' : 'No permission to edit',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Delete button
-                      Container(
-                        decoration: BoxDecoration(
-                          color: onDelete != null 
-                              ? Colors.red.withOpacity(0.08)
-                              : Colors.grey.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: IconButton(
-                          icon: Icon(
-                            onDelete != null ? Icons.delete_outline : Icons.lock_outline,
-                            size: 20,
-                          ),
-                          color: onDelete != null 
-                              ? Colors.red[700] 
-                              : Colors.grey[400],
-                          onPressed: onDelete,
-                          padding: const EdgeInsets.all(8),
-                          constraints: const BoxConstraints(),
-                          tooltip: onDelete != null ? 'Delete' : 'No permission to delete',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildInfoChip(
-                        Icons.my_location,
-                        '${geoData.points.length} point${geoData.points.length > 1 ? "s" : ""}',
-                        color,
-                      ),
-                      if (geoData.formData.isNotEmpty)
-                        _buildInfoChip(
-                          Icons.description_outlined,
-                          '${geoData.formData.length} field${geoData.formData.length > 1 ? "s" : ""}',
-                          const Color(0xFF10B981),
-                        ),
-                      if (hasPhoto)
-                        _buildInfoChip(
-                          Icons.photo_camera,
-                          'Photo',
-                          const Color(0xFF8B5CF6),
-                        ),
-                      _buildSyncStatusChip(),
-                      if (geoData.collectedBy != null)
-                        _buildCollectorChip(),
-                    ],
-                  ),
-                  if (geoData.formData.isNotEmpty && !hasPhoto) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      height: 1,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.grey[200]!,
-                            Colors.grey[100]!,
-                            Colors.grey[200]!,
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...geoData.formData.entries.where((entry) => !_isPhotoField(entry.key)).take(2).map((entry) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
                             Expanded(
-                              flex: 2,
-                              child: Text(
-                                entry.key,
-                                style: TextStyle(
-                                  color: Colors.grey[700],
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 3,
                               child: Text(
                                 _formatFormValue(entry.value),
                                 style: const TextStyle(
-                                  fontSize: 13,
+                                  fontSize: 11,
                                   color: Color(0xFF1F2937),
                                 ),
-                                maxLines: 2,
+                                maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
-                        ),
-                      );
-                    }),
-                    if (_getNonPhotoFieldsCount() > 2)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '+ ${_getNonPhotoFieldsCount() - 2} more field${_getNonPhotoFieldsCount() - 2 > 1 ? "s" : ""}',
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontSize: 12,
-                            fontStyle: FontStyle.italic,
-                            fontWeight: FontWeight.w500,
+                        );
+                      }),
+                      if (_getNonPhotoFieldsCount() > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '+ ${_getNonPhotoFieldsCount() - 1} more',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
+                            ),
                           ),
                         ),
-                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ],
@@ -294,7 +226,7 @@ class GeoDataListItem extends StatelessWidget {
 
   Widget _buildInfoChip(IconData icon, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
@@ -303,17 +235,57 @@ class GeoDataListItem extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 5),
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 3),
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 9,
               fontWeight: FontWeight.w600,
               color: color.withOpacity(0.9),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Padding(
+            padding: const EdgeInsets.all(6.0),
+            child: Icon(
+              icon,
+              size: 16,
+              color: color,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -325,7 +297,7 @@ class GeoDataListItem extends StatelessWidget {
     final label = isSynced ? 'Synced' : 'Local';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
@@ -334,12 +306,12 @@ class GeoDataListItem extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 5),
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 3),
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 9,
               fontWeight: FontWeight.w700,
               color: color,
             ),
@@ -352,7 +324,7 @@ class GeoDataListItem extends StatelessWidget {
   Widget _buildCollectorChip() {
     const color = Color(0xFF6366F1);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
@@ -361,12 +333,12 @@ class GeoDataListItem extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.person_outline, size: 14, color: color),
-          const SizedBox(width: 5),
+          Icon(Icons.person_outline, size: 12, color: color),
+          const SizedBox(width: 3),
           Text(
             geoData.collectedBy!,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 9,
               fontWeight: FontWeight.w600,
               color: color,
             ),

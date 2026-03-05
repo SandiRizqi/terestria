@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/location_service_v2.dart';
 import '../../models/geo_data_model.dart';
+import '../../theme/app_theme.dart';
 import 'dart:async';
 
 class LocationProviderScreen extends StatefulWidget {
@@ -446,8 +447,14 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+        backgroundColor: AppTheme.scaffoldBackground,
         appBar: AppBar(
-          title: const Text('Location Provider'),
+          backgroundColor: AppTheme.primaryGreen,
+          elevation: 0,
+          title: const Text(
+            'Location Provider',
+            style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+          ),
           actions: [
             IconButton(
               icon: const Icon(Icons.save),
@@ -512,7 +519,8 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Card(
+                  Container(
+                    decoration: AppTheme.getCardDecoration,
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
@@ -768,7 +776,8 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                 const SizedBox(height: 24),
                 _buildSectionTitle('Position Quality', Icons.verified),
                 const SizedBox(height: 12),
-                Card(
+                Container(
+                  decoration: AppTheme.getCardDecoration,
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -864,7 +873,8 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                   const SizedBox(height: 24),
                   _buildSectionTitle('Current Position', Icons.location_on),
                   const SizedBox(height: 12),
-                  Card(
+                  Container(
+                    decoration: AppTheme.getCardDecoration,
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
@@ -1010,16 +1020,15 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
   }) {
     final isSelected = _selectedProvider == provider;
 
-    return Card(
-      elevation: isSelected ? 4 : 1,
-      color: isSelected ? Colors.blue.withOpacity(0.1) : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: isSelected ? Colors.blue : Colors.grey.withOpacity(0.3),
-          width: isSelected ? 2 : 1,
-        ),
-      ),
+    return Container(
+      decoration: isSelected
+          ? AppTheme.getCardDecoration.copyWith(
+              color: AppTheme.primaryGreen.withOpacity(0.05),
+              border: Border.all(color: AppTheme.primaryGreen, width: 2),
+            )
+          : AppTheme.getCardDecoration.copyWith(
+              border: Border.all(color: Colors.transparent, width: 2),
+            ),
       child: InkWell(
         onTap: () async {
           setState(() {
@@ -1030,7 +1039,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
             await _disconnectFromEmlid();
           }
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -1038,13 +1047,14 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color:
-                      isSelected ? Colors.blue : Colors.grey.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
+                  color: isSelected
+                      ? AppTheme.primaryGreen
+                      : Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   icon,
-                  color: isSelected ? Colors.white : Colors.grey[700],
+                  color: isSelected ? Colors.white : Colors.grey[600],
                   size: 28,
                 ),
               ),
@@ -1058,7 +1068,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: isSelected ? Colors.blue : null,
+                        color: isSelected ? AppTheme.primaryGreen : AppTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1066,7 +1076,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                       subtitle,
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.grey[600],
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                   ],
@@ -1075,7 +1085,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
               if (isSelected)
                 const Icon(
                   Icons.check_circle,
-                  color: Colors.blue,
+                  color: AppTheme.primaryGreen,
                   size: 24,
                 ),
             ],

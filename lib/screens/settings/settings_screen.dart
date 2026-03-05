@@ -112,126 +112,162 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         elevation: 0,
+        backgroundColor: AppTheme.primaryGreen,
         actions: [
           IconButton(
-            icon: const Icon(Icons.restore),
+            icon: const Icon(Icons.restore_rounded),
             tooltip: 'Reset to Defaults',
             onPressed: _showResetDialog,
           ),
         ],
       ),
-      body: SafeArea(child:
-      ListView(
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 8),
-          
-          // Measurement Units Section
-          _buildSectionTitle('Measurement Units'),
-          _buildAreaUnitTile(),
-          _buildLengthUnitTile(),
-          
-          const Divider(height: 32),
-          
-          // Map Colors Section
-          _buildSectionTitle('Map Colors'),
-          _buildColorTile(
-            title: 'Point Color',
-            subtitle: 'Color for point markers',
-            color: _settings.pointColor,
-            onTap: () => _showColorPicker(
-              title: 'Select Point Color',
-              currentColor: _settings.pointColor,
-              onColorChanged: (color) async {
-                await _settingsService.updatePointColor(color);
-                setState(() => _settings = _settingsService.settings);
-              },
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 16),
+            
+            // Measurement Units Section
+            _buildSectionTitle('Measurement Units'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: Column(
+                children: [
+                  _buildAreaUnitTile(),
+                  const Divider(height: 1, indent: 56),
+                  _buildLengthUnitTile(),
+                ],
+              ),
             ),
-          ),
-          _buildColorTile(
-            title: 'Line Color',
-            subtitle: 'Color for line features',
-            color: _settings.lineColor,
-            onTap: () => _showColorPicker(
-              title: 'Select Line Color',
-              currentColor: _settings.lineColor,
-              onColorChanged: (color) async {
-                await _settingsService.updateLineColor(color);
-                setState(() => _settings = _settingsService.settings);
-              },
+            
+            const SizedBox(height: 24),
+            
+            // Map Colors Section
+            _buildSectionTitle('Map Colors'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: Column(
+                children: [
+                  _buildColorTile(
+                    title: 'Point Color',
+                    subtitle: 'Color for point markers',
+                    color: _settings.pointColor,
+                    onTap: () => _showColorPicker(
+                      title: 'Select Point Color',
+                      currentColor: _settings.pointColor,
+                      onColorChanged: (color) async {
+                        await _settingsService.updatePointColor(color);
+                        setState(() => _settings = _settingsService.settings);
+                      },
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 72),
+                  _buildColorTile(
+                    title: 'Line Color',
+                    subtitle: 'Color for line features',
+                    color: _settings.lineColor,
+                    onTap: () => _showColorPicker(
+                      title: 'Select Line Color',
+                      currentColor: _settings.lineColor,
+                      onColorChanged: (color) async {
+                        await _settingsService.updateLineColor(color);
+                        setState(() => _settings = _settingsService.settings);
+                      },
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 72),
+                  _buildColorTile(
+                    title: 'Polygon Color',
+                    subtitle: 'Color for polygon features',
+                    color: _settings.polygonColor,
+                    onTap: () => _showColorPicker(
+                      title: 'Select Polygon Color',
+                      currentColor: _settings.polygonColor,
+                      onColorChanged: (color) async {
+                        await _settingsService.updatePolygonColor(color);
+                        setState(() => _settings = _settingsService.settings);
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          _buildColorTile(
-            title: 'Polygon Color',
-            subtitle: 'Color for polygon features',
-            color: _settings.polygonColor,
-            onTap: () => _showColorPicker(
-              title: 'Select Polygon Color',
-              currentColor: _settings.polygonColor,
-              onColorChanged: (color) async {
-                await _settingsService.updatePolygonColor(color);
-                setState(() => _settings = _settingsService.settings);
-              },
+            
+            const SizedBox(height: 24),
+            
+            // Map Appearance Section
+            _buildSectionTitle('Map Appearance'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: Column(
+                children: [
+                  _buildSliderTile(
+                    title: 'Point Size',
+                    subtitle: 'Size of point markers (${_settings.pointSize.toStringAsFixed(0)} px)',
+                    value: _settings.pointSize,
+                    min: 8.0,
+                    max: 24.0,
+                    divisions: 16,
+                    onChanged: (value) async {
+                      await _settingsService.updatePointSize(value);
+                      setState(() => _settings = _settingsService.settings);
+                    },
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  _buildSliderTile(
+                    title: 'Line Width',
+                    subtitle: 'Width of line features (${_settings.lineWidth.toStringAsFixed(1)} px)',
+                    value: _settings.lineWidth,
+                    min: 1.0,
+                    max: 10.0,
+                    divisions: 18,
+                    onChanged: (value) async {
+                      await _settingsService.updateLineWidth(value);
+                      setState(() => _settings = _settingsService.settings);
+                    },
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  _buildSliderTile(
+                    title: 'Polygon Opacity',
+                    subtitle: 'Transparency of polygon fill (${(_settings.polygonOpacity * 100).toStringAsFixed(0)}%)',
+                    value: _settings.polygonOpacity,
+                    min: 0.1,
+                    max: 1.0,
+                    divisions: 9,
+                    onChanged: (value) async {
+                      await _settingsService.updatePolygonOpacity(value);
+                      setState(() => _settings = _settingsService.settings);
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-          
-          const Divider(height: 32),
-          
-          // Map Appearance Section
-          _buildSectionTitle('Map Appearance'),
-          _buildSliderTile(
-            title: 'Point Size',
-            subtitle: 'Size of point markers (${_settings.pointSize.toStringAsFixed(0)} px)',
-            value: _settings.pointSize,
-            min: 8.0,
-            max: 24.0,
-            divisions: 16,
-            onChanged: (value) async {
-              await _settingsService.updatePointSize(value);
-              setState(() => _settings = _settingsService.settings);
-            },
-          ),
-          _buildSliderTile(
-            title: 'Line Width',
-            subtitle: 'Width of line features (${_settings.lineWidth.toStringAsFixed(1)} px)',
-            value: _settings.lineWidth,
-            min: 1.0,
-            max: 10.0,
-            divisions: 18,
-            onChanged: (value) async {
-              await _settingsService.updateLineWidth(value);
-              setState(() => _settings = _settingsService.settings);
-            },
-          ),
-          _buildSliderTile(
-            title: 'Polygon Opacity',
-            subtitle: 'Transparency of polygon fill (${(_settings.polygonOpacity * 100).toStringAsFixed(0)}%)',
-            value: _settings.polygonOpacity,
-            min: 0.1,
-            max: 1.0,
-            divisions: 9,
-            onChanged: (value) async {
-              await _settingsService.updatePolygonOpacity(value);
-              setState(() => _settings = _settingsService.settings);
-            },
-          ),
-          
-          const Divider(height: 32),
-          
-          // PDF Settings Section
-          _buildSectionTitle('PDF Basemap Settings'),
-          _buildPdfDpiTile(),
-          
-          const SizedBox(height: 24),
-          
-          // Preview Card
-          _buildPreviewCard(),
-          
-          const SizedBox(height: 24),
-        ],)
+            
+            const SizedBox(height: 24),
+            
+            // PDF Settings Section
+            _buildSectionTitle('PDF Processing'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: _buildPdfDpiTile(),
+            ),
+            
+            const SizedBox(height: 32),
+            
+            // Preview Card
+            _buildSectionTitle('Preview'),
+            _buildPreviewCard(),
+          ],
+        ),
       ),
     );
   }
@@ -239,8 +275,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(gradient: AppTheme.primaryGradient),
-      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: AppTheme.primaryGreen,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -248,11 +287,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'App Preferences',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
             ),
           ),
-          SizedBox(height: 4),
+          SizedBox(height: 8),
           Text(
             'Customize units, colors, and appearance',
             style: TextStyle(
@@ -267,13 +307,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildSectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: Text(
         title,
         style: const TextStyle(
           fontSize: 14,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: AppTheme.primaryColor,
+          letterSpacing: 0.5,
         ),
       ),
     );
@@ -281,20 +322,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildAreaUnitTile() {
     return ListTile(
-      leading: const Icon(Icons.crop_square, color: AppTheme.primaryColor),
-      title: const Text('Area Unit'),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: AppTheme.primaryGreen.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.crop_square, color: AppTheme.primaryColor, size: 20),
+      ),
+      title: const Text('Area Unit', style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(_settings.areaUnit.name),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
       onTap: () => _showAreaUnitDialog(),
     );
   }
 
   Widget _buildLengthUnitTile() {
     return ListTile(
-      leading: const Icon(Icons.straighten, color: AppTheme.primaryColor),
-      title: const Text('Length Unit'),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: AppTheme.primaryGreen.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.straighten, color: AppTheme.primaryColor, size: 20),
+      ),
+      title: const Text('Length Unit', style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(_settings.lengthUnit.name),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
       onTap: () => _showLengthUnitDialog(),
     );
   }
@@ -376,12 +431,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.grey[300]!, width: 2),
+          border: Border.all(color: Colors.grey[200]!, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
       ),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
       onTap: onTap,
     );
   }
@@ -398,11 +460,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         ListTile(
-          title: Text(title),
-          subtitle: Text(subtitle),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Slider(
             value: value,
             min: min,
@@ -418,10 +480,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildPdfDpiTile() {
     return ListTile(
-      leading: const Icon(Icons.picture_as_pdf, color: AppTheme.primaryColor),
-      title: const Text('PDF Processing DPI'),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.deepOrange.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.deepOrange, size: 20),
+      ),
+      title: const Text('PDF DPI', style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text('${_settings.pdfDpi} DPI - ${_getDpiDescription()}'),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
       onTap: () => _showPdfDpiDialog(),
     );
   }
@@ -502,20 +571,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildPreviewCard() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: AppTheme.getCardDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Preview',
+            'Visual Settings Preview',
             style: TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 16),

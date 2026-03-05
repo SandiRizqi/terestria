@@ -314,8 +314,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 child: _isLoading
                                     ? const SizedBox(
-                                        height: 24,
-                                        width: 24,
+                                        height: 18,
+                                        width: 18,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
                                           color: Colors.white,

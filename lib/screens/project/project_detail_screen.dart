@@ -1015,22 +1015,39 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
+        backgroundColor: AppTheme.primaryGreen,
+        elevation: 0,
         title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                style: const TextStyle(color: Colors.black45),
-                decoration: const InputDecoration(
-                  contentPadding: EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-                  hintText: 'Search data...',
-                  hintStyle: TextStyle(color: Colors.black45),
-                  border: InputBorder.none,
+            ? Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.black87, fontSize: 14),
+                  decoration: const InputDecoration(
+                    contentPadding: EdgeInsets.symmetric(vertical: 10),
+                    hintText: 'Search data...',
+                    hintStyle: TextStyle(color: Colors.black45),
+                    border: InputBorder.none,
+                    isDense: true,
+                  ),
                 ),
               )
             : Row(
                 children: [
-                  Expanded(child: Text(_currentProject.name)),
+                  Expanded(
+                    child: Text(
+                      _currentProject.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                    ),
+                  ),
                   const ConnectivityIndicator(
                     showLabel: true,
                     iconSize: 16,
@@ -1040,7 +1057,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         actions: [
           if (_isSearching)
             IconButton(
-              icon: const Icon(Icons.clear),
+              icon: const Icon(Icons.clear_rounded),
               onPressed: () {
                 setState(() {
                   _searchController.clear();
@@ -1051,7 +1068,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             )
           else
             IconButton(
-              icon: const Icon(Icons.search),
+              icon: const Icon(Icons.search_rounded),
               onPressed: () {
                 setState(() {
                   _isSearching = true;
@@ -1059,7 +1076,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               },
             ),
           IconButton(
-            icon: const Icon(Icons.download),
+            icon: const Icon(Icons.download_rounded),
             onPressed: _exportData,
           ),
           PopupMenuButton<String>(
@@ -1272,13 +1289,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 await _loadGeoData();
                               }
                             },
-                            child: ListView.builder(
+                            child: GridView.builder(
                               controller: _scrollController,
                               padding: const EdgeInsets.only(
                                 left: 16,
                                 right: 16,
                                 top: 16,
                                 bottom: 80, // Padding untuk FAB
+                              ),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.70, // Memberikan ruang vertikal lebih lega
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
                               ),
                               itemCount: _filteredGeoDataList.length,
                               itemBuilder: (context, index) {
@@ -1297,15 +1320,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           ),
           ),
         ],
-      )
       ),
-      floatingActionButton: FloatingActionButton(
+    ),
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _navigateToDataCollection,
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
-        elevation: 6,
-        child: const Icon(Icons.add_location),
-        
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        icon: const Icon(Icons.add_location_alt_rounded),
+        label: const Text('Add Data', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -1313,16 +1339,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget _buildStatsCard() {
     final unsyncedCount = _geoDataList.where((data) => !data.isSynced).length;
     
-    return Card(
+    return Container(
       margin: const EdgeInsets.all(16),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: AppTheme.getCardDecoration,
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -1823,11 +1847,30 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               ),
                             ],
                             const SizedBox(height: 12),
-                            _buildMetadataRow(
-                              icon: Icons.fingerprint_outlined,
-                              label: 'Project ID',
-                              value: _currentProject.id.substring(0, 8) + '...',
-                              iconColor: Colors.grey,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildMetadataRow(
+                                    icon: Icons.fingerprint_outlined,
+                                    label: 'Project ID',
+                                    value: _currentProject.id.substring(0, 8) + '...',
+                                    iconColor: Colors.grey,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.copy_rounded, size: 20, color: Colors.blue),
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: _currentProject.id));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Project ID copied to clipboard'),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  },
+                                  tooltip: 'Copy Project ID',
+                                ),
+                              ],
                             ),
                           ],
                         ),

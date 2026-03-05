@@ -120,8 +120,14 @@ class _BasemapScreenState extends State<BasemapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Basemaps'),
+        backgroundColor: AppTheme.primaryGreen,
+        elevation: 0,
+        title: const Text(
+          'Basemaps',
+          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -158,35 +164,35 @@ class _BasemapScreenState extends State<BasemapScreen> {
                 const SizedBox(height: AppTheme.spacingMedium),
                 
                 if (_basemaps.where((b) => b.type == BasemapType.custom).isEmpty)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppTheme.spacingLarge),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.map,
-                            size: 48,
-                            color: Colors.grey[400],
+                  Container(
+                    decoration: AppTheme.getCardDecoration,
+                    padding: const EdgeInsets.all(AppTheme.spacingLarge),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.map_outlined,
+                          size: 48,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: AppTheme.spacingMedium),
+                        Text(
+                          'No custom basemaps yet',
+                          style: TextStyle(
+                            color: Colors.grey[800],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
-                          const SizedBox(height: AppTheme.spacingMedium),
-                          Text(
-                            'No custom basemaps yet',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 16,
-                            ),
+                        ),
+                        const SizedBox(height: AppTheme.spacingSmall),
+                        Text(
+                          'Tap the + icon to add a custom TMS basemap',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 14,
                           ),
-                          const SizedBox(height: AppTheme.spacingSmall),
-                          Text(
-                            'Tap the + icon to add a custom TMS basemap',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   )
                 else
@@ -197,25 +203,27 @@ class _BasemapScreenState extends State<BasemapScreen> {
                 const SizedBox(height: AppTheme.spacingLarge),
                 
                 // Info card
-                Card(
-                  color: Colors.blue[50],
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppTheme.spacingMedium),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info, color: Colors.blue[700]),
-                        const SizedBox(width: AppTheme.spacingMedium),
-                        Expanded(
-                          child: Text(
-                            'Tiles are cached offline automatically when you zoom in. Clear cache from Settings if needed.',
-                            style: TextStyle(
-                              color: Colors.blue[900],
-                              fontSize: 13,
-                            ),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                  ),
+                  padding: const EdgeInsets.all(AppTheme.spacingMedium),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, color: Colors.blue[700]),
+                      const SizedBox(width: AppTheme.spacingMedium),
+                      Expanded(
+                        child: Text(
+                          'Tiles are cached offline automatically when you zoom in. Clear cache from Settings if needed.',
+                          style: TextStyle(
+                            color: Colors.blue[900],
+                            fontSize: 13,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -226,72 +234,88 @@ class _BasemapScreenState extends State<BasemapScreen> {
   Widget _buildBasemapCard(Basemap basemap) {
     final isSelected = _selectedBasemap?.id == basemap.id;
     
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
-      elevation: isSelected ? AppTheme.elevationMedium : AppTheme.elevationLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-        side: isSelected
-            ? BorderSide(color: AppTheme.primaryColor, width: 2)
-            : BorderSide.none,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected ? AppTheme.primaryColor : Colors.grey[200]!,
+          width: isSelected ? 2 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: Container(
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
-            color: isSelected ? AppTheme.primaryColor : Colors.grey[300],
-            borderRadius: BorderRadius.circular(AppTheme.borderRadiusSmall),
+            color: isSelected ? AppTheme.primaryColor.withOpacity(0.1) : Colors.grey[100],
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
-            Icons.map,
-            color: isSelected ? Colors.white : Colors.grey[600],
+            Icons.map_rounded,
+            color: isSelected ? AppTheme.primaryColor : Colors.grey[500],
           ),
         ),
         title: Text(
           basemap.name,
           style: TextStyle(
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            fontSize: 15,
           ),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              basemap.type == BasemapType.builtin ? 'Built-in' : 'Custom TMS',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
-            if (basemap.attribution != null)
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                basemap.attribution!,
+                basemap.type == BasemapType.builtin ? 'Built-in' : 'Custom TMS',
                 style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[500],
+                  fontSize: 12,
+                  color: Colors.grey[600],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-          ],
+              if (basemap.attribution != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    basemap.attribution!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[400],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isSelected)
               Icon(
-                Icons.check_circle,
+                Icons.check_circle_rounded,
                 color: AppTheme.primaryColor,
               ),
             if (basemap.type == BasemapType.custom) ...[
               IconButton(
-                icon: const Icon(Icons.edit, size: 20),
+                icon: const Icon(Icons.edit_rounded, size: 20),
                 onPressed: () => _editBasemap(basemap),
                 color: Colors.blue,
               ),
               IconButton(
-                icon: const Icon(Icons.delete, size: 20),
+                icon: const Icon(Icons.delete_outline_rounded, size: 20),
                 onPressed: () => _deleteBasemap(basemap),
                 color: AppTheme.errorColor,
               ),

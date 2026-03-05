@@ -334,8 +334,13 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Cache Management'),
+        backgroundColor: AppTheme.primaryGreen,
+        title: const Text(
+          'Cache Management',
+          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
         elevation: 0,
         actions: [
           IconButton(
@@ -371,11 +376,14 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                _buildSummaryCard(),
-                Expanded(child: _buildCacheList()),
-              ],
+          : SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  _buildSummaryCard(),
+                  Expanded(child: _buildCacheList()),
+                ],
+              ),
             ),
     );
   }
@@ -391,18 +399,20 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
 
     return Container(
       margin: const EdgeInsets.all(16),
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: AppTheme.primaryGradient,
-            borderRadius: BorderRadius.circular(16),
+      decoration: BoxDecoration(
+        gradient: AppTheme.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryColor.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          padding: const EdgeInsets.all(20),
-          child: Column(
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -509,7 +519,6 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
             ],
           ),
         ),
-      ),
     );
   }
 
@@ -612,12 +621,9 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       typeLabel = 'TMS';
     }
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: AppTheme.getCardDecoration,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

@@ -221,8 +221,14 @@ class _LayersScreenState extends State<LayersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Layers'),
+        backgroundColor: AppTheme.primaryGreen,
+        title: const Text(
+          'Layers',
+          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
+        elevation: 0,
         actions: [
           IconButton(
               icon: const Icon(Icons.refresh),
@@ -239,11 +245,16 @@ class _LayersScreenState extends State<LayersScreen> {
                   itemCount: _layers.length,
                   itemBuilder: (_, i) => _buildLayerCard(_layers[i]),
                 ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _importLayer,
-        child: const Icon(Icons.add),
         backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Import', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -258,15 +269,21 @@ class _LayersScreenState extends State<LayersScreen> {
                 style: Theme.of(context)
                     .textTheme
                     .headlineSmall
-                    ?.copyWith(color: Colors.grey[600])),
+                    ?.copyWith(color: Colors.grey[700], fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Text('Import a GeoJSON file to add a layer',
-                style: TextStyle(color: Colors.grey[500])),
+                style: TextStyle(color: Colors.grey[500], fontSize: 15)),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _importLayer,
-              icon: const Icon(Icons.upload_file),
-              label: const Text('Import GeoJSON'),
+              icon: const Icon(Icons.upload_file_rounded),
+              label: const Text('Import GeoJSON', style: TextStyle(fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
           ],
         ),
@@ -274,10 +291,11 @@ class _LayersScreenState extends State<LayersScreen> {
 
   Widget _buildLayerCard(LayerModel layer) {
     final color = layer.style.fillColor;
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: AppTheme.getCardDecoration,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             // Geometry icon with color

@@ -9,6 +9,7 @@ import '../../widgets/form_field_builder.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:async';
 import '../../services/auth_service.dart';
+import '../../theme/app_theme.dart';
 
 class CreateProjectScreen extends StatefulWidget {
   final Project? project; // for editing
@@ -373,8 +374,14 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: Text(widget.project == null ? 'Create Project' : 'Edit Project'),
+        backgroundColor: AppTheme.primaryGreen,
+        elevation: 0,
+        title: Text(
+          widget.project == null ? 'Create Project' : 'Edit Project',
+          style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
         actions: [
           const ConnectivityIndicator(
             showLabel: false,
@@ -388,22 +395,25 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
                 ),
               ),
             )
           else
             IconButton(
-              icon: const Icon(Icons.check),
+              icon: const Icon(Icons.check_rounded, size: 28),
+              tooltip: 'Save Project',
               onPressed: _saveProject,
             ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      body: SafeArea(
+        top: false,
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
             // Project Name
             TextFormField(
               controller: _nameController,
@@ -437,20 +447,25 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
             // Geometry Type
-            Card(
+            Container(
+              decoration: AppTheme.getCardDecoration,
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Text(
+                        const Text(
                           'Geometry Type',
-                          style: Theme.of(context).textTheme.titleMedium,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                          ),
                         ),
                         if (widget.project != null) ...[
                           const SizedBox(width: 8),
@@ -495,33 +510,84 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
             // Form Fields Section
-            Card(
+            Container(
+              decoration: AppTheme.getCardDecoration,
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
+                        const Text(
                           'Form Fields',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: _addFormField,
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Add Field'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
                           ),
                         ),
+                        if (widget.project != null) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: Colors.orange.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.lock,
+                                      size: 14,
+                                      color: Colors.orange[700],
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        'Cannot be changed',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.orange[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ] else
+                          ElevatedButton.icon(
+                            onPressed: _addFormField,
+                            icon: const Icon(Icons.add_rounded, size: 18),
+                            label: const Text('Add Field'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
+                              foregroundColor: AppTheme.primaryGreen,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -539,6 +605,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                     else
                       ReorderableListView.builder(
                         shrinkWrap: true,
+                        buildDefaultDragHandles: widget.project == null,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _formFields.length,
                         onReorder: (oldIndex, newIndex) {
@@ -562,7 +629,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
           ],
         ),
       ),
-    );
+    ), // This closes the SafeArea
+  );
   }
 
   Widget _buildGeometryTypeSelector() {
@@ -644,6 +712,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         icon = Icons.text_fields;
         break;
       case FieldType.number:
+      case FieldType.decimal:
         icon = Icons.numbers;
         break;
       case FieldType.date:
@@ -660,29 +729,53 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         break;
     }
 
-    return Card(
+    return Container(
       key: ValueKey(field.id),
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: ListTile(
-        leading: Icon(icon),
-        title: Text(field.label),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryGreen.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: AppTheme.primaryColor, size: 20),
+        ),
+        title: Text(field.label, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
           '${field.type.toString().split('.').last}${field.required ? ' • Required' : ''}',
+          style: TextStyle(color: Colors.grey[600], fontSize: 13),
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => _editFormField(index),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete),
-              color: Colors.red,
-              onPressed: () => _deleteFormField(index),
-            ),
-          ],
-        ),
+        trailing: widget.project != null
+            ? null
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_rounded, size: 20),
+                    color: AppTheme.primaryColor,
+                    onPressed: () => _editFormField(index),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                    color: Colors.red[600],
+                    onPressed: () => _deleteFormField(index),
+                  ),
+                ],
+              ),
       ),
     );
   }

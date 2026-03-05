@@ -2536,20 +2536,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         leading: Container(
           margin: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.white.withOpacity(0.95),
+            shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-              BoxShadow(
                 color: Colors.black.withOpacity(0.08),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
+            border: Border.all(color: Colors.white, width: 1.5),
           ),
           child: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black87),
@@ -2564,13 +2560,20 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           ),
         ),
         title: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.85),
-            borderRadius: BorderRadius.circular(10),
+            color: Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
             border: Border.all(
-              color: Colors.grey.withOpacity(0.2),
-              width: 1,
+              color: Colors.white,
+              width: 1.5,
             ),
           ),
           child: Row(
@@ -3062,7 +3065,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           heroTag: 'userLocation',
           mini: true,
           backgroundColor: Colors.white,
-          elevation: 6,
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: const Icon(Icons.my_location, color: AppTheme.primaryColor),
           onPressed: () {
             if (_currentLocation != null) {
@@ -3098,7 +3102,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           heroTag: 'basemap',
           mini: true,
           backgroundColor: Colors.white,
-          elevation: 6,
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: const Icon(Icons.layers, color: AppTheme.primaryColor),
           onPressed: _showBasemapSelector,
         ),
@@ -3114,7 +3119,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           heroTag: 'offline_download',
           mini: true,
           backgroundColor: Colors.white,
-          elevation: 6,
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: const Icon(Icons.download, color: Colors.green),
           tooltip: 'Download for Offline',
           onPressed: _showOfflineDownloadDialog,
@@ -3140,8 +3146,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.18),
-                  blurRadius: 8,
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
               ],
@@ -3174,7 +3180,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               backgroundColor: _layers.any((l) => l.isActive)
                   ? Colors.teal
                   : Colors.white,
-              elevation: 6,
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               tooltip: 'GeoJSON Layers',
               onPressed: _showLayersPanel,
               child: Icon(
@@ -3224,7 +3231,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             backgroundColor: _collectionMode == CollectionMode.drawing
                 ? AppTheme.primaryColor
                 : Colors.white,
-            elevation: 6,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Icon(
               _collectionMode == CollectionMode.drawing
                   ? Icons.touch_app
@@ -3261,10 +3269,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
     }
 
-    return Card(
-      color: Colors.white.withOpacity(0.85),
+    return Container(
+      decoration: AppTheme.getCardDecoration.copyWith(
+        color: Colors.white.withOpacity(0.95),
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,

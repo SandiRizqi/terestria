@@ -529,21 +529,30 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
+        backgroundColor: AppTheme.primaryGreen,
+        elevation: 0,
         title: _isSearching 
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                style: const TextStyle(color: Colors.black45),
-                decoration: const InputDecoration(
-                  contentPadding: EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                cursorColor: Colors.white,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                   hintText: 'Search projects...',
-                  hintStyle: TextStyle(color: Colors.black38),
-                  border: InputBorder.none,
+                  hintStyle: const TextStyle(color: Colors.white70),
+                  filled: true,
+                  fillColor: Colors.white.withOpacity(0.15),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
                 onChanged: _filterProjects,
               )
-            : const Text('Projects'),
+            : const Text('Projects', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         actions: [
           if (!_isSearching) ...[
             const ConnectivityIndicator(
@@ -573,48 +582,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 }
               },
               itemBuilder: (context) => [
-                // PopupMenuItem(
-                //   value: 'pull_from_server',
-                //   child: Row(
-                //     children: [
-                //       Container(
-                //         padding: const EdgeInsets.all(8),
-                //         decoration: BoxDecoration(
-                //           color: Colors.green.withOpacity(0.1),
-                //           borderRadius: BorderRadius.circular(8),
-                //         ),
-                //         child: const Icon(
-                //           Icons.cloud_download_rounded,
-                //           color: Colors.green,
-                //           size: 20,
-                //         ),
-                //       ),
-                //       const SizedBox(width: 12),
-                //       const Expanded(
-                //         child: Column(
-                //           crossAxisAlignment: CrossAxisAlignment.start,
-                //           children: [
-                //             Text(
-                //               'Pull from Server',
-                //               style: TextStyle(
-                //                 fontWeight: FontWeight.w600,
-                //                 fontSize: 14,
-                //               ),
-                //             ),
-                //             SizedBox(height: 2),
-                //             Text(
-                //               'Download projects from cloud',
-                //               style: TextStyle(
-                //                 fontSize: 11,
-                //                 color: Colors.grey,
-                //               ),
-                //             ),
-                //           ],
-                //         ),
-                //       ),
-                //     ],
-                //   ),
-                // ),
                 PopupMenuItem(
                   value: 'sync_to_server',
                   child: Row(
@@ -622,16 +589,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withOpacity(0.1),
+                          color: AppTheme.primaryGreen.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.cloud_upload_rounded,
-                          color: Theme.of(context).primaryColor,
+                          color: AppTheme.primaryGreen,
                           size: 20,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 14),
                       const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -641,14 +608,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
+                                color: AppTheme.textPrimary,
                               ),
                             ),
-                            SizedBox(height: 2),
                             Text(
                               'Upload projects to cloud',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.grey,
+                                color: AppTheme.textSecondary,
                               ),
                             ),
                           ],
@@ -736,12 +703,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _navigateToCreateProject,
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
-        elevation: 6,
-        child: const Icon(Icons.add),
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }

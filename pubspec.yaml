@@ -2,7 +2,7 @@ name: geoform_app
 description: "Terestria - Agricultural and Environmental Mapping App"
 publish_to: 'none'
 
-version: 3.2.0+1
+version: 3.4.3+7
 
 environment:
   sdk: ^3.5.1
@@ -58,6 +58,9 @@ dependencies:
 
   flutter_colorpicker: ^1.0.3
   geolocator: ^14.0.1
+  url_launcher: ^6.1.14
+  share_plus: ^10.1.4
+  archive: ^4.0.2
 
 
 dev_dependencies:
@@ -68,20 +71,20 @@ dev_dependencies:
   change_app_package_name: ^1.5.0
 
 flutter_launcher_icons:
-  android: "launcher_icon"
+  android: true
   ios: true
   image_path: "assets/terestria_logo_square.png"
   min_sdk_android: 21
   
-  adaptive_icon_foreground: "assets/terestria_logo.png"
+  adaptive_icon_foreground: "assets/terestria_logo_padd.png"
   adaptive_icon_background: "#FFFFFF"
-  notification_icon: "assets/terestria_logo.png"
+  notification_icon: "assets/terestria_logo_square-removebg-preview.png"
 
 flutter:
   uses-material-design: true
   
   assets:
     - assets/
-    - assets/terestria_logo.png
     - assets/terestria_logo_square.png
     - assets/terestria_logo_square-removebg-preview.png
+    - assets/terestria_logo_padd.png

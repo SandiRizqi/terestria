@@ -1,4 +1,4 @@
-enum FieldType { text, number, date, dropdown, checkbox, photo }
+enum FieldType { text, number, decimal, date, dropdown, checkbox, photo }
 
 class FormFieldModel {
   final String id;

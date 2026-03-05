@@ -112,12 +112,12 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
         height: currentHeight,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
             )
           ],
         ),
@@ -199,16 +199,17 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    backgroundColor: widget.isTracking
-                                        ? Colors.red
-                                        : AppTheme.primaryColor,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      backgroundColor: widget.isTracking
+                                          ? Colors.red
+                                          : AppTheme.primaryColor,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
                                     ),
-                                  ),
                                 ),
                               ),
 
@@ -230,15 +231,16 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    style: ElevatedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 14),
-                                      backgroundColor:
-                                          widget.isPaused ? Colors.green : Colors.orange,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                      style: ElevatedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        backgroundColor:
+                                            widget.isPaused ? Colors.green : Colors.orange,
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
                                       ),
-                                    ),
                                   ),
                                 ),
                               ],
@@ -265,16 +267,17 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                       : 'Add Point',
                                   style: const TextStyle(fontSize: 13),
                                 ),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  backgroundColor: AppTheme.primaryColor,
-                                  foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.grey[300],
-                                  disabledForegroundColor: Colors.grey[500],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    backgroundColor: AppTheme.primaryColor,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor: Colors.grey[300],
+                                    disabledForegroundColor: Colors.grey[500],
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
                                   ),
-                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -287,18 +290,18 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                 icon: const Icon(Icons.undo, size: 18),
                                 label: const Text('Undo',
                                     style: TextStyle(fontSize: 12)),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  foregroundColor: AppTheme.primaryColor,
-                                  side: BorderSide(
-                                    color: widget.collectedPoints.isEmpty
-                                        ? Colors.grey[300]!
-                                        : AppTheme.primaryColor,
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    foregroundColor: AppTheme.primaryColor,
+                                    side: BorderSide(
+                                      color: widget.collectedPoints.isEmpty
+                                          ? Colors.grey[300]!
+                                          : AppTheme.primaryColor,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -311,18 +314,18 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                 icon: const Icon(Icons.delete_outline, size: 18),
                                 label: const Text('Clear',
                                     style: TextStyle(fontSize: 12)),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  foregroundColor: Colors.red,
-                                  side: BorderSide(
-                                    color: widget.collectedPoints.isEmpty
-                                        ? Colors.grey[300]!
-                                        : Colors.red,
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    foregroundColor: Colors.red,
+                                    side: BorderSide(
+                                      color: widget.collectedPoints.isEmpty
+                                          ? Colors.grey[300]!
+                                          : Colors.red,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
                               ),
                             ),
                           ],

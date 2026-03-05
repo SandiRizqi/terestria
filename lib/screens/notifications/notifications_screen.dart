@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/database_service.dart';
 import '../../services/notification_event_service.dart';
 import '../../models/notification_model.dart';
 import '../../theme/app_theme.dart';
+import 'notification_settings_screen.dart';
+import 'notification_map_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
@@ -209,11 +212,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
+        backgroundColor: AppTheme.primaryGreen,
+        elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Notifications'),
+            const Text(
+              'Notifications',
+              style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+            ),
             if (_unreadCount > 0)
               Text(
                 '$_unreadCount unread',
@@ -237,9 +246,31 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             onSelected: (value) {
               if (value == 'delete_all') {
                 _deleteAllNotifications();
+              } else if (value == 'settings') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationSettingsScreen(),
+                  ),
+                );
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.tune,
+                      color: Colors.black87,
+                      size: 20,
+                    ),
+                    SizedBox(width: 12),
+                    Text('Notification Settings'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'delete_all',
                 enabled: _notifications.isNotEmpty,
@@ -272,7 +303,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.notifications_none,
+                        Icons.notifications_none_rounded,
                         size: 80,
                         color: Colors.grey[400],
                       ),
@@ -281,8 +312,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         'No notifications yet',
                         style: TextStyle(
                           fontSize: 18,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -371,15 +402,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _showNotificationDetail(notification);
         },
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: notification.isRead ? Colors.white : AppTheme.primaryGreen.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-            border: Border.all(
-              color: notification.isRead ? Colors.grey[300]! : AppTheme.primaryGreen.withOpacity(0.3),
-              width: 1,
-            ),
-          ),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: notification.isRead
+              ? AppTheme.getCardDecoration
+              : BoxDecoration(
+                  color: AppTheme.primaryGreen.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppTheme.primaryGreen.withOpacity(0.4),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryGreen.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
@@ -561,55 +601,133 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                 ),
               ),
-              // Data (if exists)
+              // Rich content from data
               if (notification.data != null && notification.data!.isNotEmpty) ...[
                 const SizedBox(height: 24),
-                const Text(
-                  'Additional Data',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
+                // Image preview
+                if (notification.data!.containsKey('image')) ...[
+                  ClipRRect(
                     borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: notification.data!.entries.map((entry) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${entry.key}: ',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textPrimary,
-                              ),
+                    child: Image.network(
+                      notification.data!['image'].toString(),
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 200,
+                          color: Colors.grey[100],
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
                             ),
-                            Expanded(
-                              child: Text(
-                                entry.value.toString(),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[700],
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 120,
+                          decoration: BoxDecoration(
+                            color: Colors.red[50],
+                            borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.broken_image, color: Colors.red[300], size: 32),
+                                const SizedBox(height: 8),
+                                Text('Gagal memuat gambar',
+                                    style: TextStyle(color: Colors.red[400], fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                // Link button
+                if (notification.data!.containsKey('link')) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        var linkStr = notification.data!['link'].toString().trim();
+                        // Auto-add scheme if missing
+                        if (!linkStr.startsWith('http://') && !linkStr.startsWith('https://')) {
+                          linkStr = 'https://$linkStr';
+                        }
+                        final url = Uri.tryParse(linkStr);
+                        if (url != null) {
+                          try {
+                            await launchUrl(url, mode: LaunchMode.externalApplication);
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Tidak dapat membuka link: $e'),
+                                  backgroundColor: Colors.red,
                                 ),
+                              );
+                            }
+                          }
+                        } else {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Format link tidak valid'),
+                                backgroundColor: Colors.red,
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Buka Link'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                        side: const BorderSide(color: Colors.blue),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                ],
+                // Map button
+                if (notification.data!.containsKey('map')) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => NotificationMapScreen(
+                              geoJsonData: notification.data!['map'].toString(),
+                              title: notification.title,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.map),
+                      label: const Text('Lihat di Peta'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                // Other data (fallback key-value display)
+                ..._buildOtherDataEntries(notification.data!),
               ],
               const SizedBox(height: 24),
               // Actions
@@ -650,6 +768,62 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
     );
+  }
+
+  /// Build key-value entries for data keys that are NOT image/link/map
+  List<Widget> _buildOtherDataEntries(Map<String, dynamic> data) {
+    final richKeys = {'image', 'link', 'map'};
+    final otherEntries = data.entries.where((e) => !richKeys.contains(e.key)).toList();
+    if (otherEntries.isEmpty) return [];
+
+    return [
+      const Text(
+        'Additional Data',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: AppTheme.textPrimary,
+        ),
+      ),
+      const SizedBox(height: 12),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: otherEntries.map((entry) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${entry.key}: ',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      entry.value.toString(),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    ];
   }
 
   String _formatTimeAgo(DateTime dateTime) {

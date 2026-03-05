@@ -234,6 +234,8 @@ class _DynamicFormState extends State<DynamicForm>
         return _buildTextField(field);
       case FieldType.number:
         return _buildNumberField(field);
+      case FieldType.decimal:
+        return _buildDecimalField(field);
       case FieldType.date:
         return _buildDateField(field);
       case FieldType.dropdown:
@@ -511,6 +513,87 @@ class _DynamicFormState extends State<DynamicForm>
       },
       onChanged: (value) {
         _formData[field.label] = value != null && value.isNotEmpty
+            ? double.tryParse(value) ?? value
+            : '';
+        widget.onSaved(_formData);
+        widget.onChanged?.call();
+      },
+      onSaved: (value) {
+        _formData[field.label] = value != null && value.isNotEmpty
+            ? double.tryParse(value) ?? value
+            : '';
+        widget.onSaved(_formData);
+      },
+    );
+  }
+
+  // ════════════════════════════════════════════════════════
+  // DECIMAL FIELD – dengan pin
+  // ════════════════════════════════════════════════════════
+  Widget _buildDecimalField(FormFieldModel field) {
+    if (!_textControllers.containsKey(field.label)) {
+      final pinVal = _pinnedValues[field.label]?.toString();
+      final initVal = _formData[field.label]?.toString() ?? '';
+      final startVal = pinVal ?? initVal;
+      _textControllers[field.label] = TextEditingController(text: startVal);
+      if (_formData[field.label] == null && startVal.isNotEmpty) {
+        _formData[field.label] = startVal;
+      }
+    }
+
+    final pinned = _isPinned(field.label);
+
+    return TextFormField(
+      controller: _textControllers[field.label],
+      readOnly: pinned,
+      decoration: InputDecoration(
+        labelText: field.label + (field.required ? ' *' : ''),
+        border: pinned
+            ? OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.amber.shade300, width: 1.5),
+              )
+            : const OutlineInputBorder(),
+        enabledBorder: pinned
+            ? OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.amber.shade300, width: 1.5),
+              )
+            : null,
+        filled: pinned,
+        fillColor: pinned ? Colors.amber.shade50 : null,
+        suffixIcon: widget.projectId != null
+            ? GestureDetector(
+                onTap: () => _togglePin(field.label),
+                child: Tooltip(
+                  message: pinned ? 'Unpin value' : 'Pin value',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(
+                      pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                      size: 20,
+                      color: pinned ? Colors.amber.shade700 : Colors.grey.shade400,
+                    ),
+                  ),
+                ),
+              )
+            : null,
+      ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+      ],
+      validator: (value) {
+        if (field.required && (value == null || value.isEmpty)) {
+          return 'This field is required';
+        }
+        if (value != null && value.isNotEmpty) {
+          if (double.tryParse(value) == null) {
+            return 'Please enter a valid decimal number';
+          }
+        }
+        return null;
+      },
+      onChanged: (String value) {
+        _formData[field.label] = value.isNotEmpty
             ? double.tryParse(value) ?? value
             : '';
         widget.onSaved(_formData);

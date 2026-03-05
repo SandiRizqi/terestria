@@ -73,9 +73,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: const Text('Profile'),
+        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         elevation: 0,
+        backgroundColor: AppTheme.primaryGreen,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -98,15 +100,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         // Profile Header
                         Container(
                           width: double.infinity,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                AppTheme.primaryGreen,
-                                AppTheme.primaryGreen.withOpacity(0.8),
-                              ],
-                            ),
+                          decoration: const BoxDecoration(
+                            color: AppTheme.primaryGreen,
+                            borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
                           ),
                           child: SafeArea(
                             bottom: false,
@@ -251,91 +247,102 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String? status,
     Color? statusColor,
   }) {
-    return Card(
-      elevation: 1,
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
+      decoration: AppTheme.getCardDecoration,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryGreen.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(AppTheme.borderRadiusSmall),
-              ),
-              child: Icon(
-                icon,
-                color: AppTheme.primaryGreen,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        label,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (status != null) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor?.withOpacity(0.1) ?? Colors.grey.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: statusColor ?? Colors.grey,
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            status,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: statusColor ?? Colors.grey,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textPrimary,
-                      fontWeight: FontWeight.w500,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+          onTap: onCopy != null ? () {} : null, // Ripple effect base
+
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryGreen.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppTheme.primaryGreen.withOpacity(0.15),
+                      width: 1,
                     ),
                   ),
-                ],
-              ),
+                  child: Icon(
+                    icon,
+                    color: AppTheme.primaryGreen,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                          if (status != null) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusColor?.withOpacity(0.1) ?? Colors.grey.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: statusColor ?? Colors.grey,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                status,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: statusColor ?? Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        value,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (onCopy != null)
+                  IconButton(
+                    icon: const Icon(Icons.copy_rounded, size: 20),
+                    color: AppTheme.textSecondary,
+                    onPressed: onCopy,
+                    tooltip: 'Copy',
+                  ),
+              ],
             ),
-            if (onCopy != null)
-              IconButton(
-                icon: const Icon(Icons.copy, size: 20),
-                color: AppTheme.textSecondary,
-                onPressed: onCopy,
-                tooltip: 'Copy',
-              ),
-          ],
+          ),
         ),
       ),
     );
