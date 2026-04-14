@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geoform_app/config/api_config.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -79,6 +80,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   StreamSubscription<CompassEvent>? _compassSubscription;
   bool _isBottomSheetExpanded = true;
   LatLng _centerCoordinates = const LatLng(-6.2088, 106.8456);
+  // ✅ Prominent Disclosure: tidak perlu track manual —
+  // cukup cek status permission langsung (Opsi C)
 
   // Existing data from project
   List<GeoData> _existingData = [];
@@ -232,11 +235,43 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     return false;
   }
 
-// ✨ NEW METHOD: Initialize service BEFORE using it
+  // ✅ OPSI C: Cek status permission secara langsung.
+  // Modal hanya ditampilkan jika ACCESS_BACKGROUND_LOCATION belum granted.
+  // Jika sudah granted → skip modal sama sekali.
+  // Jika user cabut permission dari Settings → modal muncul lagi (benar secara UX).
+  Future<bool> _shouldShowBackgroundRationale() async {
+    try {
+      final status = await Permission.locationAlways.status;
+      if (status.isGranted) {
+        print('✅ Background location already granted – skip rationale modal');
+        return false;
+      }
+      print('ℹ️ Background location not granted (status: $status) – will show rationale');
+      return true;
+    } catch (e) {
+      // Jika permission_handler error (misalnya di iOS simulator), skip modal
+      print('⚠️ Could not check locationAlways status: $e – skipping rationale');
+      return false;
+    }
+  }
+
+  // ✨ NEW METHOD: Initialize service BEFORE using it
   Future<void> _initializeServiceAndLocation() async {
     setState(() => _isLoadingLocation = true);
 
-    // 1. Initialize LocationServiceV2 dengan proper error handling
+    // 1. ✅ GOOGLE PLAY: Tampilkan Prominent Disclosure hanya jika permission belum granted
+    final needRationale = await _shouldShowBackgroundRationale();
+    if (needRationale) {
+      final proceed = await _showBackgroundLocationRationale();
+      if (!proceed) {
+        // User pilih "Nanti saja" – lanjut tanpa background, foreground saja
+        print('⚠️ User skip background rationale – lanjut foreground only');
+        await _initializeLocation();
+        return;
+      }
+    }
+
+    // 2. Initialize LocationServiceV2 dengan proper error handling
     try {
       print('🚀 Initializing LocationService...');
       final initialized = await _locationService.initialize();
@@ -388,6 +423,111 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         ],
       ),
     );
+  }
+
+  // ✅ GOOGLE PLAY REQUIRED: Prominent Disclosure sebelum minta ACCESS_BACKGROUND_LOCATION
+  // Wajib per kebijakan Google Play: https://support.google.com/googleplay/android-developer/answer/9799150
+  Future<bool> _showBackgroundLocationRationale() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.location_on, color: Colors.blue, size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Izin Lokasi Latar Belakang',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Penjelasan fitur
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Fitur yang memerlukan izin ini:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Pelacakan rute survei GPS secara real-time, termasuk saat layar terkunci atau saat beralih ke aplikasi lain.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Data yang dikumpulkan
+              const Text(
+                'Data yang dikumpulkan:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              _buildChecklistItem('Koordinat GPS (latitude & longitude)'),
+              _buildChecklistItem('Hanya saat sesi tracking aktif'),
+              _buildChecklistItem('Disimpan di perangkat, tidak dikirim ke server lain'),
+              const SizedBox(height: 14),
+              // Cara mencabut
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cara mencabut izin kapan saja:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Pengaturan → Aplikasi → Terestria → Izin → Lokasi → Ganti ke "Hanya saat digunakan"',
+                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Nanti saja'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Izinkan'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _setTransparentStatusBar() {
@@ -978,7 +1118,25 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
     }
 
-    // 2. Start background tracking with detailed error handling
+    // 2. ✅ GOOGLE PLAY: Tampilkan Prominent Disclosure hanya jika permission belum granted
+    final needRationale = await _shouldShowBackgroundRationale();
+    if (needRationale) {
+      final proceed = await _showBackgroundLocationRationale();
+      if (!proceed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Izin background diperlukan untuk tracking latar belakang'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // 3. Start background tracking with detailed error handling
     try {
       _locationService.startActiveTracking();
 
