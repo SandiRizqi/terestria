@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../services/auth_service.dart';
+import '../../services/scope_topic_service.dart';
 import '../auth/login_screen.dart';
 import '../menu_screen.dart';
 
@@ -59,6 +60,17 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           _navigateToLogin();
           return;
         }
+
+        // Re-sync FCM topic subscriptions saat app kembali dibuka
+        try {
+          final user = await _authService.getUser();
+          final scopes = user?.scope ?? [];
+          await ScopeTopicService().syncTopics(scopes);
+          print('✅ [Splash] FCM topic sync completed on app resume');
+        } catch (e) {
+          print('⚠️ [Splash] FCM topic sync failed: $e');
+        }
+
         // Go to home
         _navigateToHome();
       } else {

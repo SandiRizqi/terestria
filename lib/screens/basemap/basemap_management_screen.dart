@@ -316,10 +316,10 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
     Basemap? basemap;
     
     try {
-      // FIX: Use iOS-compatible path
+      // Use iOS-compatible path
       final outputDir = await _getBasemapOutputDir(basemapId);
       
-      // Update status
+      // Update status awal
       try {
         basemap = (await _basemapService.getBasemaps())
             .firstWhere((b) => b.id == basemapId);
@@ -337,83 +337,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         );
       }
 
-      // Extract coordinates using Python with timeout
-      final coords = await GeoPdfService.extractCoordinates(pdfPath).timeout(
-        const Duration(minutes: 2),
-        onTimeout: () {
-          throw TimeoutException('Coordinate extraction timed out.');
-        },
-      );
-      
-      if (coords['success'] != true) {
-        throw Exception('Failed to extract coordinates: ${coords['message']}');
-      }
-
-      final bounds = coords['bounds'];
-      
-      // FIX: GeoPDF service returns coordinates, but we need to verify which is lat/lon
-      // Check if values are in valid range: lat (-90 to 90), lon (-180 to 180)
-      var minLat = bounds['min_lat']?.toDouble() ?? -6.3;
-      var minLon = bounds['min_lon']?.toDouble() ?? 106.7;
-      var maxLat = bounds['max_lat']?.toDouble() ?? -6.1;
-      var maxLon = bounds['max_lon']?.toDouble() ?? 106.9;
-      
-      // Deteksi swap koordinat
-      bool needSwap = false;
-      if (minLat.abs() > 90 || maxLat.abs() > 90) {
-        // lat out of range → jelas swap
-        needSwap = true;
-        debugPrint('⚠️ Lat out of range → swapping');
-      } else if (minLon.abs() <= 90 && maxLon.abs() <= 90) {
-        // Keduanya dalam -90..90: pakai heuristik magnitude
-        final avgAbsLat = (minLat.abs() + maxLat.abs()) / 2;
-        final avgAbsLon = (minLon.abs() + maxLon.abs()) / 2;
-        if (avgAbsLat > avgAbsLon) {
-          needSwap = true;
-          debugPrint('⚠️ Lat magnitude ($avgAbsLat) > Lon magnitude ($avgAbsLon) → swapping');
-        }
-      }
-      if (needSwap) {
-        debugPrint('   Before swap - minLat: $minLat, minLon: $minLon, maxLat: $maxLat, maxLon: $maxLon');
-        final tempMinLat = minLat;
-        final tempMaxLat = maxLat;
-        minLat = minLon;
-        maxLat = maxLon;
-        minLon = tempMinLat;
-        maxLon = tempMaxLat;
-        debugPrint('   After swap - minLat: $minLat, minLon: $minLon, maxLat: $maxLat, maxLon: $maxLon');
-      }
-
-      // Update with coordinates
-      if (mounted) {
-        try {
-          basemap = (await _basemapService.getBasemaps())
-              .firstWhere((b) => b.id == basemapId);
-        } catch (e) {
-          debugPrint('⚠️ Basemap not found during update: $basemapId');
-          return; // Basemap was deleted, stop processing
-        }
-        
-        debugPrint('🗺️ Extracted bounds from PDF:');
-        debugPrint('   minLat: $minLat, minLon: $minLon');
-        debugPrint('   maxLat: $maxLat, maxLon: $maxLon');
-        debugPrint('   centerLat: ${(minLat + maxLat) / 2}, centerLon: ${(minLon + maxLon) / 2}');
-        
-        await _basemapService.saveBasemap(
-          basemap.copyWith(
-            processingProgress: 0.3,
-            processingMessage: 'Converting PDF to overlay image...',
-            pdfMinLat: minLat,
-            pdfMinLon: minLon,
-            pdfMaxLat: maxLat,
-            pdfMaxLon: maxLon,
-            pdfCenterLat: (minLat + maxLat) / 2,
-            pdfCenterLon: (minLon + maxLon) / 2,
-          ),
-        );
-      }
-
-      // FIX: iOS-optimized DPI settings with user preference
+      // iOS-optimized DPI settings with user preference
       await _settingsService.initialize();
       final userDpi = _settingsService.settings.pdfDpi;
       final dpi = Platform.isIOS 
@@ -422,20 +346,26 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       
       debugPrint('🔧 Processing with DPI: $dpi (iOS: ${Platform.isIOS})');
 
-      // Process GeoPDF as overlay image with MOBILE-OPTIMIZED quality (MUCH FASTER!) with timeout
+      // FIX: Panggil processGeoPdfAsOverlay SEKALI — dia sudah handle:
+      //   1. extractCoordinates() secara internal
+      //   2. Expand bounds neatline → full-page (_expandBoundsToFullPage)
+      //   3. Render overlay.png
+      // Sebelumnya extractCoordinates() dipanggil terpisah lalu bounds NEATLINE
+      // (lebih kecil) disimpan ke Basemap, padahal overlay.png adalah render
+      // FULL-PAGE — akibatnya gambar bergeser ~963m dari posisi seharusnya.
       final result = await GeoPdfService.processGeoPdfAsOverlay(
         pdfPath: pdfPath,
         outputDir: outputDir,
-        dpi: dpi,  // Explicit DPI untuk iOS
+        dpi: dpi,
         onProgress: (status) async {
           if (!mounted) return;
           
-          // Update progress
-          double progress = 0.3;
-          if (status.contains('metadata')) progress = 0.4;
+          // Map pesan progress ke nilai 0.1–0.9
+          double progress = 0.2;
+          if (status.contains('metadata'))         progress = 0.3;
           else if (status.contains('coordinates')) progress = 0.5;
-          else if (status.contains('overlay')) progress = 0.7;
-          else if (status.contains('complete')) progress = 1.0;
+          else if (status.contains('overlay'))     progress = 0.7;
+          else if (status.contains('complete'))    progress = 0.9;
 
           try {
             final currentBasemap = (await _basemapService.getBasemaps())
@@ -465,15 +395,33 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         throw Exception('Overlay generation failed: ${result['message']}');
       }
 
-      // FIX: Validate overlay path exists
+      // Validate overlay image
       final overlayPath = result['overlay_image'] as String?;
       if (overlayPath == null || !await File(overlayPath).exists()) {
         throw Exception('Overlay image not found at: $overlayPath');
       }
 
+      // FIX: Gunakan expanded bounds dari result['coordinates'] —
+      // ini bounds FULL-PAGE yang sudah di-expand oleh _expandBoundsToFullPage,
+      // sehingga match persis dengan area yang digambar di overlay.png.
+      // Sebelumnya bounds neatline (lebih kecil) disimpan → geser ~963m.
+      final expandedBounds = result['coordinates'] as Map<String, dynamic>?;
+      if (expandedBounds == null) {
+        throw Exception('No coordinate data returned from overlay processor.');
+      }
+
+      final minLat = (expandedBounds['min_lat'] as num).toDouble();
+      final minLon = (expandedBounds['min_lon'] as num).toDouble();
+      final maxLat = (expandedBounds['max_lat'] as num).toDouble();
+      final maxLon = (expandedBounds['max_lon'] as num).toDouble();
+
+      debugPrint('🗺️ Full-page expanded bounds (untuk overlay positioning):');
+      debugPrint('   minLat: $minLat, minLon: $minLon');
+      debugPrint('   maxLat: $maxLat, maxLon: $maxLon');
+      debugPrint('   centerLat: ${(minLat + maxLat) / 2}, centerLon: ${(minLon + maxLon) / 2}');
       debugPrint('✅ Overlay image created: $overlayPath');
       
-      // Mark as completed with overlay mode
+      // Mark as completed — simpan expanded bounds agar overlay.png terpetakan tepat
       if (mounted) {
         try {
           basemap = (await _basemapService.getBasemaps())
@@ -484,19 +432,26 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         }
         
         final imageSizeMB = result['image_size_mb']?.toStringAsFixed(2) ?? '0';
-        final imageWidth = result['image_width'] ?? 0;
+        final imageWidth  = result['image_width']  ?? 0;
         final imageHeight = result['image_height'] ?? 0;
-        final dpiUsed = dpi.toString();
+        final dpiUsed     = dpi.toString();
         
         final completed = basemap.copyWith(
-          urlTemplate: 'overlay://$basemapId',  // Special URL for overlay mode
+          urlTemplate:         'overlay://$basemapId',
           pdfOverlayImagePath: overlayPath,
-          useOverlayMode: true,
-          minZoom: 10,
-          maxZoom: 22,
-          pdfStatus: PdfProcessingStatus.completed,
-          processingProgress: 1.0,
-          processingMessage: '✅ Ready! (${imageWidth}x${imageHeight}, ${imageSizeMB} MB @ $dpiUsed DPI)'
+          useOverlayMode:      true,
+          minZoom:             10,
+          maxZoom:             22,
+          // Simpan expanded bounds (full-page) — match dengan overlay.png
+          pdfMinLat:           minLat,
+          pdfMinLon:           minLon,
+          pdfMaxLat:           maxLat,
+          pdfMaxLon:           maxLon,
+          pdfCenterLat:        (minLat + maxLat) / 2,
+          pdfCenterLon:        (minLon + maxLon) / 2,
+          pdfStatus:           PdfProcessingStatus.completed,
+          processingProgress:  1.0,
+          processingMessage:   '✅ Ready! (${imageWidth}x${imageHeight}, ${imageSizeMB} MB @ $dpiUsed DPI)',
         );
 
         await _basemapService.saveBasemap(completed);

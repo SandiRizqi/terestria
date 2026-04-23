@@ -4,11 +4,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import '../config/api_config.dart';
 import '../app_initializer.dart';
+import 'scope_topic_service.dart';
 
 class AuthService {
   static const String _userKey = 'user_data';
   static const String _tokenKey = 'auth_token';
   static const String _isLoggedInKey = 'is_logged_in';
+
+  final _scopeTopicService = ScopeTopicService();
 
   // Singleton pattern untuk memastikan satu instance
   static final AuthService _instance = AuthService._internal();
@@ -110,6 +113,15 @@ class AuthService {
             // Don't fail login if FCM registration fails
           }
         }
+
+        // Sync FCM topic subscriptions based on scope
+        try {
+          await _scopeTopicService.syncTopics(user.scope ?? []);
+          print('✅ FCM topic sync completed after login');
+        } catch (e) {
+          print('⚠️ Failed to sync FCM topics: $e');
+          // Don't fail login if topic sync fails
+        }
         
         return AuthResult(
           success: true,
@@ -163,6 +175,14 @@ class AuthService {
 
   // Logout with FCM token deactivation
   Future<void> logout() async {
+    // Unsubscribe all scope topics before logout
+    try {
+      await _scopeTopicService.unsubscribeAll();
+      print('✅ FCM scope topics unsubscribed on logout');
+    } catch (e) {
+      print('⚠️ Failed to unsubscribe FCM topics: $e');
+    }
+
     // Deactivate FCM token before logout
     try {
       final token = await getToken();

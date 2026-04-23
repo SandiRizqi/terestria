@@ -4,9 +4,9 @@ class ApiConfig {
 
   static const String authUrl = '${baseUrl}/loginldap/';
 
-  static const String bundleName = 'com.sandi.geoformApp';
+  static const String bundleName = 'io.github.sandirizqi.terestria';
 
-  static const String appVersion = '3.6-prod';
+  static const String appVersion = '3.8-prod';
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';
