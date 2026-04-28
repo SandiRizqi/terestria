@@ -10,8 +10,6 @@ import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/sync_service.dart';
-import '../../services/api_service.dart';
-import '../../config/api_config.dart';
 import '../data_collection/data_collection_screen.dart';
 import 'edit_geo_data_screen.dart';
 import 'create_project_screen.dart';
@@ -36,7 +34,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final StorageService _storageService = StorageService();
   final ConnectivityService _connectivityService = ConnectivityService();
   final SyncService _syncService = SyncService();
-  final ApiService _apiService = ApiService();
   
   List<GeoData> _geoDataList = [];
   List<GeoData> _filteredGeoDataList = [];
@@ -198,132 +195,53 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     });
 
     try {
-      // Fetch geodata from server
-      final geoDataResponse = await _apiService.get(
-        '${ApiConfig.syncDataEndpoint}by-project/?project_id=${_currentProject.id}',
+      final result = await _syncService.pullGeoDataFromServer(
+        _currentProject.id,
+        onProgress: (message) {
+          if (mounted) {
+            setState(() => _syncProgress = message);
+          }
+        },
       );
 
-      //print('Project ID:  ${_currentProject.id}');
+      if (mounted && result.success) {
+        final newCount = result.data?['saved'] as int? ?? 0;
+        final updatedCount = result.data?['updated'] as int? ?? 0;
 
-      int newGeoDataCount = 0;
-      int updatedGeoDataCount = 0;
-     
-      if (_apiService.isSuccess(geoDataResponse)) {
-        final geoDataList = jsonDecode(geoDataResponse.body);
-        //print(geoDataList);
-
-        final dataList = geoDataList['data']; 
-        //print(dataList);
-        // Load existing geodata
-        final existingGeoData = await _storageService.loadGeoData(_currentProject.id);
-        final existingGeoDataMap = {for (var g in existingGeoData) g.id: g};
-
-
-        // Process geodata dari server
-        if (dataList is List && dataList.isNotEmpty) {
-          setState(() {
-            _syncProgress = 'Processing ${dataList.length} records...';
-          });
-
-          for (var i = 0; i < dataList.length; i++) {
-            try {
-              final geoDataJson = dataList[i];
-              setState(() {
-                _syncProgress = 'Processing record ${i + 1}/${dataList.length}...';
-              });
-
-              // Debug: print raw JSON
-              //print('🔍 Raw JSON from server: ${jsonEncode(geoDataJson)}');
-              
-              final serverGeoData = GeoData.fromJson(geoDataJson);
-              //print('📥 Server data - ID: ${serverGeoData.id}, collectedBy: ${serverGeoData.collectedBy}');
-              final existingGeoData = existingGeoDataMap[serverGeoData.id];
-
-              if (existingGeoData == null) {
-                // GeoData baru dari server - download photos
-                setState(() {
-                  _syncProgress = 'Downloading photos for record ${i + 1}...';
-                });
-                
-                // Process photos (download from OSS)
-                final processedFormData = await _syncService.processFormDataForPull(
-                  serverGeoData.formData,
-                  _currentProject,
-                );
-                
-                // Buat GeoData baru dengan formData yang sudah diproses
-                final updatedGeoData = GeoData(
-                  id: serverGeoData.id,
-                  projectId: serverGeoData.projectId,
-                  points: serverGeoData.points,
-                  formData: processedFormData,
-                  createdAt: serverGeoData.createdAt,
-                  updatedAt: serverGeoData.updatedAt,
-                  isSynced: serverGeoData.isSynced,
-                  syncedAt: serverGeoData.syncedAt,
-                  collectedBy: serverGeoData.collectedBy,
-                );
-                
-                await _storageService.saveGeoData(updatedGeoData);
-                newGeoDataCount++;
-              } else if (serverGeoData.updatedAt.isAfter(existingGeoData.updatedAt)) {
-                // Update geodata yang lebih baru dari server
-                setState(() {
-                  _syncProgress = 'Updating record ${i + 1}...';
-                });
-                
-                // Process photos (download from OSS)
-                final processedFormData = await _syncService.processFormDataForPull(
-                  serverGeoData.formData,
-                  _currentProject,
-                );
-                
-                // Buat GeoData baru dengan formData yang sudah diproses
-                final updatedGeoData = GeoData(
-                  id: serverGeoData.id,
-                  projectId: serverGeoData.projectId,
-                  points: serverGeoData.points,
-                  formData: processedFormData,
-                  createdAt: serverGeoData.createdAt,
-                  updatedAt: serverGeoData.updatedAt,
-                  isSynced: serverGeoData.isSynced,
-                  syncedAt: serverGeoData.syncedAt,
-                  collectedBy: serverGeoData.collectedBy,
-                );
-                
-                await _storageService.saveGeoData(updatedGeoData);
-                updatedGeoDataCount++;
-              }
-            } catch (e) {
-              print('Error processing geodata from server: $e');
-            }
+        if (newCount > 0 || updatedCount > 0) {
+          String message = '';
+          if (newCount > 0) message += '$newCount new';
+          if (updatedCount > 0) {
+            if (message.isNotEmpty) message += ', ';
+            message += '$updatedCount updated';
           }
-        }
-      }
+          message += ' geodata synced';
 
-      // Show notification jika ada data baru - tapi JANGAN reload di sini dulu
-      if (mounted && (newGeoDataCount > 0 || updatedGeoDataCount > 0)) {
-        String message = '';
-        if (newGeoDataCount > 0) {
-          message += '$newGeoDataCount new';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.cloud_download, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(message)),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
         }
-        if (updatedGeoDataCount > 0) {
-          if (message.isNotEmpty) message += ', ';
-          message += '$updatedGeoDataCount updated';
-        }
-        message += ' geodata synced';
-        
+      } else if (mounted && !result.success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.cloud_download, color: Colors.white),
+                const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text(message)),
+                Expanded(child: Text('Sync error: ${result.message}')),
               ],
             ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.red,
           ),
         );
       }
@@ -348,7 +266,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       // Beri waktu untuk memastikan file sudah tersimpan ke disk
       await Future.delayed(const Duration(milliseconds: 150));
       await _loadGeoData();
-      
+
       if (mounted) {
         setState(() {
           _isSyncing = false;
@@ -1553,19 +1471,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ),
     );
 
-    // Reload data jika ada perubahan (data baru ditambahkan)
-    if (result == true) {
-      //print('Data collection result: true, reloading data...');
-      await _loadGeoData();
-      
-      // Scroll ke atas untuk melihat data terbaru
-      if (_geoDataList.isNotEmpty && _scrollController.hasClients) {
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+    // Selalu reload — edit/delete dari map juga mengubah local data
+    await _loadGeoData();
+
+    // Scroll ke atas hanya jika ada data baru yang ditambahkan
+    if (result == true && _geoDataList.isNotEmpty && _scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     }
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../services/location_service_v2.dart';
 import '../../models/geo_data_model.dart';
 import '../../theme/app_theme.dart';
@@ -230,6 +231,15 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
       _locationSubscription?.cancel();
 
       if (_selectedProvider == LocationProvider.phone) {
+        // ✅ Prominent Disclosure: hanya tampilkan jika izin belum diberikan
+        final status = await Permission.locationWhenInUse.status;
+        if (!status.isGranted) {
+          final agreed = await _showLocationPermissionRationale();
+          if (!agreed) {
+            setState(() => _isTesting = false);
+            return;
+          }
+        }
         // Test phone GPS
         final location = await _locationService.getCurrentLocation();
         if (location != null && mounted) {
@@ -305,6 +315,123 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
         _showError('Failed to save settings: ${e.toString()}');
       }
     }
+  }
+
+  // ✅ GOOGLE PLAY REQUIRED: Prominent Disclosure sebelum minta izin lokasi
+  Widget _buildChecklistItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle_outline, size: 16, color: Colors.blue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _showLocationPermissionRationale() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.location_on, color: Colors.blue, size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Izin Akses Lokasi',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Fitur yang memerlukan izin ini:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Menentukan posisi GPS perangkat untuk pengumpulan data survei lapangan.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Data yang dikumpulkan:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              _buildChecklistItem('Koordinat GPS (latitude & longitude)'),
+              _buildChecklistItem('Hanya saat aplikasi aktif di layar'),
+              _buildChecklistItem('Disimpan di perangkat, tidak dikirim ke server lain'),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cara mencabut izin kapan saja:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Pengaturan → Aplikasi → Terestria → Izin → Lokasi → Matikan',
+                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Nanti saja'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Izinkan'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _showError(String message) {

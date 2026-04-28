@@ -30,6 +30,7 @@ import '../basemap/basemap_management_screen.dart';
 import '../location/location_provider_screen.dart';
 import '../../services/auth_service.dart';
 import '../../services/settings_service.dart';
+import '../project/edit_geo_data_screen.dart';
 import '../../models/settings/app_settings.dart';
 import '../../widgets/offline_download_dialog.dart';
 import '../../utils/lat_lng_bounds.dart' as custom_bounds;
@@ -86,6 +87,21 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   // Existing data from project
   List<GeoData> _existingData = [];
   bool _isLoadingData = true;
+  String? _currentUsername;
+
+  // P0+P1: Cached layers — computed once after data load, not on every build
+  List<Marker> _cachedMarkers = [];
+  List<Polyline> _cachedPolylines = [];
+  List<Polygon> _cachedPolygons = [];
+
+  // P2: Viewport-culled subset of cached layers
+  List<Marker> _visibleMarkers = [];
+  List<Polyline> _visiblePolylines = [];
+  List<Polygon> _visiblePolygons = [];
+
+  // P2+P3: Zoom tracking & culling debounce
+  double _currentZoom = 15.0;
+  Timer? _cullingDebounce;
 
   // GeoJSON Layers
   final LayerService _layerService = LayerService();
@@ -106,6 +122,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _initCompass();
     _restoreTrackingState();
     _loadActiveLayers();
+    _loadUsername();
   
   }
 
@@ -838,9 +855,316 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         _existingData = data;
         _isLoadingData = false;
       });
+      _buildMarkerCache(); // P0+P1: build cache setelah data loaded
     } catch (e) {
       print('Error loading existing data: $e');
       setState(() => _isLoadingData = false);
+    }
+  }
+
+  // P0+P1: Bangun cache marker/polyline/polygon sekali dari _existingData
+  void _buildMarkerCache() {
+    final markers = <Marker>[];
+    final polylines = <Polyline>[];
+    final polygons = <Polygon>[];
+
+    for (final data in _existingData) {
+      switch (widget.project.geometryType) {
+        case GeometryType.point:
+          if (data.points.isNotEmpty) {
+            markers.add(Marker(
+              point: LatLng(data.points.first.latitude, data.points.first.longitude),
+              width: 25,
+              height: 25,
+              child: GestureDetector(
+                onTap: () => _onExistingDataTap(data),
+                child: Container(
+                  width: 23,
+                  height: 23,
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.location_on, color: Colors.white, size: 20),
+                ),
+              ),
+            ));
+          }
+          break;
+
+        case GeometryType.line:
+          if (data.points.isNotEmpty) {
+            polylines.add(Polyline(
+              points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
+              color: Colors.orange.withOpacity(0.7),
+              strokeWidth: 3,
+            ));
+            final centerIndex = data.points.length ~/ 2;
+            markers.add(Marker(
+              point: LatLng(
+                data.points[centerIndex].latitude,
+                data.points[centerIndex].longitude,
+              ),
+              width: 25,
+              height: 25,
+              child: GestureDetector(
+                onTap: () => _onExistingDataTap(data),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black87, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.info, color: Colors.black87, size: 20),
+                ),
+              ),
+            ));
+          }
+          break;
+
+        case GeometryType.polygon:
+          if (data.points.length >= 3) {
+            polygons.add(Polygon(
+              points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
+              color: Colors.orange.withOpacity(0.15),
+              borderColor: Colors.orange.withOpacity(0.7),
+              borderStrokeWidth: 3,
+              isFilled: true,
+            ));
+            // Hitung centroid sekali saja di sini, bukan di setiap build()
+            double sumLat = 0, sumLng = 0;
+            for (final p in data.points) {
+              sumLat += p.latitude;
+              sumLng += p.longitude;
+            }
+            markers.add(Marker(
+              point: LatLng(sumLat / data.points.length, sumLng / data.points.length),
+              width: 25,
+              height: 25,
+              child: GestureDetector(
+                onTap: () => _onExistingDataTap(data),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black87, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.info, color: Colors.black87, size: 20),
+                ),
+              ),
+            ));
+          }
+          break;
+      }
+    }
+
+    _cachedMarkers = markers;
+    _cachedPolylines = polylines;
+    _cachedPolygons = polygons;
+
+    // Inisialisasi visible = semua cached, lalu cull setelah map siap
+    _visibleMarkers = markers;
+    _visiblePolylines = polylines;
+    _visiblePolygons = polygons;
+
+    // Delay sedikit agar MapController sudah siap
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) _updateVisibleLayers();
+    });
+  }
+
+  // P2: Filter layers berdasarkan viewport map + buffer 30%
+  void _updateVisibleLayers() {
+    if (!mounted) return;
+    if (_cachedMarkers.isEmpty && _cachedPolylines.isEmpty && _cachedPolygons.isEmpty) return;
+    try {
+      final bounds = _mapController.camera.visibleBounds;
+      final latBuffer = (bounds.north - bounds.south) * 0.3;
+      final lngBuffer = (bounds.east - bounds.west) * 0.3;
+      final expanded = LatLngBounds(
+        LatLng(bounds.south - latBuffer, bounds.west - lngBuffer),
+        LatLng(bounds.north + latBuffer, bounds.east + lngBuffer),
+      );
+
+      setState(() {
+        _visibleMarkers = _cachedMarkers
+            .where((m) => expanded.contains(m.point))
+            .toList();
+        _visiblePolylines = _cachedPolylines
+            .where((p) => p.points.any((pt) => expanded.contains(pt)))
+            .toList();
+        _visiblePolygons = _cachedPolygons
+            .where((p) => p.points.any((pt) => expanded.contains(pt)))
+            .toList();
+      });
+    } catch (_) {
+      // Camera belum siap — pertahankan visible saat ini
+    }
+  }
+
+  // P3: Grid-based clustering untuk point geometry
+  // Zoom rendah → cluster, zoom tinggi → individual markers
+  List<Marker> _getClusteredMarkers() {
+    if (_visibleMarkers.isEmpty) return [];
+    // Tampilkan individual jika zoom cukup tinggi atau data sedikit
+    if (_currentZoom >= 14 || _visibleMarkers.length <= 30) {
+      return _visibleMarkers;
+    }
+
+    // Ukuran grid cell berdasarkan zoom
+    final cellSize = _currentZoom < 8
+        ? 1.0
+        : _currentZoom < 10
+            ? 0.5
+            : _currentZoom < 12
+                ? 0.1
+                : 0.05;
+
+    final Map<String, List<Marker>> grid = {};
+    for (final marker in _visibleMarkers) {
+      final latCell = (marker.point.latitude / cellSize).floor();
+      final lngCell = (marker.point.longitude / cellSize).floor();
+      grid.putIfAbsent('$latCell:$lngCell', () => []).add(marker);
+    }
+
+    return grid.values.map((grouped) {
+      if (grouped.length == 1) return grouped.first;
+
+      // Centroid cluster
+      final lat = grouped.map((m) => m.point.latitude).reduce((a, b) => a + b) / grouped.length;
+      final lng = grouped.map((m) => m.point.longitude).reduce((a, b) => a + b) / grouped.length;
+      final clusterPoint = LatLng(lat, lng);
+      final count = grouped.length;
+
+      return Marker(
+        point: clusterPoint,
+        width: 44,
+        height: 44,
+        child: GestureDetector(
+          onTap: () => _mapController.move(clusterPoint, _currentZoom + 2),
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                count > 999 ? '999+' : '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  Future<void> _loadUsername() async {
+    final authService = AuthService();
+    final user = await authService.getUser();
+    if (mounted) {
+      setState(() {
+        _currentUsername = user?.username;
+      });
+    }
+  }
+
+  bool _canEditGeoData(GeoData data) {
+    if (_currentUsername == null) return false;
+    if (data.collectedBy == null) return false;
+    return data.collectedBy!.trim().toLowerCase() ==
+        _currentUsername!.trim().toLowerCase();
+  }
+
+  Future<void> _editGeoData(GeoData data, BuildContext dialogContext) async {
+    Navigator.pop(dialogContext); // tutup detail dialog dulu
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditGeoDataScreen(
+          geoData: data,
+          project: widget.project,
+        ),
+      ),
+    );
+    if (result == true) {
+      await _loadExistingData();
+    }
+  }
+
+  Future<void> _deleteGeoData(GeoData data, BuildContext dialogContext) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Data'),
+        content: const Text('Are you sure you want to delete this data?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _storageService.deleteGeoData(data.id);
+        if (mounted) {
+          Navigator.pop(dialogContext); // tutup detail dialog
+          await _loadExistingData();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Data deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting data: $e')),
+          );
+        }
+      }
     }
   }
 
@@ -857,6 +1181,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // ✅ Cancel heartbeat timer
     _heartbeatTimer?.cancel();
     print('💔 Heartbeat timer stopped');
+
+    // Cancel viewport culling debounce
+    _cullingDebounce?.cancel();
 
     // ✅ ALWAYS stop background tracking on dispose
     // This handles cases where didPopRoute wasn't called (e.g., app termination)
@@ -1740,9 +2067,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _showDataDetail(GeoData data) {
+    final canEdit = _canEditGeoData(data);
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
@@ -1751,6 +2079,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Header
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -1792,17 +2121,76 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.pop(dialogContext),
                     ),
                   ],
                 ),
               ),
+
+              // Content
               Flexible(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
                   child: _buildDataDetailContent(data),
                 ),
               ),
+
+              // Footer: Edit & Delete (hanya jika punya akses)
+              if (canEdit)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    border: Border(
+                      top: BorderSide(color: Colors.grey[200]!),
+                    ),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(20),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Delete button
+                      OutlinedButton.icon(
+                        onPressed: () => _deleteGeoData(data, dialogContext),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Delete'),
+                      ),
+                      const Spacer(),
+                      // Edit button
+                      ElevatedButton.icon(
+                        onPressed: () => _editGeoData(data, dialogContext),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit'),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -2516,161 +2904,39 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     }
   }
 
+  // P0: Satu layer per tipe geometri, bukan satu layer per record
   List<Widget> _buildExistingDataLayers() {
-    List<Widget> layers = [];
+    if (_existingData.isEmpty) return [];
+    final layers = <Widget>[];
 
-    // Group existing data by geometry type for rendering
-    for (var data in _existingData) {
-      // Line/Polygon layers
-      if (widget.project.geometryType == GeometryType.line) {
-        layers.add(PolylineLayer(
-          polylines: [
-            Polyline(
-              points: data.points
-                  .map((p) => LatLng(p.latitude, p.longitude))
-                  .toList(),
-              color: Colors.orange.withOpacity(0.7),
-              strokeWidth: 3,
-            ),
-          ],
-        ));
-      } else if (widget.project.geometryType == GeometryType.polygon) {
-        if (data.points.length >= 3) {
-          layers.add(PolygonLayer(
-            polygons: [
-              Polygon(
-                points: data.points
-                    .map((p) => LatLng(p.latitude, p.longitude))
-                    .toList(),
-                color: Colors.orange.withOpacity(0.15),
-                borderColor: Colors.orange.withOpacity(0.7),
-                borderStrokeWidth: 3,
-                isFilled: true,
-              ),
-            ],
-          ));
+    switch (widget.project.geometryType) {
+      case GeometryType.point:
+        // P3: Cluster markers di zoom rendah, individual di zoom tinggi
+        final markers = _getClusteredMarkers();
+        if (markers.isNotEmpty) {
+          layers.add(MarkerLayer(markers: markers));
         }
-      }
+        break;
 
-      // Point markers for existing data (clickable)
-      if (widget.project.geometryType == GeometryType.point &&
-          data.points.isNotEmpty) {
-        layers.add(MarkerLayer(
-          markers: [
-            Marker(
-              point: LatLng(
-                  data.points.first.latitude, data.points.first.longitude),
-              width: 25,
-              height: 25,
-              child: GestureDetector(
-                onTap: () => _onExistingDataTap(data),
-                child: Container(
-                  width: 23,
-                  height: 23,
-                  decoration: BoxDecoration(
-                    color: Colors.orange,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ));
-      } else if (widget.project.geometryType == GeometryType.line &&
-          data.points.isNotEmpty) {
-        // Add clickable marker at the center point of the line
-        final centerIndex = data.points.length ~/ 2;
-        layers.add(MarkerLayer(
-          markers: [
-            Marker(
-              point: LatLng(
-                data.points[centerIndex].latitude,
-                data.points[centerIndex].longitude,
-              ),
-              width: 25,
-              height: 25,
-              child: GestureDetector(
-                onTap: () => _onExistingDataTap(data),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black87, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.info,
-                    color: Colors.black87,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ));
-      } else if (widget.project.geometryType == GeometryType.polygon &&
-          data.points.length >= 3) {
-        // Add clickable marker at the centroid of the polygon
-        double sumLat = 0;
-        double sumLng = 0;
-        for (var point in data.points) {
-          sumLat += point.latitude;
-          sumLng += point.longitude;
+      case GeometryType.line:
+        // 1 PolylineLayer + 1 MarkerLayer (tap targets)
+        if (_visiblePolylines.isNotEmpty) {
+          layers.add(PolylineLayer(polylines: _visiblePolylines));
         }
-        final centroidLat = sumLat / data.points.length;
-        final centroidLng = sumLng / data.points.length;
+        if (_visibleMarkers.isNotEmpty) {
+          layers.add(MarkerLayer(markers: _visibleMarkers));
+        }
+        break;
 
-        layers.add(MarkerLayer(
-          markers: [
-            Marker(
-              point: LatLng(centroidLat, centroidLng),
-              width: 25,
-              height: 25,
-              child: GestureDetector(
-                onTap: () => _onExistingDataTap(data),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black87, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.info,
-                    color: Colors.black87,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ));
-      }
+      case GeometryType.polygon:
+        // 1 PolygonLayer + 1 MarkerLayer (tap targets)
+        if (_visiblePolygons.isNotEmpty) {
+          layers.add(PolygonLayer(polygons: _visiblePolygons));
+        }
+        if (_visibleMarkers.isNotEmpty) {
+          layers.add(MarkerLayer(markers: _visibleMarkers));
+        }
+        break;
     }
 
     return layers;
@@ -2988,9 +3254,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                         : 15, // Non-PDF: zoom lebih tinggi ke user location
                     onTap: _onMapTap,
                     onPositionChanged: (position, hasGesture) {
+                      _currentZoom = position.zoom ?? _currentZoom;
                       setState(() {
                         _centerCoordinates = position.center!;
                       });
+                      // P2: debounce culling 200ms agar tidak terlalu sering
+                      _cullingDebounce?.cancel();
+                      _cullingDebounce = Timer(
+                        const Duration(milliseconds: 200),
+                        _updateVisibleLayers,
+                      );
                     },
                   ),
                   children: [

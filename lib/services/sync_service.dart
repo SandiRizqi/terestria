@@ -347,75 +347,103 @@ class SyncService {
     }
   }
 
-  /// Pull geo data for a specific project from server
-  Future<SyncResult> pullGeoDataFromServer(String projectId) async {
+  /// Pull geo data for a specific project from server (with pagination support)
+  Future<SyncResult> pullGeoDataFromServer(
+    String projectId, {
+    void Function(String message)? onProgress,
+  }) async {
     try {
-      final response = await _apiService.get(
-        '${ApiConfig.syncDataEndpoint}?project_id=$projectId',
-      );
+      // Get project for photo field identification (once, outside the loop)
+      final project = await _storageService.getProjectById(projectId);
 
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        final geoDataList = responseData['data'] as List? ?? [];
+      int savedCount = 0;
+      int updatedCount = 0;
+      int currentPage = 1;
+      int totalPages = 1;
 
-        // Get project for photo field identification
-        final project = await _storageService.getProjectById(projectId);
+      do {
+        onProgress?.call(
+          'Fetching page $currentPage${totalPages > 1 ? "/$totalPages" : ""}...',
+        );
 
-        int savedCount = 0;
-        int updatedCount = 0;
-        for (var geoDataJson in geoDataList) {
-          try {
-            // Parse geo data from server format
-            final geoData = _parseGeoDataFromServer(geoDataJson);
-            
-            // Check if geo data exists locally
-            final existingGeoData = await _storageService.getGeoDataById(geoData.id);
-            
-            if (existingGeoData == null) {
-              // New geo data from server - download photos and save
-              print('New geodata from server: ${geoData.id}');
-              final processedFormData = await _photoSyncService.processFormDataForPull(
-                geoData.formData,
-                project,
+        final response = await _apiService.get(
+          '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&page=$currentPage',
+        );
+
+        if (response.statusCode == 200) {
+          final responseData = jsonDecode(response.body);
+          totalPages = responseData['total_pages'] as int? ?? 1;
+          final geoDataList = responseData['data'] as List? ?? [];
+
+          onProgress?.call(
+            'Processing ${geoDataList.length} records (page $currentPage/$totalPages)...',
+          );
+
+          for (var i = 0; i < geoDataList.length; i++) {
+            try {
+              final geoData = GeoData.fromJson(
+                Map<String, dynamic>.from(geoDataList[i]),
               );
-              
-              final updatedGeoData = geoData.copyWith(formData: processedFormData);
-              await _storageService.saveGeoData(updatedGeoData);
-              savedCount++;
-            } else {
-              // Geo data exists - check if server version is newer
-              final serverUpdatedAt = geoData.updatedAt;
-              final localUpdatedAt = existingGeoData.updatedAt;
-              
-              if (serverUpdatedAt.isAfter(localUpdatedAt)) {
-                // Server version is newer - download photos and update local
-                print('Updating geodata from server: ${geoData.id}');
+
+              // Check if geo data exists locally
+              final existingGeoData = await _storageService.getGeoDataById(geoData.id);
+
+              if (existingGeoData == null) {
+                // New geo data from server - download photos and save
+                print('New geodata from server: ${geoData.id}');
+                onProgress?.call(
+                  'Downloading photos for record ${i + 1}/${geoDataList.length} (page $currentPage/$totalPages)...',
+                );
+
                 final processedFormData = await _photoSyncService.processFormDataForPull(
                   geoData.formData,
                   project,
                 );
-                
-                final updatedGeoData = geoData.copyWith(formData: processedFormData);
-                await _storageService.saveGeoData(updatedGeoData);
+
+                await _storageService.saveGeoData(
+                  geoData.copyWith(formData: processedFormData),
+                );
+                savedCount++;
+              } else if (geoData.updatedAt.isAfter(existingGeoData.updatedAt)) {
+                // Server version is newer - download photos and update local
+                print('Updating geodata from server: ${geoData.id}');
+                onProgress?.call(
+                  'Updating record ${i + 1}/${geoDataList.length} (page $currentPage/$totalPages)...',
+                );
+
+                final processedFormData = await _photoSyncService.processFormDataForPull(
+                  geoData.formData,
+                  project,
+                );
+
+                await _storageService.saveGeoData(
+                  geoData.copyWith(formData: processedFormData),
+                );
                 updatedCount++;
               }
+            } catch (e) {
+              print('Error parsing geo data: $e');
             }
-          } catch (e) {
-            print('Error parsing geo data: $e');
           }
-        }
 
-        return SyncResult(
-          success: true,
-          message: 'Downloaded $savedCount geo data records from server',
-          data: {'count': savedCount},
-        );
-      } else {
-        return SyncResult(
-          success: false,
-          message: 'Server error: ${response.statusCode}',
-        );
-      }
+          currentPage++;
+        } else {
+          return SyncResult(
+            success: false,
+            message: 'Server error: ${response.statusCode}',
+          );
+        }
+      } while (currentPage <= totalPages);
+
+      return SyncResult(
+        success: true,
+        message: 'Downloaded $savedCount new, $updatedCount updated geo data records from server',
+        data: {
+          'saved': savedCount,
+          'updated': updatedCount,
+          'count': savedCount + updatedCount,
+        },
+      );
     } on SocketException {
       return SyncResult(
         success: false,
