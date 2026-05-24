@@ -12,6 +12,7 @@ import '../project/project_detail_screen.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../services/project_template_service.dart';
+import '../../services/crashlytics_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -76,8 +77,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         _filteredProjects = projects;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (e, stack) {
       setState(() => _isLoading = false);
+      crashlytics.recordError(e, stack, reason: 'Project: loadProjects failed');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading projects: $e')),
@@ -233,8 +235,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           }
         }
       }
-    } catch (e) {
-      //print('Error syncing projects from server: $e');
+    } catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Project: syncProjectsFromServer failed');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -454,7 +457,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           );
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Project: syncProjectsToServer failed');
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
@@ -502,7 +507,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             const SnackBar(content: Text('Project deleted successfully')),
           );
         }
-      } catch (e) {
+      } catch (e, stack) {
+        crashlytics.setContext('project_id', project.id);
+        crashlytics.recordError(e, stack, reason: 'Project: deleteProject failed');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error deleting project: $e')),
@@ -696,6 +703,15 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                               onTap: () => _navigateToProjectDetail(project),
                               onDelete: () => _deleteProject(project),
                               onEdit: () => _editProject(project),
+                              onProjectUpdated: (updatedProject) {
+                                setState(() {
+                                  final idx = _projects.indexWhere((p) => p.id == updatedProject.id);
+                                  if (idx != -1) {
+                                    _projects[idx] = updatedProject;
+                                    _filteredProjects = List.from(_projects);
+                                  }
+                                });
+                              },
                             );
                           },
                         ),

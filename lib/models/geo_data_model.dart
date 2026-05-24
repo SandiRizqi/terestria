@@ -3,6 +3,7 @@ class GeoPoint {
   final double longitude;
   final double? altitude;
   final double? accuracy;
+  final double? speed; // km/h
   final DateTime timestamp;
   final String? fixQuality; // RTK fix quality: fix, float, autonomous, etc.
   final int? satelliteCount; // Number of satellites used
@@ -12,6 +13,7 @@ class GeoPoint {
     required this.longitude,
     this.altitude,
     this.accuracy,
+    this.speed,
     required this.timestamp,
     this.fixQuality,
     this.satelliteCount,
@@ -23,6 +25,7 @@ class GeoPoint {
       'longitude': longitude,
       'altitude': altitude,
       'accuracy': accuracy,
+      'speed': speed,
       'timestamp': timestamp.toIso8601String(),
       'fixQuality': fixQuality,
       'satelliteCount': satelliteCount,
@@ -35,16 +38,16 @@ class GeoPoint {
       longitude: json['longitude'],
       altitude: json['altitude'],
       accuracy: json['accuracy'],
+      speed: json['speed'] != null ? (json['speed'] as num).toDouble() : null,
       timestamp: DateTime.parse(json['timestamp']),
       fixQuality: json['fixQuality'],
       satelliteCount: json['satelliteCount'],
     );
   }
 
-
-   @override
+  @override
   String toString() {
-    return 'GeoPoint(lat: $latitude, lng: $longitude, time: $timestamp)';
+    return 'GeoPoint(lat: $latitude, lng: $longitude, speed: ${speed?.toStringAsFixed(1)} km/h, time: $timestamp)';
   }
 }
 

@@ -3,6 +3,7 @@ import 'services/migration_service.dart';
 import 'services/database_service.dart';
 import 'services/firebase_messaging_service.dart';
 import 'services/settings_service.dart';
+import 'services/update_service.dart';
 
 /// Initialize app services and perform migrations if needed
 class AppInitializer {
@@ -47,7 +48,11 @@ class AppInitializer {
         debugPrint('✅ Already migrated to SQLite');
       }
 
-      // 4. Initialize Firebase Messaging (lazy initialization)
+      // 4. Cek in-app update (fire-and-forget, aman saat offline)
+      UpdateService().startUpdateCheck(null);
+      debugPrint('✅ Update check initiated');
+
+      // 5. Initialize Firebase Messaging (lazy initialization)
       try {
         _fcmService = FirebaseMessagingService();
         await _fcmService!.initialize(authToken: authToken);

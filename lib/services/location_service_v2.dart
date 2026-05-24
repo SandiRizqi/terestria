@@ -8,6 +8,8 @@ import 'background/notification_service.dart';
 import 'background/permission_service.dart';
 import 'background/background_tracking_service.dart';
 import 'background/phone_gps_service.dart';
+import 'gps_logger_service.dart';
+import 'crashlytics_service.dart';
 
 // Enums untuk Location Provider
 enum LocationProvider { phone, emlid }
@@ -24,6 +26,7 @@ class LocationServiceV2 {
   // Services
   final PhoneGpsService _phoneGps = PhoneGpsService();
   final BackgroundTrackingService _backgroundTracking = BackgroundTrackingService();
+  final GpsLoggerService _gpsLogger = GpsLoggerService();
   
   // Persistent tracking state
   bool _isActivelyTracking = false;
@@ -109,18 +112,22 @@ Future<bool> initialize() async {
     try {
       await NotificationService.initialize();
       print('✅ Notification service initialized');
-    } catch (e) {
+    } catch (e, stack) {
       print('⚠️ Notification service initialization failed: $e');
+      crashlytics.recordError(e, stack,
+          reason: 'GPS: Notification service init failed');
       // Continue anyway - not critical for iOS
     }
-    
+
     // 5. Initialize background tracking service
     print('📍 Step 5/5: Initializing background tracking...');
     try {
       await _backgroundTracking.initialize();
       print('✅ Background tracking service initialized');
-    } catch (e) {
+    } catch (e, stack) {
       print('⚠️ Background tracking initialization failed: $e');
+      crashlytics.recordError(e, stack,
+          reason: 'GPS: Background tracking service init failed');
       // Continue anyway - can still use foreground tracking
     }
     
@@ -143,6 +150,10 @@ Future<bool> initialize() async {
     print('❌ Error: $e');
     print('❌ ========================================');
     print('Stack trace: $stackTrace');
+    crashlytics.log('GPS init failed: $e');
+    crashlytics.setContext('gps_provider', _currentProvider.name);
+    crashlytics.recordError(e, stackTrace,
+        reason: 'GPS: LocationService initialization failed');
     return false;
   }
 }
@@ -163,9 +174,10 @@ Future<bool> initialize() async {
   // TRACKING STATE MANAGEMENT
   // ============================================================================
   
-  void startActiveTracking() {
+  Future<void> startActiveTracking() async {
     _isActivelyTracking = true;
     _activeTrackingPoints.clear();
+    await _gpsLogger.startSession();
     print('✅ Active tracking started');
   }
   
@@ -179,16 +191,25 @@ Future<bool> initialize() async {
     print('▶️ Active tracking resumed');
   }
   
-  void stopActiveTracking() {
+  Future<void> stopActiveTracking() async {
     _isActivelyTracking = false;
+    await _gpsLogger.stopSession();
     print('⏹️ Active tracking stopped');
   }
-  
+
   void addTrackingPoint(GeoPoint point) {
     if (_isActivelyTracking) {
       _activeTrackingPoints.add(point);
+      _gpsLogger.log(point);
     }
   }
+
+  /// Expose GPS log file listing for export / debug screens.
+  Future<List<File>> getGpsLogFiles() => _gpsLogger.listLogFiles();
+
+  /// Delete logs older than [days] days (call on app startup for housekeeping).
+  Future<void> cleanOldGpsLogs({int days = 30}) =>
+      _gpsLogger.deleteOldLogs(days: days);
   
   void clearTrackingPoints() {
     _activeTrackingPoints.clear();
@@ -290,9 +311,12 @@ Future<bool> initialize() async {
       print('═══════════════════════════════════════');
       return true;
       
-    } catch (e) {
+    } catch (e, stack) {
       print('❌ Error starting background tracking: $e');
       print('═══════════════════════════════════════');
+      crashlytics.setContext('gps_provider', _currentProvider.name);
+      crashlytics.recordError(e, stack,
+          reason: 'GPS: startBackgroundTracking failed');
       return false;
     }
   }
@@ -363,8 +387,9 @@ Future<bool> initialize() async {
       _requiredFixQuality = FixQuality.values[fixQualityIndex];
       
       print('📖 Loaded settings - Provider: ${_currentProvider.name}, Fix: ${_requiredFixQuality.name}');
-    } catch (e) {
+    } catch (e, stack) {
       print('❌ Failed to load location settings: $e');
+      crashlytics.recordError(e, stack, reason: 'GPS: Load settings failed');
       _currentProvider = LocationProvider.phone;
       _requiredFixQuality = FixQuality.any;
     }
@@ -567,6 +592,7 @@ Future<bool> initialize() async {
           if (_meetsQualityRequirement(point)) {
             _addConsoleLog('✓ Valid position');
             _emlidLocationController.add(point);
+            _gpsLogger.log(point);
           } else {
             _addConsoleLog('⚠ Quality below requirement');
           }
@@ -810,21 +836,24 @@ Future<bool> initialize() async {
   
   void dispose() {
     print('🗑️ Disposing LocationServiceV2...');
-    
+
     // Cancel background tracking subscription
     _backgroundTrackingSubscription?.cancel();
-    
+
     // Disconnect Emlid
     disconnectEmlidTCP();
-    
+
+    // Flush and close GPS logger
+    _gpsLogger.stopSession();
+
     // Close controllers
     _emlidLocationController.close();
     _consoleController.close();
-    
+
     // Dispose services
     _phoneGps.dispose();
     _backgroundTracking.dispose();
-    
+
     print('✅ LocationServiceV2 disposed');
   }
 }

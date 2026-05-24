@@ -12,7 +12,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
   static const String _databaseName = 'geoform.db';
 
   Future<Database> get database async {
@@ -45,7 +45,8 @@ class DatabaseService {
         updatedAt INTEGER NOT NULL,
         isSynced INTEGER DEFAULT 0,
         syncedAt INTEGER,
-        createdBy TEXT
+        createdBy TEXT,
+        collectors TEXT DEFAULT '[]'
       )
     ''');
 
@@ -122,9 +123,16 @@ class DatabaseService {
       await db.execute('''
         CREATE INDEX idx_notifications_receivedAt ON notifications(receivedAt)
       ''');
-      
+
       await db.execute('''
         CREATE INDEX idx_notifications_isRead ON notifications(isRead)
+      ''');
+    }
+
+    if (oldVersion < 3) {
+      // Add collectors column to existing projects table
+      await db.execute('''
+        ALTER TABLE projects ADD COLUMN collectors TEXT DEFAULT '[]'
       ''');
     }
   }
@@ -145,6 +153,7 @@ class DatabaseService {
       'isSynced': project.isSynced ? 1 : 0,
       'syncedAt': project.syncedAt?.millisecondsSinceEpoch,
       'createdBy': project.createdBy,
+      'collectors': jsonEncode(project.collectors),
     };
 
     await db.insert(
@@ -370,7 +379,21 @@ class DatabaseService {
 
   Project _projectFromMap(Map<String, dynamic> map) {
     final formFieldsList = jsonDecode(map['formFields']) as List;
-    
+
+    // Parse collectors: stored as JSON string, fallback ke empty list
+    List<String> collectors = const [];
+    try {
+      final raw = map['collectors'];
+      if (raw != null && raw is String && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          collectors = decoded.map((e) => e.toString()).toList();
+        }
+      }
+    } catch (_) {
+      collectors = const [];
+    }
+
     return Project(
       id: map['id'],
       name: map['name'],
@@ -388,6 +411,7 @@ class DatabaseService {
           ? DateTime.fromMillisecondsSinceEpoch(map['syncedAt'])
           : null,
       createdBy: map['createdBy'],
+      collectors: collectors,
     );
   }
 

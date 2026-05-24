@@ -50,12 +50,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   int _processedPhotos = 0;
   String? _currentUsername;
 
+  // ── Filter state ──
+  DateTimeRange? _dateFilter;
+  Map<String, dynamic> _fieldFilters = {};
+
+  /// True jika ada setidaknya satu filter aktif (date, field, atau search text).
+  bool get _hasActiveFilters =>
+      _dateFilter != null ||
+      _fieldFilters.isNotEmpty ||
+      _searchController.text.isNotEmpty;
+
+  /// Jumlah filter aktif (hanya date + field, bukan search bar).
+  int get _activeFilterCount =>
+      (_dateFilter != null ? 1 : 0) + _fieldFilters.length;
+
   @override
   void initState() {
     super.initState();
     _currentProject = widget.project;
     _loadGeoData();
-    _searchController.addListener(_filterGeoData);
+    _searchController.addListener(_applyFilters);
     _initConnectivity();
     _scrollController.addListener(_onScroll);
     _loadUsername();
@@ -140,22 +154,99 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     super.dispose();
   }
 
-  void _filterGeoData() {
-    final query = _searchController.text.toLowerCase();
+  /// Terapkan semua filter aktif secara AND:
+  /// 1. Search text (formData values + tanggal)
+  /// 2. Date range filter (_dateFilter)
+  /// 3. Per-field filters (_fieldFilters)
+  void _applyFilters() {
+    final query = _searchController.text.toLowerCase().trim();
+
     setState(() {
-      if (query.isEmpty) {
-        _filteredGeoDataList = _geoDataList;
-      } else {
-        _filteredGeoDataList = _geoDataList.where((data) {
-          // Search in form data values
-          final formDataMatch = data.formData.entries.any((entry) {
-            return entry.value.toString().toLowerCase().contains(query);
-          });
-          // Search in date
-          final dateMatch = _formatDate(data.createdAt).toLowerCase().contains(query);
-          return formDataMatch || dateMatch;
-        }).toList();
-      }
+      _filteredGeoDataList = _geoDataList.where((data) {
+        // ── 1. Search text ──
+        if (query.isNotEmpty) {
+          final formDataMatch = data.formData.entries.any((entry) =>
+              entry.value.toString().toLowerCase().contains(query));
+          final dateMatch =
+              _formatDate(data.createdAt).toLowerCase().contains(query);
+          if (!formDataMatch && !dateMatch) return false;
+        }
+
+        // ── 2. Date range ──
+        if (_dateFilter != null) {
+          final start = DateTime(
+            _dateFilter!.start.year,
+            _dateFilter!.start.month,
+            _dateFilter!.start.day,
+          );
+          final end = DateTime(
+            _dateFilter!.end.year,
+            _dateFilter!.end.month,
+            _dateFilter!.end.day,
+            23, 59, 59,
+          );
+          if (data.createdAt.isBefore(start) || data.createdAt.isAfter(end)) {
+            return false;
+          }
+        }
+
+        // ── 3. Per-field filters ──
+        for (final entry in _fieldFilters.entries) {
+          final fieldKey = entry.key;
+          final filterValue = entry.value;
+
+          // Nilai kosong/null = abaikan filter ini
+          if (filterValue == null) continue;
+          if (filterValue is String && filterValue.isEmpty) continue;
+
+          final rawValue = data.formData[fieldKey];
+
+          // Cari field definition untuk tahu tipenya
+          final fieldDef = _currentProject.formFields
+              .where((f) => f.label == fieldKey)
+              .firstOrNull;
+
+          if (fieldDef == null) continue;
+
+          switch (fieldDef.type) {
+            case FieldType.text:
+            case FieldType.number:
+            case FieldType.decimal:
+              // Contains (case-insensitive)
+              if (!rawValue.toString().toLowerCase().contains(
+                    filterValue.toString().toLowerCase())) {
+                return false;
+              }
+              break;
+
+            case FieldType.dropdown:
+              // Exact match
+              if (rawValue.toString() != filterValue.toString()) return false;
+              break;
+
+            case FieldType.checkbox:
+              // filterValue: 'true' | 'false' | '' (semua)
+              if (filterValue.toString().isNotEmpty) {
+                final expected = filterValue.toString() == 'true';
+                final actual = rawValue == true ||
+                    rawValue.toString().toLowerCase() == 'true';
+                if (actual != expected) return false;
+              }
+              break;
+
+            case FieldType.date:
+              // Exact date string match
+              if (rawValue.toString() != filterValue.toString()) return false;
+              break;
+
+            case FieldType.photo:
+              // Photo tidak difilter
+              break;
+          }
+        }
+
+        return true;
+      }).toList();
     });
   }
 
@@ -170,9 +261,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       
       setState(() {
         _geoDataList = data;
-        _filteredGeoDataList = data;
         _isLoading = false;
       });
+      // Terapkan ulang filter yang mungkin aktif setelah reload
+      _applyFilters();
       
       
     } catch (e) {
@@ -277,11 +369,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
 
-  /// Convert GeoData to GeoJSON Feature Collection
+  /// Convert GeoData ke GeoJSON Feature Collection.
+  /// Mengambil dari [_filteredGeoDataList] supaya export ikut filter aktif.
   Map<String, dynamic> _exportAsGeoJSON() {
     List<Map<String, dynamic>> features = [];
-    
-    for (var geoData in _geoDataList) {
+
+    for (var geoData in _filteredGeoDataList) {
       // Determine geometry type and coordinates based on project geometry type
       String geometryType;
       dynamic coordinates;
@@ -362,125 +455,370 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     };
   }
 
+  /// Tampilkan bottom sheet pilihan format export (GeoJSON / CSV).
   Future<void> _exportData() async {
-    try {
-      // Check if there's data to export
-      if (_geoDataList.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.white),
-                  SizedBox(width: 8),
-                  Text('No data to export'),
-                ],
-              ),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
+    final exportCount = _filteredGeoDataList.length;
+    final isFiltered = _hasActiveFilters;
 
-      // Generate GeoJSON
-      final geoJsonData = _exportAsGeoJSON();
-      final jsonString = const JsonEncoder.withIndent('  ').convert(geoJsonData);
-      
-      // Generate default filename
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final projectName = _currentProject.name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
-      final defaultFileName = '${projectName}_$timestamp.geojson';
-
-      // Convert to bytes
-      final bytes = Uint8List.fromList(utf8.encode(jsonString));
-
-      String? outputPath;
-      
-      // Platform-specific handling
-      if (Platform.isAndroid || Platform.isIOS) {
-        // For Android/iOS, use bytes parameter which handles saving automatically
-        outputPath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Save GeoJSON As',
-          fileName: defaultFileName,
-          type: FileType.custom,
-          allowedExtensions: ['geojson', 'json'],
-          bytes: bytes, // This will save the file automatically on mobile
-        );
-      } else {
-        // For desktop platforms, get path and write manually
-        outputPath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Save GeoJSON As',
-          fileName: defaultFileName,
-          type: FileType.custom,
-          allowedExtensions: ['geojson', 'json'],
-        );
-        
-        if (outputPath != null && outputPath.isNotEmpty) {
-          // Ensure proper extension
-          if (!outputPath.toLowerCase().endsWith('.geojson') && 
-              !outputPath.toLowerCase().endsWith('.json')) {
-            outputPath += '.geojson';
-          }
-          
-          // Write GeoJSON to selected file
-          final file = File(outputPath);
-          await file.writeAsString(jsonString);
-        }
-      }
-
-      if (outputPath == null) {
-        // User cancelled
-        return;
-      }
-
+    if (_geoDataList.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.white, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'GeoJSON exported successfully!',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Features: ${_geoDataList.length}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-            action: SnackBarAction(
-              label: 'OK',
-              textColor: Colors.white,
-              onPressed: () {},
-            ),
+          const SnackBar(
+            content: Row(children: [
+              Icon(Icons.warning, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Tidak ada data untuk diekspor'),
+            ]),
+            backgroundColor: Colors.orange,
           ),
         );
       }
+      return;
+    }
+
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, MediaQuery.of(ctx).padding.bottom + 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Title
+              const Text(
+                'Export Data',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                isFiltered
+                    ? '$exportCount record (dari filter aktif)'
+                    : '$exportCount record (semua data)',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+
+              // Pilihan GeoJSON
+              _buildExportOption(
+                icon: Icons.location_on_rounded,
+                iconColor: Colors.blue.shade700,
+                title: 'GeoJSON',
+                subtitle: 'Format standar geospasial — bisa dibuka di QGIS, ArcGIS, dll.',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _doExportGeoJSON();
+                },
+              ),
+
+              const SizedBox(height: 10),
+
+              // Pilihan CSV
+              _buildExportOption(
+                icon: Icons.table_chart_rounded,
+                iconColor: Colors.green.shade700,
+                title: 'CSV',
+                subtitle: 'Tabular — bisa dibuka di Excel, Google Sheets, dll.',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _doExportCSV();
+                },
+              ),
+
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildExportOption({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 3),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: Colors.grey.shade400, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Jalankan export GeoJSON ke file
+  Future<void> _doExportGeoJSON() async {
+    try {
+      final geoJsonData = _exportAsGeoJSON();
+      final jsonString = const JsonEncoder.withIndent('  ').convert(geoJsonData);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final projectName = _currentProject.name
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(' ', '_');
+      final fileName = '${projectName}_$timestamp.geojson';
+      final bytes = Uint8List.fromList(utf8.encode(jsonString));
+
+      String? outputPath;
+      if (Platform.isAndroid || Platform.isIOS) {
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Simpan GeoJSON',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ['geojson', 'json'],
+          bytes: bytes,
+        );
+      } else {
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Simpan GeoJSON',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ['geojson', 'json'],
+        );
+        if (outputPath != null) {
+          if (!outputPath.toLowerCase().endsWith('.geojson') &&
+              !outputPath.toLowerCase().endsWith('.json')) {
+            outputPath += '.geojson';
+          }
+          await File(outputPath).writeAsString(jsonString);
+        }
+      }
+
+      if (outputPath == null || !mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'GeoJSON tersimpan — ${_filteredGeoDataList.length} features',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ]),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Error exporting data: $e')),
-              ],
-            ),
+            content: Text('Gagal export GeoJSON: $e'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Build CSV string dari _filteredGeoDataList.
+  ///
+  /// Kolom:
+  ///   id, latitude, longitude, altitude, point_count,
+  ///   created_at, collected_by,
+  ///   [label field 1], [label field 2], ...
+  ///
+  /// Field photo: ditulis sebagai jumlah foto (misal "2 photos").
+  /// Nilai yang mengandung koma atau newline dibungkus tanda kutip ganda.
+  String _buildCSV() {
+    // Field non-photo untuk kolom dinamis
+    final dynamicFields = _currentProject.formFields
+        .where((f) => f.type != FieldType.photo)
+        .toList();
+
+    // Photo fields (untuk menghitung jumlah foto)
+    final photoFields = _currentProject.formFields
+        .where((f) => f.type == FieldType.photo)
+        .toList();
+
+    // Helper: escape nilai CSV
+    String csvEscape(dynamic value) {
+      if (value == null) return '';
+      final str = value.toString();
+      if (str.contains(',') || str.contains('"') || str.contains('\n')) {
+        return '"${str.replaceAll('"', '""')}"';
+      }
+      return str;
+    }
+
+    // Header row
+    final headerParts = <String>[
+      'id',
+      'latitude',
+      'longitude',
+      'altitude',
+      'point_count',
+      'created_at',
+      'collected_by',
+      ...dynamicFields.map((f) => csvEscape(f.label)),
+      ...photoFields.map((f) => csvEscape('${f.label}_jumlah_foto')),
+    ];
+    final buffer = StringBuffer();
+    buffer.writeln(headerParts.join(','));
+
+    // Data rows
+    for (final geoData in _filteredGeoDataList) {
+      // Koordinat — ambil titik pertama untuk lat/lon/alt
+      double? lat, lon, alt;
+      if (geoData.points.isNotEmpty) {
+        final first = geoData.points.first;
+        lat = first.latitude;
+        lon = first.longitude;
+        alt = first.altitude;
+      }
+
+      final row = <String>[
+        csvEscape(geoData.id),
+        csvEscape(lat),
+        csvEscape(lon),
+        csvEscape(alt),
+        csvEscape(geoData.points.length),
+        csvEscape(geoData.createdAt.toIso8601String()),
+        csvEscape(geoData.collectedBy ?? ''),
+        // Nilai dinamis
+        ...dynamicFields.map((f) {
+          final val = geoData.formData[f.label];
+          if (f.type == FieldType.checkbox) {
+            return csvEscape(val == true || val.toString().toLowerCase() == 'true'
+                ? 'Ya'
+                : 'Tidak');
+          }
+          return csvEscape(val);
+        }),
+        // Jumlah foto per photo field
+        ...photoFields.map((f) {
+          final val = geoData.formData[f.label];
+          if (val is List) return csvEscape(val.length);
+          if (val != null && val.toString().isNotEmpty) return '1';
+          return '0';
+        }),
+      ];
+      buffer.writeln(row.join(','));
+    }
+
+    return buffer.toString();
+  }
+
+  /// Jalankan export CSV ke file
+  Future<void> _doExportCSV() async {
+    try {
+      final csvString = _buildCSV();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final projectName = _currentProject.name
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(' ', '_');
+      final fileName = '${projectName}_$timestamp.csv';
+      final bytes = Uint8List.fromList(utf8.encode(csvString));
+
+      String? outputPath;
+      if (Platform.isAndroid || Platform.isIOS) {
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Simpan CSV',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+          bytes: bytes,
+        );
+      } else {
+        outputPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Simpan CSV',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+        );
+        if (outputPath != null) {
+          if (!outputPath.toLowerCase().endsWith('.csv')) {
+            outputPath += '.csv';
+          }
+          await File(outputPath).writeAsString(csvString);
+        }
+      }
+
+      if (outputPath == null || !mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'CSV tersimpan — ${_filteredGeoDataList.length} baris',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ]),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal export CSV: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
@@ -978,10 +1316,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               icon: const Icon(Icons.clear_rounded),
               onPressed: () {
                 setState(() {
-                  _searchController.clear();
                   _isSearching = false;
-                  _filteredGeoDataList = _geoDataList;
                 });
+                _searchController.clear(); // trigger _applyFilters via listener
               },
             )
           else
@@ -1189,7 +1526,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           
           // Stats Card
           _buildStatsCard(),
-          
+
+          // Filter Bar
+          _buildFilterBar(),
+
           // Data List
           Expanded(
             child: _isLoading
@@ -1250,6 +1590,114 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         ),
         icon: const Icon(Icons.add_location_alt_rounded),
         label: const Text('Add Data', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    final hasFilters = _activeFilterCount > 0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          // Tombol filter
+          GestureDetector(
+            onTap: _showFilterPanel,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: hasFilters
+                    ? AppTheme.primaryGreen
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: hasFilters
+                      ? AppTheme.primaryGreen
+                      : Colors.grey.shade300,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.tune_rounded,
+                    size: 16,
+                    color: hasFilters ? Colors.white : AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    hasFilters
+                        ? 'Filter ($_activeFilterCount)'
+                        : 'Filter',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: hasFilters ? Colors.white : AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Indikator hasil filter
+          if (_hasActiveFilters) ...[
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${_filteredGeoDataList.length} dari ${_geoDataList.length} data',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            // Tombol hapus semua filter
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _dateFilter = null;
+                  _fieldFilters = {};
+                  _searchController.clear();
+                });
+                _applyFilters();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.close_rounded, size: 13, color: Colors.red.shade600),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Hapus filter',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1482,6 +1930,512 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         curve: Curves.easeOut,
       );
     }
+  }
+
+  void _showFilterPanel() {
+    // Buat salinan lokal supaya user bisa cancel tanpa mengubah state asli
+    DateTimeRange? localDateFilter = _dateFilter;
+    final Map<String, dynamic> localFieldFilters = Map.from(_fieldFilters);
+
+    // Controller untuk text/number/decimal fields
+    final Map<String, TextEditingController> textControllers = {};
+    for (final field in _currentProject.formFields) {
+      if (field.type == FieldType.text ||
+          field.type == FieldType.number ||
+          field.type == FieldType.decimal) {
+        textControllers[field.label] = TextEditingController(
+          text: localFieldFilters[field.label]?.toString() ?? '',
+        );
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle bar
+                  Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.tune_rounded, size: 20, color: AppTheme.primaryGreen),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Filter Data',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                        ),
+                        // Hapus semua
+                        TextButton(
+                          onPressed: () {
+                            setSheetState(() {
+                              localDateFilter = null;
+                              localFieldFilters.clear();
+                              for (final c in textControllers.values) {
+                                c.clear();
+                              }
+                            });
+                          },
+                          child: const Text(
+                            'Hapus Semua',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const Divider(height: 1),
+
+                  // Scrollable content
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ── Date Range Filter ──
+                          _buildFilterSectionLabel(
+                            icon: Icons.calendar_today_rounded,
+                            label: 'Tanggal Pengambilan',
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildDatePickerTile(
+                                  label: 'Dari',
+                                  date: localDateFilter?.start,
+                                  onTap: () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: localDateFilter?.start ?? DateTime.now(),
+                                      firstDate: DateTime(2020),
+                                      lastDate: DateTime.now(),
+                                    );
+                                    if (picked != null) {
+                                      setSheetState(() {
+                                        localDateFilter = DateTimeRange(
+                                          start: picked,
+                                          end: localDateFilter?.end ??
+                                              DateTime.now(),
+                                        );
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _buildDatePickerTile(
+                                  label: 'Sampai',
+                                  date: localDateFilter?.end,
+                                  onTap: () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: localDateFilter?.end ?? DateTime.now(),
+                                      firstDate: localDateFilter?.start ?? DateTime(2020),
+                                      lastDate: DateTime.now(),
+                                    );
+                                    if (picked != null) {
+                                      setSheetState(() {
+                                        localDateFilter = DateTimeRange(
+                                          start: localDateFilter?.start ?? DateTime(2020),
+                                          end: picked,
+                                        );
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              if (localDateFilter != null) ...[
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.close_rounded, size: 18, color: Colors.red),
+                                  onPressed: () => setSheetState(() => localDateFilter = null),
+                                  tooltip: 'Hapus filter tanggal',
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ],
+                          ),
+
+                          // ── Per-field filters ──
+                          ...() {
+                            final filterableFields = _currentProject.formFields
+                                .where((f) => f.type != FieldType.photo)
+                                .toList();
+
+                            if (filterableFields.isEmpty) return <Widget>[];
+
+                            return filterableFields.map((field) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 18),
+                                  _buildFilterSectionLabel(
+                                    icon: _getFieldIcon(field.type),
+                                    label: field.label,
+                                  ),
+                                  const SizedBox(height: 10),
+
+                                  // UI berdasarkan tipe field
+                                  if (field.type == FieldType.text ||
+                                      field.type == FieldType.number ||
+                                      field.type == FieldType.decimal)
+                                    TextField(
+                                      controller: textControllers[field.label],
+                                      keyboardType: field.type == FieldType.text
+                                          ? TextInputType.text
+                                          : const TextInputType.numberWithOptions(decimal: true),
+                                      onChanged: (v) => localFieldFilters[field.label] = v,
+                                      decoration: InputDecoration(
+                                        hintText: 'Cari di "${field.label}"...',
+                                        hintStyle: const TextStyle(fontSize: 13),
+                                        isDense: true,
+                                        contentPadding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 12),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(color: Colors.grey.shade300),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(color: Colors.grey.shade300),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: const BorderSide(
+                                              color: AppTheme.primaryGreen, width: 2),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey.shade50,
+                                        suffixIcon: (localFieldFilters[field.label] ?? '').isNotEmpty
+                                            ? IconButton(
+                                                icon: const Icon(Icons.close_rounded, size: 16),
+                                                onPressed: () {
+                                                  setSheetState(() {
+                                                    textControllers[field.label]?.clear();
+                                                    localFieldFilters.remove(field.label);
+                                                  });
+                                                },
+                                              )
+                                            : null,
+                                      ),
+                                    )
+
+                                  else if (field.type == FieldType.dropdown &&
+                                      field.options != null &&
+                                      field.options!.isNotEmpty)
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: field.options!.map((option) {
+                                        final isSelected =
+                                            localFieldFilters[field.label] == option;
+                                        return GestureDetector(
+                                          onTap: () {
+                                            setSheetState(() {
+                                              if (isSelected) {
+                                                localFieldFilters.remove(field.label);
+                                              } else {
+                                                localFieldFilters[field.label] = option;
+                                              }
+                                            });
+                                          },
+                                          child: AnimatedContainer(
+                                            duration: const Duration(milliseconds: 150),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 14, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: isSelected
+                                                  ? AppTheme.primaryGreen
+                                                  : Colors.grey.shade100,
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(
+                                                color: isSelected
+                                                    ? AppTheme.primaryGreen
+                                                    : Colors.grey.shade300,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              option,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w500,
+                                                color: isSelected
+                                                    ? Colors.white
+                                                    : AppTheme.textPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    )
+
+                                  else if (field.type == FieldType.checkbox)
+                                    Row(
+                                      children: ['', 'true', 'false'].map((val) {
+                                        final labels = {
+                                          '': 'Semua',
+                                          'true': 'Ya ✓',
+                                          'false': 'Tidak ✗',
+                                        };
+                                        final current =
+                                            (localFieldFilters[field.label] ?? '').toString();
+                                        final isSelected = current == val;
+                                        return Padding(
+                                          padding: const EdgeInsets.only(right: 8),
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setSheetState(() {
+                                                if (val.isEmpty) {
+                                                  localFieldFilters.remove(field.label);
+                                                } else {
+                                                  localFieldFilters[field.label] = val;
+                                                }
+                                              });
+                                            },
+                                            child: AnimatedContainer(
+                                              duration: const Duration(milliseconds: 150),
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 16, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: isSelected
+                                                    ? AppTheme.primaryGreen
+                                                    : Colors.grey.shade100,
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color: isSelected
+                                                      ? AppTheme.primaryGreen
+                                                      : Colors.grey.shade300,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                labels[val]!,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: isSelected
+                                                      ? Colors.white
+                                                      : AppTheme.textPrimary,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    )
+
+                                  else if (field.type == FieldType.date)
+                                    _buildDatePickerTile(
+                                      label: 'Pilih tanggal',
+                                      date: localFieldFilters[field.label] != null
+                                          ? DateTime.tryParse(
+                                              localFieldFilters[field.label].toString())
+                                          : null,
+                                      onTap: () async {
+                                        final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate: DateTime.now(),
+                                          firstDate: DateTime(2020),
+                                          lastDate: DateTime.now(),
+                                        );
+                                        if (picked != null) {
+                                          setSheetState(() {
+                                            localFieldFilters[field.label] =
+                                                picked.toIso8601String().split('T').first;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                ],
+                              );
+                            }).toList();
+                          }(),
+
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Footer — Terapkan & Batal
+                  Container(
+                    padding: EdgeInsets.fromLTRB(
+                        16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text('Batal'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              // Dispose text controllers
+                              for (final c in textControllers.values) {
+                                c.dispose();
+                              }
+                              // Bersihkan filter field yang kosong
+                              localFieldFilters.removeWhere(
+                                  (k, v) => v == null || v.toString().isEmpty);
+                              // Terapkan ke state utama
+                              setState(() {
+                                _dateFilter = localDateFilter;
+                                _fieldFilters = localFieldFilters;
+                              });
+                              _applyFilters();
+                              Navigator.pop(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              'Terapkan Filter',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      // Pastikan controllers ter-dispose jika user swipe dismiss
+      for (final c in textControllers.values) {
+        if (c.hasListeners) {
+          try { c.dispose(); } catch (_) {}
+        }
+      }
+    });
+  }
+
+  /// Label section di filter panel
+  Widget _buildFilterSectionLabel({required IconData icon, required String label}) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: AppTheme.primaryGreen),
+        const SizedBox(width: 7),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Tile tombol date picker yang reusable
+  Widget _buildDatePickerTile({
+    required String label,
+    required DateTime? date,
+    required VoidCallback onTap,
+  }) {
+    final formatted = date != null
+        ? '${date.day.toString().padLeft(2, '0')}/'
+          '${date.month.toString().padLeft(2, '0')}/'
+          '${date.year}'
+        : null;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: date != null
+              ? AppTheme.primaryGreen.withOpacity(0.06)
+              : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: date != null
+                ? AppTheme.primaryGreen.withOpacity(0.4)
+                : Colors.grey.shade300,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today_rounded,
+              size: 14,
+              color: date != null ? AppTheme.primaryGreen : Colors.grey.shade500,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                formatted ?? label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: date != null ? FontWeight.w600 : FontWeight.w400,
+                  color: date != null ? AppTheme.primaryGreen : Colors.grey.shade500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showProjectInfo() {

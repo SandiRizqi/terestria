@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:location/location.dart' as loc;
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -105,6 +104,7 @@ class BackgroundTrackingService {
             longitude: (event['longitude'] as num).toDouble(),
             altitude: event['altitude'] != null ? (event['altitude'] as num).toDouble() : null,
             accuracy: event['accuracy'] != null ? (event['accuracy'] as num).toDouble() : null,
+            speed: event['speed'] != null ? (event['speed'] as num).toDouble() : null,
             timestamp: DateTime.fromMillisecondsSinceEpoch(
               event['timestamp'] as int,
             ),
@@ -185,41 +185,36 @@ class BackgroundTrackingService {
     }
     
     try {
-      // 🔧 CRITICAL: Verify permission in FOREGROUND first
+      // Verifikasi permission di foreground sebelum start background service
       print('🔑 Verifying location permission in foreground...');
-      final location = loc.Location();
-      
-      bool serviceEnabled = await location.serviceEnabled();
+
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        serviceEnabled = await location.requestService();
-        if (!serviceEnabled) {
-          print('❌ Location service not enabled');
-          return false;
-        }
+        print('❌ Location service not enabled');
+        return false;
       }
-      
-      loc.PermissionStatus permissionGranted = await location.hasPermission();
-      if (permissionGranted == loc.PermissionStatus.denied) {
-        permissionGranted = await location.requestPermission();
-        if (permissionGranted != loc.PermissionStatus.granted) {
-          print('❌ Location permission not granted');
-          return false;
-        }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
       }
-      
-      print('✅ Location permission verified: $permissionGranted');
-      
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        print('❌ Location permission not granted: $permission');
+        return false;
+      }
+
+      print('✅ Location permission verified: $permission');
+
       // Enable wakelock untuk menjaga tracking aktif
       if (Platform.isAndroid) {
         await WakelockPlus.enable();
         print('🔋 WakeLock enabled');
       }
-      
-      // Enable background mode untuk iOS
-      if (Platform.isIOS) {
-        await location.enableBackgroundMode(enable: true);
-        print('📱 iOS background mode enabled');
-      }
+
+      // iOS: background tracking ditangani oleh flutter_background_service.
+      // Tidak perlu enableBackgroundMode() — AppleSettings di isolate sudah
+      // mengonfigurasi CLLocationManager untuk background.
       
       // Start service
       print('🚀 Starting background service...');
@@ -288,13 +283,8 @@ class BackgroundTrackingService {
         await WakelockPlus.disable();
         print('🔋 WakeLock disabled');
       }
-      
-      // Disable background mode untuk iOS
-      if (Platform.isIOS) {
-        final location = loc.Location();
-        await location.enableBackgroundMode(enable: false);
-        print('📱 iOS background mode disabled');
-      }
+      // iOS: tidak ada enableBackgroundMode yang perlu dimatikan,
+      // flutter_background_service akan stop sendiri saat service.stopSelf() dipanggil.
       
       await NotificationService.cancelNotification();
       
@@ -427,12 +417,28 @@ class BackgroundTrackingService {
       print('✅ Command listeners setup');
       print('🚀 Starting Geolocator location stream...');
       
-      // ✅ Use Geolocator stream - works properly in background
-      const locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 0,
-      );
-      
+      // Background location settings dengan distanceFilter untuk hemat baterai
+      // dan kurangi noise — konsisten dengan PhoneGpsService di foreground.
+      final locationSettings = Platform.isAndroid
+          ? AndroidSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 2, // minimum 2 meter baru update
+              intervalDuration: const Duration(seconds: 1),
+              forceLocationManager: false,
+            )
+          : Platform.isIOS
+              ? AppleSettings(
+                  accuracy: LocationAccuracy.high,
+                  distanceFilter: 2,
+                  activityType: ActivityType.other,
+                  pauseLocationUpdatesAutomatically: false,
+                  showBackgroundLocationIndicator: true, // tunjukkan indicator background di iOS
+                )
+              : const LocationSettings(
+                  accuracy: LocationAccuracy.high,
+                  distanceFilter: 2,
+                );
+
       subscription = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen(
@@ -441,7 +447,20 @@ class BackgroundTrackingService {
             print('⏸️ Tracking paused, skipping location');
             return;
           }
-          
+
+          // Accuracy filter
+          if (position.accuracy > 25.0) {
+            print('⚠️ BG: Skip — akurasi buruk (${position.accuracy.toStringAsFixed(1)}m)');
+            return;
+          }
+
+          // Speed filter — tolak spike GPS di atas 180 km/h
+          final speedMs = position.speed;
+          if (speedMs >= 0 && speedMs * 3.6 > 180.0) {
+            print('⚠️ BG: Skip — kecepatan tidak wajar (${(speedMs * 3.6).toStringAsFixed(1)} km/h)');
+            return;
+          }
+
           locationCount++;
           
           print('═══════════════════════════════════════');
@@ -452,12 +471,18 @@ class BackgroundTrackingService {
           print('   Paused: $isPaused');
           print('═══════════════════════════════════════');
           
+          // Round coords to 6 decimal places (~11 cm precision)
+          final lat = (position.latitude * 1000000).round() / 1000000;
+          final lon = (position.longitude * 1000000).round() / 1000000;
+          final speedKmh = speedMs >= 0 ? (speedMs * 3.6 * 10).round() / 10.0 : null;
+
           // ✅ CRITICAL: Send location to UI via service communication
           final locationMap = {
-            'latitude': position.latitude,
-            'longitude': position.longitude,
+            'latitude': lat,
+            'longitude': lon,
             'altitude': position.altitude,
             'accuracy': position.accuracy,
+            'speed': speedKmh,
             'timestamp': position.timestamp.millisecondsSinceEpoch,
           };
           
@@ -468,10 +493,11 @@ class BackgroundTrackingService {
           
           // Save to SharedPreferences untuk persistence
           await _saveLocationToPrefs(
-            position.latitude,
-            position.longitude,
+            lat,
+            lon,
             position.altitude,
             position.accuracy,
+            speedKmh,
           );
           
           // Update notification setiap 5 detik untuk monitoring
@@ -515,6 +541,7 @@ class BackgroundTrackingService {
     double lon,
     double? alt,
     double? acc,
+    double? speed,
   ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -522,26 +549,28 @@ class BackgroundTrackingService {
       await prefs.setDouble('last_lon', lon);
       if (alt != null) await prefs.setDouble('last_alt', alt);
       if (acc != null) await prefs.setDouble('last_acc', acc);
+      if (speed != null) await prefs.setDouble('last_speed', speed);
       await prefs.setInt('last_time', DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
       print('❌ Error saving location to prefs: $e');
     }
   }
-  
+
   /// Get last saved location from SharedPreferences
   Future<GeoPoint?> getLastSavedLocation() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lat = prefs.getDouble('last_lat');
       final lon = prefs.getDouble('last_lon');
-      
+
       if (lat == null || lon == null) return null;
-      
+
       return GeoPoint(
         latitude: lat,
         longitude: lon,
         altitude: prefs.getDouble('last_alt'),
         accuracy: prefs.getDouble('last_acc'),
+        speed: prefs.getDouble('last_speed'),
         timestamp: DateTime.fromMillisecondsSinceEpoch(
           prefs.getInt('last_time') ?? DateTime.now().millisecondsSinceEpoch,
         ),

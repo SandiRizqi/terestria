@@ -86,10 +86,10 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
     if (widget.geometryType != GeometryType.point &&
         widget.collectionMode == CollectionMode.tracking) {
       // Tracking mode: has Start/Finish + Pause/Resume row + Add/Undo/Clear row
-      contentHeight = 160.0; // Height for 2 rows of buttons
+      contentHeight = 175.0; // Height for 2 rows of buttons
     } else {
       // Drawing mode or Point type: only has Add/Undo/Clear row
-      contentHeight = 110.0; // Height for 1 row of buttons
+      contentHeight = 120.0; // Height for 1 row of buttons
     }
     
     final double collapsedHeight = 60.0 + bottomPadding;
@@ -134,7 +134,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Center(
               child: Container(
-              width: 40,
+              width: 48,
               height: 4,
               decoration: BoxDecoration(
               color: Colors.grey[300],
@@ -174,7 +174,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                 child: SafeArea(
                   top: false,
                   child: Padding(
-                    padding: const EdgeInsets.all(AppTheme.spacingMedium),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -200,7 +200,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                     ),
                                   ),
                                     style: ElevatedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      padding: const EdgeInsets.symmetric(vertical: 16),
                                       backgroundColor: widget.isTracking
                                           ? Colors.red
                                           : AppTheme.primaryColor,
@@ -232,7 +232,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                       ),
                                     ),
                                       style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
                                         backgroundColor:
                                             widget.isPaused ? Colors.green : Colors.orange,
                                         foregroundColor: Colors.white,
@@ -246,7 +246,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                               ],
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 12),
                         ],
 
                         // Bottom row: Add Point, Undo, Clear
@@ -254,7 +254,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                           children: [
                             // Add Point button
                             Expanded(
-                              flex: 3,
+                              flex: 8,
                               child: ElevatedButton.icon(
                                 onPressed: (widget.isTracking ||
                                         widget.collectionMode == CollectionMode.drawing)
@@ -268,7 +268,7 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                   style: const TextStyle(fontSize: 13),
                                 ),
                                   style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
                                     backgroundColor: AppTheme.primaryColor,
                                     foregroundColor: Colors.white,
                                     disabledBackgroundColor: Colors.grey[300],
@@ -282,16 +282,16 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                             ),
                             const SizedBox(width: 8),
 
-                            // Undo button
+                            // Undo button (icon-only)
                             Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed:
-                                    widget.collectedPoints.isEmpty ? null : widget.onUndoPoint,
-                                icon: const Icon(Icons.undo, size: 18),
-                                label: const Text('Undo',
-                                    style: TextStyle(fontSize: 12)),
+                              flex: 3,
+                              child: Tooltip(
+                                message: 'Undo',
+                                child: OutlinedButton(
+                                  onPressed:
+                                      widget.collectedPoints.isEmpty ? null : widget.onUndoPoint,
                                   style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
                                     foregroundColor: AppTheme.primaryColor,
                                     side: BorderSide(
                                       color: widget.collectedPoints.isEmpty
@@ -302,20 +302,22 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                   ),
+                                  child: const Icon(Icons.undo, size: 20),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
 
-                            // Clear button
+                            // Clear button (icon-only)
                             Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed:
-                                    widget.collectedPoints.isEmpty ? null : widget.onClearPoints,
-                                icon: const Icon(Icons.delete_outline, size: 18),
-                                label: const Text('Clear',
-                                    style: TextStyle(fontSize: 12)),
+                              flex: 3,
+                              child: Tooltip(
+                                message: 'Clear',
+                                child: OutlinedButton(
+                                  onPressed:
+                                      widget.collectedPoints.isEmpty ? null : widget.onClearPoints,
                                   style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
                                     foregroundColor: Colors.red,
                                     side: BorderSide(
                                       color: widget.collectedPoints.isEmpty
@@ -326,6 +328,8 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                   ),
+                                  child: const Icon(Icons.delete_outline, size: 20),
+                                ),
                               ),
                             ),
                           ],

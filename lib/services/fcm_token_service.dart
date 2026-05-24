@@ -78,7 +78,7 @@ class FCMTokenService {
           'app_version': appVersion,
           'os_version': osVersion,
         }),
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         // Save last registered token
@@ -119,7 +119,7 @@ class FCMTokenService {
         body: jsonEncode({
           'device_id': _deviceId,
         }),
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         // Clear saved token
@@ -153,7 +153,7 @@ class FCMTokenService {
           'Content-Type': 'application/json',
           'Authorization': 'Token $authToken',
         },
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         // Clear saved token
@@ -183,7 +183,7 @@ class FCMTokenService {
         headers: {
           'Authorization': 'Token $authToken',
         },
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

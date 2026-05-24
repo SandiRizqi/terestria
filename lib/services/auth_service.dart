@@ -174,35 +174,45 @@ class AuthService {
   }
 
   // Logout with FCM token deactivation
+  // Local state dibersihkan dulu (instan) → FCM cleanup jalan fire-and-forget.
   Future<void> logout() async {
-    // Unsubscribe all scope topics before logout
-    try {
-      await _scopeTopicService.unsubscribeAll();
-      print('✅ FCM scope topics unsubscribed on logout');
-    } catch (e) {
-      print('⚠️ Failed to unsubscribe FCM topics: $e');
-    }
+    // 1. Ambil token sebelum cache dihapus (butuh untuk FCM cleanup)
+    final tokenToDeactivate = _cachedToken ??
+        (await SharedPreferences.getInstance()).getString(_tokenKey);
 
-    // Deactivate FCM token before logout
-    try {
-      final token = await getToken();
-      if (token != null) {
-        await AppInitializer().deactivateFCMToken(token);
-        print('✅ FCM token deactivated on logout');
-      }
-    } catch (e) {
-      print('⚠️ Failed to deactivate FCM token: $e');
-      // Continue with logout even if FCM deactivation fails
-    }
-    
+    // 2. Clear local state DULU — ini yang membuat logout terasa instan
+    _cachedToken = null;
+    _cachedUser = null;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);
     await prefs.remove(_tokenKey);
     await prefs.setBool(_isLoggedInKey, false);
-    
-    // Clear cache
-    _cachedToken = null;
-    _cachedUser = null;
+
+    // 3. FCM cleanup jalan di background (fire-and-forget), tidak blokir UI
+    _cleanupFCMAsync(tokenToDeactivate);
+  }
+
+  /// Jalankan FCM unsubscribe + deactivate di background.
+  /// Tidak di-await supaya logout terasa instan.
+  void _cleanupFCMAsync(String? token) {
+    Future(() async {
+      try {
+        await _scopeTopicService.unsubscribeAll();
+        print('✅ FCM scope topics unsubscribed on logout');
+      } catch (e) {
+        print('⚠️ Failed to unsubscribe FCM topics: $e');
+      }
+
+      try {
+        if (token != null) {
+          await AppInitializer().deactivateFCMToken(token);
+          print('✅ FCM token deactivated on logout');
+        }
+      } catch (e) {
+        print('⚠️ Failed to deactivate FCM token: $e');
+      }
+    });
   }
 
   // Verify token (optional - call backend to verify)

@@ -153,6 +153,41 @@ class TileCacheSqliteService {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // PARENT TILE FALLBACK
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Walk up the zoom pyramid looking for a cached parent tile.
+  ///
+  /// For tile (z, x, y), the parent at zoom delta [dz] is:
+  ///   parent_z = z - dz
+  ///   parent_x = x >> dz
+  ///   parent_y = y >> dz
+  ///
+  /// Returns the first hit found (lowest dz = sharpest result), or null.
+  Future<ParentTileResult?> getParentTile({
+    required String basemapId,
+    required int z,
+    required int x,
+    required int y,
+    int maxDelta = 3,
+  }) async {
+    for (int dz = 1; dz <= maxDelta; dz++) {
+      final pz = z - dz;
+      if (pz < 0) break;
+      final data = await getTile(
+        basemapId: basemapId,
+        z: pz,
+        x: x >> dz,
+        y: y >> dz,
+      );
+      if (data != null) {
+        return ParentTileResult(data: data, zoomDelta: dz);
+      }
+    }
+    return null;
+  }
+
   /// Update last accessed time (fire and forget)
   void _updateLastAccessed(Database db, String tileKey) {
     // Use rawUpdate for better compatibility
@@ -359,6 +394,7 @@ class TileCacheSqliteService {
   }
 
   /// Debug cache directory (print all cache files)
+  // ignore: unused_element
   Future<void> debugCacheDirectory() async {
     try {
       final directory = await getApplicationSupportDirectory();
@@ -395,4 +431,17 @@ class TileCacheSqliteService {
       print('Error debugging cache: $e');
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA CLASSES
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Result of a parent-tile lookup.
+/// [data] is the raw PNG bytes of the parent tile.
+/// [zoomDelta] is how many zoom levels up it was found (1 = sharpest).
+class ParentTileResult {
+  final Uint8List data;
+  final int zoomDelta;
+  const ParentTileResult({required this.data, required this.zoomDelta});
 }

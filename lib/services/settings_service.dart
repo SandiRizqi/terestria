@@ -13,6 +13,10 @@ class SettingsService extends ChangeNotifier {
 
   AppSettings get settings => _settings;
 
+  /// Notifier untuk ThemeMode — di-listen oleh MaterialApp di main.dart.
+  final ValueNotifier<ThemeMode> themeModeNotifier =
+      ValueNotifier(ThemeMode.light);
+
   // Initialize settings from storage
   Future<void> initialize() async {
     try {
@@ -25,7 +29,11 @@ class SettingsService extends ChangeNotifier {
       } else {
         _settings = AppSettings.defaults();
       }
-      
+
+      // Sync theme mode notifier setelah load
+      themeModeNotifier.value =
+          _settings.darkMode ? ThemeMode.dark : ThemeMode.light;
+
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading settings: $e');
@@ -39,13 +47,21 @@ class SettingsService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final settingsJson = json.encode(settings.toJson());
       await prefs.setString(_settingsKey, settingsJson);
-      
+
       _settings = settings;
+      // Sync theme mode notifier setiap kali settings disimpan
+      themeModeNotifier.value =
+          _settings.darkMode ? ThemeMode.dark : ThemeMode.light;
       notifyListeners();
     } catch (e) {
       debugPrint('Error saving settings: $e');
       rethrow;
     }
+  }
+
+  // Update dark mode
+  Future<void> updateDarkMode(bool isDark) async {
+    await saveSettings(_settings.copyWith(darkMode: isDark));
   }
 
   // Update specific setting

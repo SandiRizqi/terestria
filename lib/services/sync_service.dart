@@ -8,6 +8,7 @@ import '../models/project_model.dart';
 import '../models/form_field_model.dart';
 import 'storage_service.dart';
 import 'photo_sync_service.dart';
+import 'crashlytics_service.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -78,31 +79,31 @@ class SyncService {
           message: 'Server error: ${response.statusCode} - ${response.body}',
         );
       }
-    } on SocketException {
+    } on SocketException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: No internet connection (syncGeoData)',
+          information: ['geodata_id: ${geoData.id}', 'project_id: ${geoData.projectId}']);
+      return SyncResult(success: false, message: 'No internet connection');
+    } on TimeoutException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: Connection timeout (syncGeoData)',
+          information: ['geodata_id: ${geoData.id}']);
+      return SyncResult(success: false, message: 'Connection timeout');
+    } on ApiException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: API error (syncGeoData)',
+          information: ['message: ${e.message}', 'geodata_id: ${geoData.id}']);
+      return SyncResult(success: false, message: e.message);
+    } on FormatException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: Invalid response format (syncGeoData)');
       return SyncResult(
-        success: false,
-        message: 'No internet connection',
-      );
-    } on TimeoutException {
-      return SyncResult(
-        success: false,
-        message: 'Connection timeout',
-      );
-    } on ApiException catch (e) {
-      return SyncResult(
-        success: false,
-        message: e.message,
-      );
-    } on FormatException catch (e) {
-      return SyncResult(
-        success: false,
-        message: 'Invalid response format: ${e.message}',
-      );
-    } catch (e) {
-      return SyncResult(
-        success: false,
-        message: 'Sync failed: ${e.toString()}',
-      );
+          success: false, message: 'Invalid response format: ${e.message}');
+    } catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: syncGeoData failed',
+          information: ['geodata_id: ${geoData.id}', 'project_id: ${geoData.projectId}']);
+      return SyncResult(success: false, message: 'Sync failed: ${e.toString()}');
     }
   }
 
@@ -156,31 +157,30 @@ class SyncService {
           message: 'Server error: ${response.statusCode} - ${response.body}',
         );
       }
-    } on SocketException {
+    } on SocketException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: No internet connection (syncProject)',
+          information: ['project_id: ${project.id}']);
+      return SyncResult(success: false, message: 'No internet connection');
+    } on TimeoutException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: Connection timeout (syncProject)');
+      return SyncResult(success: false, message: 'Connection timeout');
+    } on ApiException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: API error (syncProject)',
+          information: ['project_id: ${project.id}', 'message: ${e.message}']);
+      return SyncResult(success: false, message: e.message);
+    } on FormatException catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: Invalid response format (syncProject)');
       return SyncResult(
-        success: false,
-        message: 'No internet connection',
-      );
-    } on TimeoutException {
-      return SyncResult(
-        success: false,
-        message: 'Connection timeout',
-      );
-    } on ApiException catch (e) {
-      return SyncResult(
-        success: false,
-        message: e.message,
-      );
-    } on FormatException catch (e) {
-      return SyncResult(
-        success: false,
-        message: 'Invalid response format: ${e.message}',
-      );
-    } catch (e) {
-      return SyncResult(
-        success: false,
-        message: 'Sync failed: ${e.toString()}',
-      );
+          success: false, message: 'Invalid response format: ${e.message}');
+    } catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: 'Sync: syncProject failed',
+          information: ['project_id: ${project.id}']);
+      return SyncResult(success: false, message: 'Sync failed: ${e.toString()}');
     }
   }
 

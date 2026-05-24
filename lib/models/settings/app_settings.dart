@@ -55,6 +55,7 @@ class AppSettings {
   final double pointSize;
   final double lineWidth;
   final double polygonOpacity;
+  final bool darkMode;
 
   AppSettings({
     this.areaUnit = AreaUnit.squareMeters,
@@ -66,6 +67,7 @@ class AppSettings {
     this.pointSize = 12.0,
     this.lineWidth = 3.0,
     this.polygonOpacity = 0.3,
+    this.darkMode = false,
   });
 
   // Default settings
@@ -82,6 +84,7 @@ class AppSettings {
     double? pointSize,
     double? lineWidth,
     double? polygonOpacity,
+    bool? darkMode,
   }) {
     return AppSettings(
       areaUnit: areaUnit ?? this.areaUnit,
@@ -93,6 +96,7 @@ class AppSettings {
       pointSize: pointSize ?? this.pointSize,
       lineWidth: lineWidth ?? this.lineWidth,
       polygonOpacity: polygonOpacity ?? this.polygonOpacity,
+      darkMode: darkMode ?? this.darkMode,
     );
   }
 
@@ -108,6 +112,7 @@ class AppSettings {
       'pointSize': pointSize,
       'lineWidth': lineWidth,
       'polygonOpacity': polygonOpacity,
+      'darkMode': darkMode,
     };
   }
 
@@ -129,6 +134,7 @@ class AppSettings {
       pointSize: (json['pointSize'] ?? 12.0).toDouble(),
       lineWidth: (json['lineWidth'] ?? 3.0).toDouble(),
       polygonOpacity: (json['polygonOpacity'] ?? 0.3).toDouble(),
+      darkMode: json['darkMode'] ?? false,
     );
   }
 

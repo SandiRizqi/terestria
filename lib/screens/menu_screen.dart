@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geoform_app/config/api_config.dart';
 import '../theme/app_theme.dart';
+import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/database_service.dart';
@@ -15,6 +17,8 @@ import 'profile/profile_screen.dart';
 import 'notifications/notifications_screen.dart';
 import 'location/location_provider_screen.dart';
 import 'layers/layers_screen.dart';
+import 'navigation/navigation_screen.dart';
+import '../utils/page_routes.dart';
 import 'dart:async';
 
 class MenuScreen extends StatefulWidget {
@@ -29,10 +33,12 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   final DatabaseService _databaseService = DatabaseService();
   final NotificationEventService _notificationEventService = NotificationEventService();
   final FirebaseMessagingService _firebaseMessagingService = FirebaseMessagingService();
+  final AuthService _authService = AuthService();
   bool _isOnline = false;
   StreamSubscription<bool>? _connectivitySubscription;
   StreamSubscription<NotificationEvent>? _notificationSubscription;
   int _unreadNotificationCount = 0;
+  User? _currentUser;
 
   @override
   void initState() {
@@ -42,6 +48,54 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     _loadUnreadNotificationCount();
     _listenToNotificationEvents();
     _setupFirebaseMessagingCallback();
+    _loadCurrentUser();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    try {
+      final user = await _authService.getUser();
+      if (mounted) {
+        setState(() {
+          _currentUser = user;
+        });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Could not load current user: $e');
+    }
+  }
+
+  /// Greeting berdasarkan jam lokal
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Selamat Pagi';
+    if (hour < 15) return 'Selamat Siang';
+    if (hour < 18) return 'Selamat Sore';
+    return 'Selamat Malam';
+  }
+
+  /// Nama tampilan: prioritas fullName, fallback ke username
+  String get _displayName {
+    if (_currentUser == null) return '';
+    final name = _currentUser!.fullName?.trim();
+    if (name != null && name.isNotEmpty) {
+      // Ambil nama pertama saja supaya tidak terlalu panjang
+      return name.split(' ').first;
+    }
+    return _currentUser!.username;
+  }
+
+  /// Inisial untuk avatar (maks 2 karakter)
+  String get _initials {
+    if (_currentUser == null) return '?';
+    final name = _currentUser!.fullName?.trim();
+    if (name != null && name.isNotEmpty) {
+      final parts = name.split(' ').where((p) => p.isNotEmpty).toList();
+      if (parts.length >= 2) {
+        return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+      }
+      return parts[0][0].toUpperCase();
+    }
+    return _currentUser!.username[0].toUpperCase();
   }
 
   void _initConnectivity() {
@@ -109,7 +163,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
-        title: Text('Terestria ${ApiConfig.appVersion}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.5)),
+        title: const Text('Terestria', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         automaticallyImplyLeading: false,
         elevation: 0,
         backgroundColor: AppTheme.primaryGreen,
@@ -127,6 +181,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
             elevation: 12,
             offset: const Offset(0, 50),
             onSelected: (value) async {
+              HapticFeedback.selectionClick();
               if (value == 'about') {
                 _showAboutDialog(context);
               } else if (value == 'logout') {
@@ -228,42 +283,85 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
         top: false,
         child: Column(
           children: [
-            // Premium Header
+            // Premium Header — personalized greeting
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
             decoration: const BoxDecoration(
               color: AppTheme.primaryGreen,
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
             ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  'Welcome to',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.5,
+                // Greeting + name
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _greeting,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _displayName.isNotEmpty ? _displayName : 'Terestria',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Agricultural & Environmental Mapping',
+                        style: TextStyle(
+                          color: Colors.white60,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                SizedBox(height: 1),
-                Text(
-                  'Terestria',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Agricultural & Environmental Data Collection',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
+                // Avatar inisial
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileScreen(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.5),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _initials,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -290,7 +388,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (context) => const ProjectsScreen(),
                       ),
                     );
@@ -301,11 +399,11 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                   icon: Icons.layers_rounded,
                   title: 'Layers',
                   description: 'Manage overlays',
-                  color: Colors.teal.shade600,
+                  color: AppTheme.darkGreen,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (context) => const LayersScreen(),
                       ),
                     );
@@ -316,11 +414,11 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                   icon: Icons.map_rounded,
                   title: 'Basemaps',
                   description: 'Custom basemaps',
-                  color: Colors.blue.shade600,
+                  color: AppTheme.accentGreen,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (context) => const BasemapManagementScreen(),
                       ),
                     );
@@ -331,12 +429,12 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                   icon: Icons.notifications_rounded,
                   title: 'Notifications',
                   description: 'Stay updated',
-                  color: Colors.deepOrange.shade500,
+                  color: AppTheme.primaryGreen,
                   badge: _unreadNotificationCount > 0 ? _unreadNotificationCount : null,
                   onTap: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (context) => const NotificationsScreen(),
                       ),
                     );
@@ -348,11 +446,11 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                   icon: Icons.satellite_alt_rounded,
                   title: 'Location',
                   description: 'GPS Provider',
-                  color: Colors.indigo.shade500,
+                  color: AppTheme.darkGreen,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (context) => const LocationProviderScreen(),
                       ),
                     );
@@ -363,28 +461,41 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
                   icon: Icons.settings_rounded,
                   title: 'Settings',
                   description: 'Preferences',
-                  color: Colors.blueGrey.shade600,
+                  color: AppTheme.accentGreen,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (context) => const SettingsScreen(),
                       ),
                     );
                   },
                 ),
-                // (Profile could go here if needed as an extra item, but generally Settings is enough.
-                // We will leave Profile in the grid to preserve full functionality.)
+                _buildMenuCard(
+                  context,
+                  icon: Icons.navigation_rounded,
+                  title: 'Navigation',
+                  description: 'Route & navigate',
+                  color: AppTheme.primaryGreen,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      SmoothPageRoute(
+                        builder: (context) => const NavigationScreen(),
+                      ),
+                    );
+                  },
+                ),
                 _buildMenuCard(
                   context,
                   icon: Icons.person_rounded,
                   title: 'Profile',
                   description: 'Account info',
-                  color: Colors.deepPurple.shade500,
+                  color: AppTheme.primaryGreen,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (context) => const ProfileScreen(),
                       ),
                     );
@@ -414,7 +525,10 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
         child: InkWell(
-          onTap: onTap,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
           borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0),

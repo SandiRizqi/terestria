@@ -9,6 +9,7 @@ class CloudProject {
   final DateTime updatedAt;
   final int dataCount; // Jumlah collected data
   final List<FormFieldData> formFields;
+  final List<String> collectors; // Daftar username collectors/collaborators
 
   CloudProject({
     required this.id,
@@ -20,6 +21,7 @@ class CloudProject {
     required this.updatedAt,
     this.dataCount = 0,
     required this.formFields,
+    this.collectors = const [],
   });
 
   factory CloudProject.fromJson(Map<String, dynamic> json) {
@@ -34,6 +36,10 @@ class CloudProject {
       dataCount: json['data_count'] as int? ?? 0,
       formFields: (json['form_fields'] as List<dynamic>?)
               ?.map((field) => FormFieldData.fromJson(field as Map<String, dynamic>))
+              .toList() ??
+          [],
+      collectors: (json['collectors'] as List<dynamic>?)
+              ?.map((e) => e.toString())
               .toList() ??
           [],
     );

@@ -22,11 +22,13 @@ import '../../services/tile_cache_sqlite_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../services/tile_providers/geopdf_overlay_provider.dart';
 import '../../widgets/dynamic_form.dart';
+import '../../widgets/photo_field_widget.dart';
+import '../../services/crashlytics_service.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../theme/app_theme.dart';
 import 'widgets/collapsible_bottom_controls.dart';
 import 'widgets/user_location_marker.dart';
-import '../basemap/basemap_management_screen.dart';
+import '../basemap/basemap_selector_sheet.dart';
 import '../location/location_provider_screen.dart';
 import '../../services/auth_service.dart';
 import '../../services/settings_service.dart';
@@ -51,7 +53,7 @@ class DataCollectionScreen extends StatefulWidget {
 }
 
 class _DataCollectionScreenState extends State<DataCollectionScreen>
-    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver, TickerProviderStateMixin {
   @override
   bool get wantKeepAlive => true;
   final LocationServiceV2 _locationService = LocationServiceV2();
@@ -65,6 +67,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   List<GeoPoint> _collectedPoints = [];
   GeoPoint? _currentLocation;
+
+  // ─── Marker animation ──────────────────────────────────────────────────────
+  // Marker dianimasikan dari _markerBeginLatLng → _markerTargetLatLng
+  // menggunakan AnimationController, sehingga pergerakan terlihat smooth.
+  late AnimationController _markerAnimController;
+  LatLng? _markerBeginLatLng;   // posisi awal animasi (posisi sebelumnya)
+  LatLng? _markerTargetLatLng;  // posisi target animasi (posisi GPS terbaru)
+  // ──────────────────────────────────────────────────────────────────────────
+
   // 🔧 FIX: Single unified stream for both tracking and blue marker
   StreamSubscription<GeoPoint>? _unifiedLocationSubscription;
   bool _isTracking = false;
@@ -79,6 +90,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   bool _hasInitialZoom = false;
   double _currentBearing = 0.0;
   StreamSubscription<CompassEvent>? _compassSubscription;
+  // P3: Throttle compass setState to max once per 100ms
+  DateTime? _lastCompassUpdate;
   bool _isBottomSheetExpanded = true;
   LatLng _centerCoordinates = const LatLng(-6.2088, 106.8456);
   // ✅ Prominent Disclosure: tidak perlu track manual —
@@ -114,16 +127,50 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     WidgetsBinding.instance.addObserver(this);
 
+    // Inisialisasi AnimationController untuk smooth marker movement
+    _markerAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    // Rebuild marker layer setiap frame animasi
+    _markerAnimController.addListener(_onMarkerAnimationTick);
+
     _setTransparentStatusBar();
-    _initializeSettings();
-    _initializeServiceAndLocation(); // ← FIXED: Proper initialization
+
+    // Settings harus selesai dulu sebelum _loadExistingData()
+    // agar _buildMarkerCache() langsung pakai warna/ukuran yang benar.
+    // _loadExistingData() dipanggil di dalam _initializeSettingsThenLoadData().
+    _initializeSettingsThenLoadData();
+
+    _initializeServiceAndLocation();
     _loadBasemap();
-    _loadExistingData();
     _initCompass();
     _restoreTrackingState();
     _loadActiveLayers();
     _loadUsername();
-  
+
+    // Rebuild marker cache setiap kali user mengubah settings
+    _settingsService.addListener(_onSettingsChanged);
+
+  }
+
+  /// Dipanggil setiap frame animasi marker — cukup trigger setState
+  /// agar posisi marker ter-interpolasi dari begin ke target.
+  void _onMarkerAnimationTick() {
+    if (mounted) setState(() {});
+  }
+
+  /// Posisi marker yang diinterpolasi secara smooth antara posisi lama dan baru.
+  /// Menggunakan easeOut curve agar terasa natural (cepat di awal, melambat di akhir).
+  LatLng? get _animatedMarkerLatLng {
+    final target = _markerTargetLatLng;
+    if (target == null) return null;
+    final begin = _markerBeginLatLng ?? target;
+    final t = Curves.easeOut.transform(_markerAnimController.value);
+    return LatLng(
+      ui.lerpDouble(begin.latitude, target.latitude, t)!,
+      ui.lerpDouble(begin.longitude, target.longitude, t)!,
+    );
   }
 
   // ✅ NEW METHOD: Handle app lifecycle changes
@@ -137,6 +184,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       case AppLifecycleState.resumed:
         // App came back to foreground
         print('✅ App resumed - location stream continues');
+        // P2: Skip stream restart if camera/gallery is open —
+        // PhotoFieldWidget will handle retrieveLostData internally.
+        // Restarting the stream here triggers a setState that can race
+        // with the photo-save async chain.
+        if (PhotoFieldWidget.isCameraActive) {
+          print('📷 Camera is active — skipping stream restart');
+          break;
+        }
         // ✅ FIX: DON'T restart stream if already tracking
         // Background stream sudah jalan, biarkan terus
         if (!_isTracking) {
@@ -569,13 +624,33 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     }
   }
 
-  Future<void> _initializeSettings() async {
+  /// Load settings terlebih dahulu, baru load existing data.
+  /// Ini mencegah race condition di mana _buildMarkerCache() dipanggil
+  /// sebelum settings selesai dimuat dari SharedPreferences.
+  Future<void> _initializeSettingsThenLoadData() async {
     await _settingsService.initialize();
+    if (mounted) await _loadExistingData();
+  }
+
+  /// Dipanggil setiap kali settings berubah (listener di SettingsService).
+  /// Rebuild marker cache agar warna & ukuran existing data langsung update.
+  void _onSettingsChanged() {
+    if (!mounted) return;
+    if (_existingData.isEmpty) return;
+    _buildMarkerCache();
+    // Trigger culling ulang agar visibleMarkers ikut diperbarui
+    _updateVisibleLayers();
+    setState(() {});
   }
 
   void _initCompass() {
     _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
-      if (mounted && event.heading != null) {
+      if (!mounted || event.heading == null) return;
+      // P3: Throttle — rebuild at most every 100ms, not on every sensor tick
+      final now = DateTime.now();
+      if (_lastCompassUpdate == null ||
+          now.difference(_lastCompassUpdate!).inMilliseconds >= 100) {
+        _lastCompassUpdate = now;
         setState(() {
           _currentBearing = event.heading!;
         });
@@ -862,11 +937,20 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     }
   }
 
-  // P0+P1: Bangun cache marker/polyline/polygon sekali dari _existingData
+  // P0+P1: Bangun cache marker/polyline/polygon sekali dari _existingData.
+  // Semua warna & ukuran diambil dari _settingsService.settings agar konsisten
+  // dengan pengaturan yang dipilih user di halaman Settings.
   void _buildMarkerCache() {
+    final s = _settingsService.settings; // shorthand agar kode lebih ringkas
     final markers = <Marker>[];
     final polylines = <Polyline>[];
     final polygons = <Polygon>[];
+
+    // Ukuran marker existing data — sedikit lebih kecil dari active collection
+    // agar bisa dibedakan secara visual, tapi tetap proporsional dengan pointSize.
+    final markerDiameter = (s.pointSize * 2).clamp(20.0, 48.0);
+    // Ukuran icon info (untuk label tengah line/polygon)
+    final infoIconSize = (markerDiameter * 0.7).clamp(14.0, 26.0);
 
     for (final data in _existingData) {
       switch (widget.project.geometryType) {
@@ -874,15 +958,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           if (data.points.isNotEmpty) {
             markers.add(Marker(
               point: LatLng(data.points.first.latitude, data.points.first.longitude),
-              width: 25,
-              height: 25,
+              width: markerDiameter + 4,
+              height: markerDiameter + 4,
               child: GestureDetector(
                 onTap: () => _onExistingDataTap(data),
                 child: Container(
-                  width: 23,
-                  height: 23,
+                  width: markerDiameter,
+                  height: markerDiameter,
                   decoration: BoxDecoration(
-                    color: Colors.orange,
+                    color: s.pointColor,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 1.5),
                     boxShadow: [
@@ -893,7 +977,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.location_on, color: Colors.white, size: 20),
+                  child: Icon(Icons.location_on, color: Colors.white,
+                      size: infoIconSize),
                 ),
               ),
             ));
@@ -904,8 +989,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           if (data.points.isNotEmpty) {
             polylines.add(Polyline(
               points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-              color: Colors.orange.withOpacity(0.7),
-              strokeWidth: 3,
+              color: s.lineColor.withOpacity(0.8),
+              strokeWidth: s.lineWidth,
             ));
             final centerIndex = data.points.length ~/ 2;
             markers.add(Marker(
@@ -913,15 +998,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                 data.points[centerIndex].latitude,
                 data.points[centerIndex].longitude,
               ),
-              width: 25,
-              height: 25,
+              width: markerDiameter + 4,
+              height: markerDiameter + 4,
               child: GestureDetector(
                 onTap: () => _onExistingDataTap(data),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black87, width: 2),
+                    border: Border.all(color: s.lineColor, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
@@ -930,7 +1015,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.info, color: Colors.black87, size: 20),
+                  child: Icon(Icons.info, color: s.lineColor,
+                      size: infoIconSize),
                 ),
               ),
             ));
@@ -941,9 +1027,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           if (data.points.length >= 3) {
             polygons.add(Polygon(
               points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-              color: Colors.orange.withOpacity(0.15),
-              borderColor: Colors.orange.withOpacity(0.7),
-              borderStrokeWidth: 3,
+              color: s.polygonColor.withOpacity(s.polygonOpacity),
+              borderColor: s.polygonColor.withOpacity(0.85),
+              borderStrokeWidth: s.lineWidth,
               isFilled: true,
             ));
             // Hitung centroid sekali saja di sini, bukan di setiap build()
@@ -954,15 +1040,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             }
             markers.add(Marker(
               point: LatLng(sumLat / data.points.length, sumLng / data.points.length),
-              width: 25,
-              height: 25,
+              width: markerDiameter + 4,
+              height: markerDiameter + 4,
               child: GestureDetector(
                 onTap: () => _onExistingDataTap(data),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black87, width: 2),
+                    border: Border.all(color: s.polygonColor, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
@@ -971,7 +1057,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.info, color: Colors.black87, size: 20),
+                  child: Icon(Icons.info, color: s.polygonColor,
+                      size: infoIconSize),
                 ),
               ),
             ));
@@ -1198,6 +1285,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _unifiedLocationSubscription?.cancel();
     print('🗑️ Location stream cancelled');
 
+    // Dispose marker animation controller
+    _markerAnimController.removeListener(_onMarkerAnimationTick);
+    _markerAnimController.dispose();
+    print('🗑️ Marker animation controller disposed');
+
+    // Hapus settings listener
+    _settingsService.removeListener(_onSettingsChanged);
+
     super.dispose();
   }
 
@@ -1361,20 +1456,30 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _unifiedLocationSubscription = locationStream.listen(
       (location) {
         if (mounted) {
+          final newLatLng = LatLng(location.latitude, location.longitude);
+
+          // ── Satu setState untuk semua perubahan state per update GPS ──
           setState(() {
+            // Simpan posisi lama sebagai start animasi, lalu set target baru
+            _markerBeginLatLng = _markerTargetLatLng ?? newLatLng;
+            _markerTargetLatLng = newLatLng;
             _currentLocation = location;
+
+            // Tambahkan ke tracking points HANYA saat tracking aktif & tidak pause
+            if (_isTracking && !_isPaused) {
+              _collectedPoints.add(location);
+              if (_collectedPoints.length % 5 == 0) {
+                print('✅ 📍 ${_collectedPoints.length} points collected');
+              }
+            }
           });
 
-          // Add to collected points ONLY when tracking and not paused
-          if (_isTracking && !_isPaused) {
-            setState(() {
-              _collectedPoints.add(location);
-            });
-            _locationService.addTrackingPoint(location);
+          // Jalankan animasi smooth dari posisi lama ke baru (di luar setState)
+          _markerAnimController.forward(from: 0);
 
-            if (_collectedPoints.length % 5 == 0) {
-              print('✅ 📍 ${_collectedPoints.length} points collected (Tracking: $_isTracking, Paused: $_isPaused)');
-            }
+          // Update service tracking points (tidak perlu setState)
+          if (_isTracking && !_isPaused) {
+            _locationService.addTrackingPoint(location);
           }
         }
       },
@@ -1475,8 +1580,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
 
       print('✅ Background tracking service started successfully');
-    } catch (e) {
+    } catch (e, stack) {
       print('❌ Error starting background tracking: $e');
+      crashlytics.log('Tracking start failed: $e');
+      crashlytics.setContext('project_id', widget.project.id);
+      crashlytics.setContext('geometry_type',
+          widget.project.geometryType.toString().split('.').last);
+      crashlytics.setContext('point_count', _collectedPoints.length);
+      crashlytics.recordError(e, stack,
+          reason: 'DataCollection: startBackgroundTracking failed');
 
       if (mounted) {
         await _showTrackingErrorDialog(e.toString());
@@ -1707,8 +1819,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       print('⏹️ Stopping background tracking...');
       await _locationService.stopBackgroundTracking();
       print('✅ Background tracking stopped');
-    } catch (e) {
+    } catch (e, stack) {
       print('❌ Error stopping background tracking: $e');
+      crashlytics.recordError(e, stack,
+          reason: 'DataCollection: stopBackgroundTracking failed');
     }
 
     // Stop persistent tracking in service
@@ -1956,8 +2070,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           }
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
       setState(() => _isSaving = false);
+      crashlytics.log('saveData failed for project ${widget.project.id}');
+      crashlytics.setContext('project_id', widget.project.id);
+      crashlytics.setContext('geometry_type',
+          widget.project.geometryType.toString().split('.').last);
+      crashlytics.setContext('point_count', _collectedPoints.length);
+      crashlytics.setContext(
+          'form_fields', widget.project.formFields.length);
+      crashlytics.recordError(e, stack,
+          reason: 'DataCollection: saveGeoData failed');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error saving data: $e')),
@@ -2637,6 +2760,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                               formFields: widget.project.formFields,
                               projectId: widget.project.id,
                               onSaved: (data) => _formData = data,
+                              // Pass watermark info to PhotoFieldWidget
+                              username: _currentUsername,
+                              latitude: _currentLocation?.latitude,
+                              longitude: _currentLocation?.longitude,
                               onChanged: () {
                                 // Delay check to allow validation to complete
                                 Future.delayed(const Duration(milliseconds: 100),
@@ -3391,14 +3518,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     ],
 
                     // Current Location Marker (User Location - Blue with direction)
-                    if (_currentLocation != null && !(_isTracking && _collectedPoints.isNotEmpty))
+                    // Posisi marker dianimasikan smooth menggunakan _animatedMarkerLatLng
+                    // (interpolasi easeOut antara posisi lama dan posisi GPS terbaru)
+                    if (_animatedMarkerLatLng != null && !(_isTracking && _collectedPoints.isNotEmpty))
                       MarkerLayer(
                         markers: [
                           Marker(
-                            point: LatLng(
-                              _currentLocation!.latitude,
-                              _currentLocation!.longitude,
-                            ),
+                            point: _animatedMarkerLatLng!,
                             width: 60,
                             height: 60,
                             child: UserLocationMarker(
@@ -3503,13 +3629,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             if (_currentLocation != null) {
               _mapController.move(
                 LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
-                17,
-              );
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Zoomed to your location'),
-                  duration: Duration(seconds: 1),
-                ),
+                _mapController.camera.zoom, // preserve current zoom, never zoom out
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -3561,8 +3681,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       // North / Compass Button
       Positioned(
         bottom: _isBottomSheetExpanded
-            ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 240)
-            : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 240),
+            ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 300)
+            : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 300),
         right: AppTheme.spacingMedium,
         child: GestureDetector(
           onTap: () {
@@ -3570,8 +3690,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             _mapController.rotate(0);
           },
           child: Container(
-            width: 36,
-            height: 36,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
@@ -3588,7 +3708,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               // agar ujung merah selalu menunjuk north sejati
               angle: -_currentBearing * (3.141592653589793 / 180),
               child: CustomPaint(
-                size: const Size(36, 36),
+                size: const Size(40, 40),
                 painter: _CompassPainter(),
               ),
             ),
@@ -3653,8 +3773,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       if (widget.project.geometryType != GeometryType.point)
         Positioned(
           bottom: _isBottomSheetExpanded
-              ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 180) // Dynamic + offset
-              : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 180), // Collapsed + offset with safe area
+              ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 240)
+              : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 240),
           right: AppTheme.spacingMedium,
           child: FloatingActionButton(
             heroTag: 'mode',
@@ -3999,10 +4119,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     if (widget.project.geometryType != GeometryType.point &&
         _collectionMode == CollectionMode.tracking) {
       // Tracking mode: has Start/Finish + Pause/Resume row + Add/Undo/Clear row
-      contentHeight = 160.0; // Height for 2 rows of buttons
+      contentHeight = 175.0; // Height for 2 rows of buttons
     } else {
       // Drawing mode or Point type: only has Add/Undo/Clear row
-      contentHeight = 110.0; // Height for 1 row of buttons
+      contentHeight = 120.0; // Height for 1 row of buttons
     }
     
     return contentHeight + bottomPadding;
@@ -4354,109 +4474,6 @@ class _LayersPanelSheetState extends State<_LayersPanelSheet> {
                       },
                     ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class BasemapSelectorSheet extends StatefulWidget {
-  final Basemap? currentBasemap;
-  final Function(Basemap) onBasemapSelected;
-
-  const BasemapSelectorSheet(
-      {Key? key, required this.currentBasemap, required this.onBasemapSelected})
-      : super(key: key);
-
-  @override
-  State<BasemapSelectorSheet> createState() => _BasemapSelectorSheetState();
-}
-
-class _BasemapSelectorSheetState extends State<BasemapSelectorSheet> {
-  final BasemapService _basemapService = BasemapService();
-  List<Basemap> _basemaps = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadBasemaps();
-  }
-
-  Future<void> _loadBasemaps() async {
-    final basemaps = await _basemapService.getBasemaps();
-    setState(() {
-      _basemaps = basemaps;
-      _isLoading = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.all(AppTheme.spacingMedium),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Select Basemap',
-                    style: Theme.of(context).textTheme.titleLarge),
-                TextButton.icon(
-                  icon: const Icon(Icons.settings),
-                  label: const Text('Manage'),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const BasemapManagementScreen(),
-                      ),
-                    ).then((_) => _loadBasemaps());
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.spacingMedium),
-            if (_isLoading)
-              const Center(child: CircularProgressIndicator())
-            else
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _basemaps.length,
-                  itemBuilder: (context, index) {
-                    final basemap = _basemaps[index];
-                    final isSelected = widget.currentBasemap?.id == basemap.id;
-                    return ListTile(
-                      leading: Icon(Icons.map,
-                          color:
-                              isSelected ? AppTheme.primaryColor : Colors.grey),
-                      title: Text(basemap.name,
-                          style: TextStyle(
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal)),
-                      subtitle: Text(
-                          basemap.type == BasemapType.builtin
-                              ? 'Built-in'
-                              : 'Custom',
-                          style: const TextStyle(fontSize: 12)),
-                      trailing: isSelected
-                          ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
-                          : null,
-                      onTap: () {
-                        widget.onBasemapSelected(basemap);
-                        Navigator.pop(context);
-                      },
-                    );
-                  },
-                ),
-              ),
           ],
         ),
       ),

@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:geoform_app/theme/app_theme.dart';
 import '../models/project_model.dart';
 import '../services/auth_service.dart';
+import 'project/manage_collectors_dialog.dart';
 
 class ProjectCard extends StatefulWidget {
   final Project project;
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
+  /// Dipanggil saat collectors berhasil diupdate, agar parent bisa reload
+  final ValueChanged<Project>? onProjectUpdated;
 
   const ProjectCard({
     Key? key,
@@ -15,6 +18,7 @@ class ProjectCard extends StatefulWidget {
     required this.onTap,
     required this.onDelete,
     required this.onEdit,
+    this.onProjectUpdated,
   }) : super(key: key);
 
   @override
@@ -44,12 +48,36 @@ class _ProjectCardState extends State<ProjectCard> {
     //print(widget.project.createdBy);
     if (_currentUsername == null) return false;
     if (widget.project.createdBy == null) return true; // Old data without creator
-    
+
     // Normalize untuk perbandingan
     final normalizedProjectCreator = widget.project.createdBy!.trim().toLowerCase();
     final normalizedCurrentUser = _currentUsername!.trim().toLowerCase();
-    
+
     return normalizedProjectCreator == normalizedCurrentUser;
+  }
+
+  /// Hanya created_by yang boleh manage collectors
+  bool _canManageCollectors() {
+    if (_currentUsername == null) return false;
+    if (widget.project.createdBy == null) return false;
+    return widget.project.createdBy!.trim().toLowerCase() ==
+        _currentUsername!.trim().toLowerCase();
+  }
+
+  Future<void> _openManageCollectors() async {
+    if (_currentUsername == null) return;
+
+    final updatedProject = await showDialog<Project>(
+      context: context,
+      builder: (_) => ManageCollectorsDialog(
+        project: widget.project,
+        currentUsername: _currentUsername!,
+      ),
+    );
+
+    if (updatedProject != null && widget.onProjectUpdated != null) {
+      widget.onProjectUpdated!(updatedProject);
+    }
   }
 
   bool _canDeleteProject() {
@@ -120,6 +148,7 @@ class _ProjectCardState extends State<ProjectCard> {
 
     final canEdit = _canEditProject();
     final canDelete = _canDeleteProject();
+    final canManageCollectors = _canManageCollectors();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -135,133 +164,208 @@ class _ProjectCardState extends State<ProjectCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: geometryColor.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: geometryColor.withOpacity(0.2),
-                        width: 1,
-                      ),
-                    ),
-                    child: Icon(
-                      geometryIcon,
-                      color: geometryColor,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.project.name,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: geometryColor.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: geometryColor.withOpacity(0.2),
+                          width: 1,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.project.geometryType.toString().split('.').last.toUpperCase(),
-                          style: TextStyle(
-                            color: geometryColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                      ),
+                      child: Icon(
+                        geometryIcon,
+                        color: geometryColor,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.project.name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.project.geometryType.toString().split('.').last.toUpperCase(),
+                            style: TextStyle(
+                              color: geometryColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Manage Collectors button
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.group_outlined, size: 16),
+                        color: Colors.teal[600],
+                        onPressed: _openManageCollectors,
+                        padding: EdgeInsets.zero,
+                        tooltip: canManageCollectors
+                            ? 'Manage Collectors'
+                            : 'View Collectors',
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    // Edit button
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: canEdit
+                            ? AppTheme.primaryColor.withOpacity(0.08)
+                            : Colors.grey.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: IconButton(
+                        icon: Icon(
+                          canEdit ? Icons.edit_rounded : Icons.lock_outline_rounded,
+                          size: 16,
                         ),
-                      ],
-                    ),
-                  ),
-                  // Edit button
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: canEdit 
-                          ? AppTheme.primaryColor.withOpacity(0.08)
-                          : Colors.grey.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        canEdit ? Icons.edit_rounded : Icons.lock_outline_rounded,
-                        size: 16,
+                        color: canEdit ? AppTheme.primaryColor : Colors.grey[400],
+                        onPressed: _handleEdit,
+                        padding: EdgeInsets.zero,
+                        tooltip: canEdit ? 'Edit Project' : 'No permission to edit',
                       ),
-                      color: canEdit 
-                          ? AppTheme.primaryColor 
-                          : Colors.grey[400],
-                      onPressed: _handleEdit,
-                      padding: EdgeInsets.zero,
-                      tooltip: canEdit ? 'Edit Project' : 'No permission to edit',
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  // Delete button
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: canDelete 
-                          ? Colors.red.withOpacity(0.08)
-                          : Colors.grey.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        canDelete ? Icons.delete_outline_rounded : Icons.lock_outline_rounded,
-                        size: 16,
+                    const SizedBox(width: 6),
+                    // Delete button
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: canDelete
+                            ? Colors.red.withOpacity(0.08)
+                            : Colors.grey.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      color: canDelete
-                          ? Colors.red[600] 
-                          : Colors.grey[400],
-                      onPressed: _handleDelete,
-                      padding: EdgeInsets.zero,
-                      tooltip: canDelete ? 'Delete Project' : 'No permission to delete',
+                      child: IconButton(
+                        icon: Icon(
+                          canDelete
+                              ? Icons.delete_outline_rounded
+                              : Icons.lock_outline_rounded,
+                          size: 16,
+                        ),
+                        color: canDelete ? Colors.red[600] : Colors.grey[400],
+                        onPressed: _handleDelete,
+                        padding: EdgeInsets.zero,
+                        tooltip: canDelete ? 'Delete Project' : 'No permission to delete',
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              if (widget.project.description.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  widget.project.description,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  ],
                 ),
-              ],
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  _buildInfoChip(
-                    Icons.edit_note,
-                    '${widget.project.formFields.length} fields',
+                if (widget.project.description.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.project.description,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  _buildInfoChip(
-                    Icons.calendar_today,
-                    _formatDate(widget.project.createdAt),
-                  ),
-                  if (widget.project.createdBy != null)
-                    _buildCreatorChip(widget.project.createdBy!),
                 ],
-              ),
-            ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _buildInfoChip(
+                      Icons.edit_note,
+                      '${widget.project.formFields.length} fields',
+                    ),
+                    _buildInfoChip(
+                      Icons.calendar_today,
+                      _formatDate(widget.project.createdAt),
+                    ),
+                    if (widget.project.createdBy != null)
+                      _buildCreatorChip(widget.project.createdBy!),
+                  ],
+                ),
+                // Collectors row
+                if (widget.project.collectors.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _buildCollectorsRow(widget.project.collectors),
+                ],
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCollectorsRow(List<String> collectors) {
+    const maxVisible = 3;
+    final visible = collectors.take(maxVisible).toList();
+    final overflow = collectors.length - maxVisible;
+
+    return Row(
+      children: [
+        const Icon(Icons.group_outlined, size: 12, color: Colors.teal),
+        const SizedBox(width: 5),
+        ...visible.map((name) => _buildCollectorChip(name)),
+        if (overflow > 0)
+          Container(
+            margin: const EdgeInsets.only(left: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.teal.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '+$overflow more',
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.teal[700],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCollectorChip(String username) {
+    return Container(
+      margin: const EdgeInsets.only(left: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.teal.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.teal.withOpacity(0.2)),
+      ),
+      child: Text(
+        username,
+        style: TextStyle(
+          fontSize: 9,
+          color: Colors.teal[800],
+          fontWeight: FontWeight.w500,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

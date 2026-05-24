@@ -131,7 +131,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _buildHeader(),
             const SizedBox(height: 16),
-            
+
+            // Appearance Section
+            _buildSectionTitle('Appearance'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: _buildDarkModeTile(),
+            ),
+
+            const SizedBox(height: 24),
+
             // Measurement Units Section
             _buildSectionTitle('Measurement Units'),
             Container(
@@ -317,6 +327,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
           letterSpacing: 0.5,
         ),
       ),
+    );
+  }
+
+  Widget _buildDarkModeTile() {
+    return SwitchListTile(
+      secondary: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.indigo.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.dark_mode_rounded, color: Colors.indigo, size: 20),
+      ),
+      title: const Text('Dark Mode', style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(_settings.darkMode ? 'Tema gelap aktif' : 'Tema terang aktif'),
+      value: _settings.darkMode,
+      activeColor: AppTheme.primaryColor,
+      onChanged: (value) async {
+        await _settingsService.updateDarkMode(value);
+        setState(() => _settings = _settingsService.settings);
+      },
     );
   }
 

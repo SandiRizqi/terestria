@@ -47,13 +47,20 @@ class _LayersScreenState extends State<LayersScreen> {
 
   Future<void> _importLayer() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json', 'geojson'],
+      type: FileType.any,
     );
     if (result == null || result.files.single.path == null) return;
 
     final sourcePath = result.files.single.path!;
     final fileName = result.files.single.name;
+
+    // Validasi ekstensi manual (.json dan .geojson)
+    // FileType.custom dipakai karena Android tidak mengenali MIME type .geojson
+    final ext = fileName.split('.').last.toLowerCase();
+    if (ext != 'json' && ext != 'geojson') {
+      _showError('File harus berekstensi .json atau .geojson');
+      return;
+    }
 
     String content;
     try {
@@ -236,15 +243,17 @@ class _LayersScreenState extends State<LayersScreen> {
               onPressed: _load),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _layers.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _layers.length,
-                  itemBuilder: (_, i) => _buildLayerCard(_layers[i]),
-                ),
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _layers.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _layers.length,
+                    itemBuilder: (_, i) => _buildLayerCard(_layers[i]),
+                  ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _importLayer,
         backgroundColor: AppTheme.primaryColor,

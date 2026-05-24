@@ -46,7 +46,8 @@ class CloudProjectService {
                     createdBy: project.createdBy ?? 'Unknown',
                     createdAt: project.createdAt,
                     updatedAt: project.updatedAt,
-                    dataCount: project.geoDataCount ??  0, // Server doesn't provide this in project list
+                    dataCount: project.geoDataCount ?? 0,
+                    collectors: project.collectors,
                     formFields: project.formFields.map((field) {
                       return FormFieldData(
                         label: field.label,

@@ -16,23 +16,42 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   final _authService = AuthService();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
-    
+
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1200),
     );
-    
+
+    // Fade: mulai dari 0 → 1, curve easeOut
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: Curves.easeIn,
+        curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
       ),
     );
-    
+
+    // Scale: logo muncul dari 0.75 → 1.0 dengan bouncy feel
+    _scaleAnimation = Tween<double>(begin: 0.75, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.0, 0.8, curve: Curves.easeOutBack),
+      ),
+    );
+
+    // Slide teks dari bawah sedikit ke posisi normal
+    _slideAnimation = Tween<double>(begin: 24.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
     _animationController.forward();
     _checkAuth();
   }
@@ -112,97 +131,172 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
               Theme.of(context).primaryColor,
-              Theme.of(context).primaryColor.withOpacity(0.7),
+              Theme.of(context).primaryColor.withOpacity(0.85),
+              const Color(0xFF014D25), // tone gelap di bawah
             ],
           ),
         ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Logo
-                Container(
-                  padding: const EdgeInsets.all(30),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 30,
-                        offset: const Offset(0, 15),
+        child: Stack(
+          children: [
+            // Konten utama — tengah layar
+            Center(
+              child: AnimatedBuilder(
+                animation: _animationController,
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _fadeAnimation.value,
+                    child: Transform.scale(
+                      scale: _scaleAnimation.value,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Logo dengan shadow premium
+                          Container(
+                            padding: const EdgeInsets.all(28),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(32),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.25),
+                                  blurRadius: 40,
+                                  offset: const Offset(0, 20),
+                                  spreadRadius: -4,
+                                ),
+                              ],
+                            ),
+                            child: Image.asset(
+                              'assets/terestria_logo_square-removebg-preview.png',
+                              width: 120,
+                              height: 120,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: 120,
+                                  height: 120,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[300],
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Icon(
+                                    Icons.eco_rounded,
+                                    size: 60,
+                                    color: Colors.grey[600],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+
+                          const SizedBox(height: 36),
+
+                          // Teks slide dari bawah
+                          Transform.translate(
+                            offset: Offset(0, _slideAnimation.value),
+                            child: Column(
+                              children: [
+                                const Text(
+                                  'Terestria',
+                                  style: TextStyle(
+                                    fontSize: 36,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Agricultural & Environmental Mapping',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.white.withOpacity(0.75),
+                                    letterSpacing: 0.3,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Image.asset(
-                    'assets/terestria_logo_square-removebg-preview.png',
-                    width: 150,
-                    height: 150,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 150,
-                        height: 150,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Icon(
-                          Icons.image_not_supported,
-                          size: 75,
-                          color: Colors.grey[600],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 40),
-                
-                // App Name
-                const Text(
-                  'Terestria',
-                  style: TextStyle(
-                    fontSize: 40,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                
-                // Tagline
-                Text(
-                  'Agricultural & Environmental Mapping',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withOpacity(0.9),
-                    letterSpacing: 0.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 60),
-                
-                // Loading indicator
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.white.withOpacity(0.8),
                     ),
-                  ),
-                ),
-              ],
+                  );
+                },
+              ),
             ),
-          ),
+
+            // Loading dots di bagian bawah layar
+            Positioned(
+              bottom: 56,
+              left: 0,
+              right: 0,
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: const _LoadingDots(),
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// Tiga titik animasi loading yang lebih elegan dari CircularProgressIndicator.
+class _LoadingDots extends StatefulWidget {
+  const _LoadingDots();
+
+  @override
+  State<_LoadingDots> createState() => _LoadingDotsState();
+}
+
+class _LoadingDotsState extends State<_LoadingDots>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(3, (i) {
+        return AnimatedBuilder(
+          animation: _ctrl,
+          builder: (context, _) {
+            // Setiap dot punya delay berbeda (offset 0.0, 0.2, 0.4)
+            final delay = i * 0.25;
+            final t = (((_ctrl.value - delay) % 1.0 + 1.0) % 1.0);
+            final opacity = (t < 0.5) ? t * 2 : (1.0 - t) * 2;
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3 + opacity * 0.7),
+                shape: BoxShape.circle,
+              ),
+            );
+          },
+        );
+      }),
     );
   }
 }

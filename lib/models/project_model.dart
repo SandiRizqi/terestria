@@ -16,6 +16,7 @@ class Project {
   final int? geoDataCount;
   final DateTime? syncedAt;
   final String? createdBy; // username yang membuat project
+  final List<String> collectors; // daftar username collectors/collaborators
 
   Project({
     required this.id,
@@ -29,6 +30,7 @@ class Project {
     this.syncedAt,
     this.createdBy,
     this.geoDataCount,
+    this.collectors = const [],
   });
 
   Map<String, dynamic> toJson() {
@@ -44,6 +46,7 @@ class Project {
       'syncedAt': syncedAt?.toIso8601String(),
       'createdBy': createdBy,
       'geoDataCount': geoDataCount,
+      'collectors': collectors,
     };
   }
 
@@ -57,7 +60,8 @@ class Project {
     final syncedAtStr = json['syncedAt'] ?? json['synced_at'];
     final createdByData = json['createdBy'] ?? json['created_by'];
     final geoDataCount = json['geoDataCount'] ?? json['geo_data_count'];
-    
+    final collectorsData = json['collectors'];
+
     return Project(
       id: json['id'],
       name: json['name'],
@@ -74,6 +78,9 @@ class Project {
       syncedAt: syncedAtStr != null ? DateTime.parse(syncedAtStr) : null,
       createdBy: createdByData,
       geoDataCount: geoDataCount,
+      collectors: collectorsData is List
+          ? collectorsData.map((e) => e.toString()).toList()
+          : const [],
     );
   }
 
@@ -86,6 +93,7 @@ class Project {
     bool? isSynced,
     DateTime? syncedAt,
     String? createdBy,
+    List<String>? collectors,
   }) {
     return Project(
       id: id,
@@ -98,6 +106,7 @@ class Project {
       isSynced: isSynced ?? this.isSynced,
       syncedAt: syncedAt ?? this.syncedAt,
       createdBy: createdBy ?? this.createdBy,
+      collectors: collectors ?? this.collectors,
     );
   }
 }

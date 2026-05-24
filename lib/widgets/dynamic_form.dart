@@ -17,6 +17,11 @@ class DynamicForm extends StatefulWidget {
   /// projectId diperlukan untuk fitur pin value
   final String? projectId;
 
+  /// Watermark info — forwarded to PhotoFieldWidget
+  final String? username;
+  final double? latitude;
+  final double? longitude;
+
   const DynamicForm({
     Key? key,
     required this.formFields,
@@ -24,6 +29,9 @@ class DynamicForm extends StatefulWidget {
     this.onChanged,
     this.initialData,
     this.projectId,
+    this.username,
+    this.latitude,
+    this.longitude,
   }) : super(key: key);
 
   @override
@@ -933,6 +941,10 @@ class _DynamicFormState extends State<DynamicForm>
           maxPhotos: maxPhotos,
           initialPhotos: initialPhotos,
           errorText: state.errorText,
+          // Watermark info forwarded from DataCollectionScreen
+          username: widget.username,
+          latitude: widget.latitude,
+          longitude: widget.longitude,
           onChanged: (photos) {
             state.didChange(photos);
             _formData[field.label] = photos;

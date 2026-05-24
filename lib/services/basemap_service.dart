@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/basemap_model.dart';
+import 'crashlytics_service.dart';
 
 class BasemapService {
   static const String _basemapsKey = 'basemaps';
@@ -30,8 +31,9 @@ class BasemapService {
             }
           }
         }
-      } catch (e) {
+      } catch (e, stack) {
         print('❌ Error loading basemaps: $e');
+        crashlytics.recordError(e, stack, reason: 'Map: Error loading basemaps');
       }
     }
     

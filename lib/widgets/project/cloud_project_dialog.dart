@@ -180,6 +180,7 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
           createdAt: cloudProject.createdAt,
           updatedAt: cloudProject.updatedAt,
           createdBy: cloudProject.createdBy,
+          collectors: cloudProject.collectors,
         );
         
         await _storageService.saveProject(project);
@@ -230,6 +231,70 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
         maxPhotos: field.maxPhotos,
       );
     }).toList();
+  }
+
+  Widget _buildCollectorsRow(List<String> collectors, bool isGrayed) {
+    const maxVisible = 2;
+    final visible = collectors.take(maxVisible).toList();
+    final overflow = collectors.length - maxVisible;
+
+    final chipColor = isGrayed ? Colors.grey[100]! : Colors.teal.withOpacity(0.08);
+    final textColor = isGrayed ? Colors.grey[400]! : Colors.teal[800]!;
+    final iconColor = isGrayed ? Colors.grey[400]! : Colors.teal[600]!;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.group_outlined, size: 10, color: iconColor),
+        const SizedBox(width: 4),
+        // Bungkus chips dalam Flexible agar tidak overflow
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...visible.map(
+                (name) => Flexible(
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: chipColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: textColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+              if (overflow > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: chipColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '+$overflow',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: iconColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   field_model.FieldType _parseFieldType(String type) {
@@ -679,6 +744,11 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
                             ),
                           ],
                         ),
+                        // Collectors row
+                        if (project.collectors.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          _buildCollectorsRow(project.collectors, isAlreadyAdded),
+                        ],
                       ],
                     ),
                   ),

@@ -6,10 +6,11 @@ class ApiConfig {
 
   static const String bundleName = 'io.github.sandirizqi.terestria';
 
-  static const String appVersion = '4.1-prod';
+  static const String appVersion = '4.3.3';
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';
+  static const String userSearchEndpoint = '/mobile/users/search/';
   
   // FCM Token Endpoints
   static const String fcmTokenRegisterEndpoint = '/mobile/fcm-tokens/register/';

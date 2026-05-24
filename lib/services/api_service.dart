@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'auth_service.dart';
+import 'crashlytics_service.dart';
 
 /// Service untuk handle semua HTTP requests dengan token otomatis
 /// 
@@ -70,9 +71,11 @@ class ApiService {
         Uri.parse(url),
         headers: requestHeaders,
       ).timeout(ApiConfig.connectionTimeout);
-      
       return response;
-    } catch (e) {
+    } catch (e, stack) {
+      crashlytics.setContext('http_method', 'GET');
+      crashlytics.setContext('endpoint', endpoint);
+      crashlytics.recordError(e, stack, reason: 'API: GET request failed');
       throw ApiException('GET request failed: $e');
     }
   }
@@ -92,9 +95,11 @@ class ApiService {
         headers: requestHeaders,
         body: body is String ? body : jsonEncode(body),
       ).timeout(ApiConfig.connectionTimeout);
-      
       return response;
-    } catch (e) {
+    } catch (e, stack) {
+      crashlytics.setContext('http_method', 'POST');
+      crashlytics.setContext('endpoint', endpoint);
+      crashlytics.recordError(e, stack, reason: 'API: POST request failed');
       throw ApiException('POST request failed: $e');
     }
   }
@@ -114,9 +119,11 @@ class ApiService {
         headers: requestHeaders,
         body: body is String ? body : jsonEncode(body),
       ).timeout(ApiConfig.connectionTimeout);
-      
       return response;
-    } catch (e) {
+    } catch (e, stack) {
+      crashlytics.setContext('http_method', 'PUT');
+      crashlytics.setContext('endpoint', endpoint);
+      crashlytics.recordError(e, stack, reason: 'API: PUT request failed');
       throw ApiException('PUT request failed: $e');
     }
   }
@@ -158,9 +165,11 @@ class ApiService {
         headers: requestHeaders,
         body: body != null ? (body is String ? body : jsonEncode(body)) : null,
       ).timeout(ApiConfig.connectionTimeout);
-      
       return response;
-    } catch (e) {
+    } catch (e, stack) {
+      crashlytics.setContext('http_method', 'DELETE');
+      crashlytics.setContext('endpoint', endpoint);
+      crashlytics.recordError(e, stack, reason: 'API: DELETE request failed');
       throw ApiException('DELETE request failed: $e');
     }
   }
