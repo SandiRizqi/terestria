@@ -29,6 +29,7 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - Verify: `flutter analyze` bersih + test resiliensi; app-on-device manual (CP-B)
 
 ## Fase 4 — Regression
-- [ ] 4.1 Test suite: sukses penuh / parsial / recovery idempotent
-  - Verify: `flutter test` hijau
-- [ ] **CP-C**: `flutter test` + `flutter analyze` hijau → buka PR
+- [x] 4.1 Test suite: sukses penuh / parsial / recovery idempotent ✅
+  - Ditambah integration test (real `processFormDataForPush` + guard, hanya POST & storage difake)
+  - Verify: `flutter test` hijau → **20/20 test**
+- [x] **CP-C**: `flutter test` hijau (20/20); `flutter analyze` tidak menambah isu baru dari perubahan ini (sisa 813 isu pre-existing repo-wide, di luar scope) → siap PR
