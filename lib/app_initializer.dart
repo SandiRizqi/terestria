@@ -48,6 +48,11 @@ class AppInitializer {
         debugPrint('✅ Already migrated to SQLite');
       }
 
+      // 3b. Pulihkan record yang terlanjur "synced" padahal fotonya belum
+      // lengkap (bug sync parsial). Non-blocking: kegagalan tidak menghentikan
+      // startup, dan flag hanya diset bila berhasil (akan dicoba lagi bila gagal).
+      await _runPhotoSyncRecovery();
+
       // 4. Cek in-app update (fire-and-forget, aman saat offline)
       UpdateService().startUpdateCheck(null);
       debugPrint('✅ Update check initiated');
@@ -67,6 +72,19 @@ class AppInitializer {
     } catch (e) {
       debugPrint('❌ App initialization error: $e');
       rethrow;
+    }
+  }
+
+  /// Jalankan pemulihan sync foto parsial dengan aman (tidak boleh
+  /// menggagalkan startup). Recovery itu sendiri idempotent & di-guard flag.
+  Future<void> _runPhotoSyncRecovery() async {
+    try {
+      final result = await _migrationService.recoverIncompletePhotoSyncs();
+      if (!result.alreadyRun) {
+        debugPrint('✅ Photo-sync recovery: $result');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Photo-sync recovery failed (non-fatal): $e');
     }
   }
 

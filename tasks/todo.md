@@ -23,9 +23,10 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - AC: record 2 ok + 1 null(file ada) → `isSynced=false`; run kedua no-op ✅
   - Verify: seed via fake StorageService → jalankan → assert; jalankan lagi → no-op ✅ (2 test hijau)
   - Catatan: tambah `getSyncedGeoData()` di StorageService + DatabaseService (mirror `getUnsyncedGeoData`)
-- [ ] **CP-B**: review ringkasan `{scanned, resetForRetry, unrecoverable}` di data nyata
-- [ ] 3.2 Panggil recovery di `app_initializer.dart` setelah `migrate()` (non-blocking)
-  - Verify: app dengan data rusak → record jadi unsynced
+- [ ] **CP-B**: review ringkasan `{scanned, resetForRetry, unrecoverable}` di data nyata (manual, saat run di device)
+- [x] 3.2 Panggil recovery di `app_initializer.dart` setelah `migrate()` (non-blocking) ✅
+  - Flag hanya diset bila scan sukses → error transien tidak melewatkan recovery (test hijau)
+  - Verify: `flutter analyze` bersih + test resiliensi; app-on-device manual (CP-B)
 
 ## Fase 4 — Regression
 - [ ] 4.1 Test suite: sukses penuh / parsial / recovery idempotent

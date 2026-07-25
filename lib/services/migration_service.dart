@@ -82,7 +82,15 @@ class MigrationService {
         }
       }
     } catch (e) {
+      // Jangan set flag saat scan gagal — biarkan recovery dicoba lagi di
+      // startup berikutnya, supaya error transien tidak melewatkan pemulihan.
       print('Error during partial photo sync recovery: $e');
+      return PhotoSyncRecoveryResult(
+        alreadyRun: false,
+        scanned: scanned,
+        resetForRetry: resetForRetry,
+        unrecoverable: unrecoverable,
+      );
     }
 
     await prefs.setBool(_partialPhotoRecoveryKey, true);

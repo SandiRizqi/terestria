@@ -32,6 +32,16 @@ class _FakeStorage implements StorageService {
       super.noSuchMethod(invocation);
 }
 
+class _ThrowingStorage implements StorageService {
+  @override
+  Future<List<GeoData>> getSyncedGeoData({String? projectId}) async =>
+      throw Exception('db down');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
+
 Project _project() => Project(
       id: 'p1',
       name: 'Test',
@@ -128,5 +138,25 @@ void main() {
         await MigrationService().recoverIncompletePhotoSyncs(storage: storage);
     expect(second.alreadyRun, isTrue);
     expect(storage.resetIds, hasLength(1), reason: 'no additional resets');
+  });
+
+  test('does not set the completion flag when the scan fails, so it retries',
+      () async {
+    final first = await MigrationService()
+        .recoverIncompletePhotoSyncs(storage: _ThrowingStorage());
+    expect(first.alreadyRun, isFalse);
+    expect(first.scanned, 0);
+
+    // A later run with a working storage must still perform recovery,
+    // proving the failed run did not mark recovery as done.
+    final good = _FakeStorage(
+      [_geo('rec1', [_photo(serverKey: null, localPath: existingPhoto.path)])],
+      {'p1': _project()},
+    );
+    final second =
+        await MigrationService().recoverIncompletePhotoSyncs(storage: good);
+    expect(second.alreadyRun, isFalse,
+        reason: 'flag must not be set after a failed scan');
+    expect(good.resetIds, contains('rec1'));
   });
 }
