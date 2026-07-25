@@ -67,12 +67,83 @@ class PhotoMetadata {
   }
 }
 
+/// Foto yang belum ter-upload ke OSS (belum punya `serverKey`).
+/// Dipakai untuk memutuskan apakah sebuah geodata boleh ditandai synced
+/// dan untuk memulihkan data yang terlanjur "synced" secara parsial.
+class PendingPhoto {
+  final String fieldLabel;
+  final String name;
+  final String localPath;
+
+  /// True bila file lokal masih ada → masih bisa di-upload ulang.
+  /// False → foto tidak bisa dipulihkan (file hilang).
+  final bool fileExists;
+
+  PendingPhoto({
+    required this.fieldLabel,
+    required this.name,
+    required this.localPath,
+    required this.fileExists,
+  });
+
+  @override
+  String toString() =>
+      'PendingPhoto($fieldLabel/$name, fileExists: $fileExists)';
+}
+
 class PhotoSyncService {
   static final PhotoSyncService _instance = PhotoSyncService._internal();
   factory PhotoSyncService() => _instance;
   PhotoSyncService._internal();
 
   final ApiService _apiService = ApiService();
+
+  /// Kembalikan daftar foto pada [formData] yang belum ter-upload ke OSS,
+  /// yaitu item foto dengan `serverKey == null` dan `localPath` bukan URL http.
+  ///
+  /// Hanya field bertipe [FieldType.photo] pada [project] yang diperiksa.
+  /// Hasil kosong berarti semua foto sudah punya `serverKey` → aman ditandai
+  /// synced.
+  List<PendingPhoto> pendingPhotoUploads(
+    Map<String, dynamic> formData,
+    Project project,
+  ) {
+    final pending = <PendingPhoto>[];
+
+    for (final field in project.formFields) {
+      if (field.type != FieldType.photo) continue;
+      if (!formData.containsKey(field.label)) continue;
+
+      final value = formData[field.label];
+
+      void addIfLocal(String localPath, String name) {
+        if (localPath.isEmpty || localPath.startsWith('http')) return;
+        pending.add(PendingPhoto(
+          fieldLabel: field.label,
+          name: name,
+          localPath: localPath,
+          fileExists: File(localPath).existsSync(),
+        ));
+      }
+
+      if (value is List) {
+        for (final item in value) {
+          if (item is Map) {
+            if (item['serverKey'] != null) continue; // sudah ter-upload
+            final localPath = (item['localPath'] ?? '').toString();
+            final name = (item['name'] ?? localPath.split('/').last).toString();
+            addIfLocal(localPath, name);
+          } else if (item is String) {
+            addIfLocal(item, item.split('/').last);
+          }
+        }
+      } else if (value is String) {
+        addIfLocal(value, value.split('/').last);
+      }
+    }
+
+    return pending;
+  }
 
   /// Upload single photo to OSS
   Future<Map<String, String>?> uploadSinglePhoto(String localPath) async {

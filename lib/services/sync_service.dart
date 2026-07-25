@@ -9,15 +9,34 @@ import '../models/form_field_model.dart';
 import 'storage_service.dart';
 import 'photo_sync_service.dart';
 import 'crashlytics_service.dart';
+import 'connectivity_service.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
   factory SyncService() => _instance;
-  SyncService._internal();
 
-  final ApiService _apiService = ApiService();
-  final StorageService _storageService = StorageService();
-  final PhotoSyncService _photoSyncService = PhotoSyncService();
+  final ApiService _apiService;
+  final StorageService _storageService;
+  final PhotoSyncService _photoSyncService;
+  final ConnectivityService _connectivity;
+
+  SyncService._internal()
+      : _apiService = ApiService(),
+        _storageService = StorageService(),
+        _photoSyncService = PhotoSyncService(),
+        _connectivity = ConnectivityService();
+
+  /// Konstruktor untuk pengujian: memungkinkan injeksi dependency.
+  /// Argumen yang tidak diberikan jatuh ke singleton default.
+  SyncService.forTest({
+    ApiService? apiService,
+    StorageService? storageService,
+    PhotoSyncService? photoSyncService,
+    ConnectivityService? connectivity,
+  })  : _apiService = apiService ?? ApiService(),
+        _storageService = storageService ?? StorageService(),
+        _photoSyncService = photoSyncService ?? PhotoSyncService(),
+        _connectivity = connectivity ?? ConnectivityService();
 
   // ==================== UPLOAD TO SERVER ====================
 
@@ -83,17 +102,26 @@ class SyncService {
       crashlytics.recordError(e, stack,
           reason: 'Sync: No internet connection (syncGeoData)',
           information: ['geodata_id: ${geoData.id}', 'project_id: ${geoData.projectId}']);
-      return SyncResult(success: false, message: 'No internet connection');
+      return SyncResult(
+          success: false,
+          message: 'Tidak ada koneksi ke server',
+          isConnectionError: true);
     } on TimeoutException catch (e, stack) {
       crashlytics.recordError(e, stack,
           reason: 'Sync: Connection timeout (syncGeoData)',
           information: ['geodata_id: ${geoData.id}']);
-      return SyncResult(success: false, message: 'Connection timeout');
+      return SyncResult(
+          success: false,
+          message: 'Koneksi timeout',
+          isConnectionError: true);
     } on ApiException catch (e, stack) {
       crashlytics.recordError(e, stack,
           reason: 'Sync: API error (syncGeoData)',
           information: ['message: ${e.message}', 'geodata_id: ${geoData.id}']);
-      return SyncResult(success: false, message: e.message);
+      return SyncResult(
+          success: false,
+          message: e.message,
+          isConnectionError: e.isConnectionError);
     } on FormatException catch (e, stack) {
       crashlytics.recordError(e, stack,
           reason: 'Sync: Invalid response format (syncGeoData)');
@@ -161,16 +189,25 @@ class SyncService {
       crashlytics.recordError(e, stack,
           reason: 'Sync: No internet connection (syncProject)',
           information: ['project_id: ${project.id}']);
-      return SyncResult(success: false, message: 'No internet connection');
+      return SyncResult(
+          success: false,
+          message: 'Tidak ada koneksi ke server',
+          isConnectionError: true);
     } on TimeoutException catch (e, stack) {
       crashlytics.recordError(e, stack,
           reason: 'Sync: Connection timeout (syncProject)');
-      return SyncResult(success: false, message: 'Connection timeout');
+      return SyncResult(
+          success: false,
+          message: 'Koneksi timeout',
+          isConnectionError: true);
     } on ApiException catch (e, stack) {
       crashlytics.recordError(e, stack,
           reason: 'Sync: API error (syncProject)',
           information: ['project_id: ${project.id}', 'message: ${e.message}']);
-      return SyncResult(success: false, message: e.message);
+      return SyncResult(
+          success: false,
+          message: e.message,
+          isConnectionError: e.isConnectionError);
     } on FormatException catch (e, stack) {
       crashlytics.recordError(e, stack,
           reason: 'Sync: Invalid response format (syncProject)');
@@ -193,11 +230,34 @@ class SyncService {
     int failCount = 0;
     List<String> errors = [];
 
+    // Pre-flight: pastikan host server bisa di-resolve sebelum loop.
+    final reachable = await _connectivity.checkServerReachable();
+    if (!reachable) {
+      return BatchSyncResult(
+        total: geoDataList.length,
+        successCount: 0,
+        failCount: geoDataList.length,
+        errors: ['Tidak ada koneksi ke server'],
+        abortedDueToConnection: true,
+      );
+    }
+
     for (var geoData in geoDataList) {
       final result = await syncGeoData(geoData, project);
       if (result.success) {
         successCount++;
       } else {
+        // Early-abort: kalau error koneksi, hentikan — sisa item dibiarkan
+        // belum tersync (offline-first) dan bisa dicoba lagi nanti.
+        if (result.isConnectionError) {
+          return BatchSyncResult(
+            total: geoDataList.length,
+            successCount: successCount,
+            failCount: geoDataList.length - successCount,
+            errors: [...errors, 'Tidak ada koneksi ke server'],
+            abortedDueToConnection: true,
+          );
+        }
         failCount++;
         errors.add('${geoData.id}: ${result.message}');
       }
@@ -220,14 +280,41 @@ class SyncService {
     List<String> errors = [];
 
     try {
+      // Pre-flight: pastikan host server bisa di-resolve sebelum sync apa pun.
+      final reachable = await _connectivity.checkServerReachable();
+      if (!reachable) {
+        return FullSyncResult(
+          projectsTotal: 0,
+          projectsSuccess: 0,
+          projectsFail: 0,
+          geoDataTotal: 0,
+          geoDataSuccess: 0,
+          geoDataFail: 0,
+          errors: ['Tidak ada koneksi ke server'],
+          abortedDueToConnection: true,
+        );
+      }
+
       // 1. Sync unsynced projects first
       final unsyncedProjects = await _storageService.getUnsyncedProjects();
-      
+
       for (var project in unsyncedProjects) {
         final result = await syncProject(project);
         if (result.success) {
           projectsSuccess++;
         } else {
+          if (result.isConnectionError) {
+            return FullSyncResult(
+              projectsTotal: unsyncedProjects.length,
+              projectsSuccess: projectsSuccess,
+              projectsFail: unsyncedProjects.length - projectsSuccess,
+              geoDataTotal: 0,
+              geoDataSuccess: 0,
+              geoDataFail: 0,
+              errors: [...errors, 'Tidak ada koneksi ke server'],
+              abortedDueToConnection: true,
+            );
+          }
           projectsFail++;
           errors.add('Project ${project.name}: ${result.message}');
         }
@@ -235,7 +322,7 @@ class SyncService {
 
       // 2. Sync unsynced geo data
       final unsyncedGeoData = await _storageService.getUnsyncedGeoData();
-      
+
       for (var geoData in unsyncedGeoData) {
         // Get project info
         final project = await _storageService.getProjectById(geoData.projectId);
@@ -244,6 +331,19 @@ class SyncService {
           if (result.success) {
             geoDataSuccess++;
           } else {
+            // Early-abort saat koneksi putus — sisa data dibiarkan unsynced.
+            if (result.isConnectionError) {
+              return FullSyncResult(
+                projectsTotal: unsyncedProjects.length,
+                projectsSuccess: projectsSuccess,
+                projectsFail: projectsFail,
+                geoDataTotal: unsyncedGeoData.length,
+                geoDataSuccess: geoDataSuccess,
+                geoDataFail: unsyncedGeoData.length - geoDataSuccess,
+                errors: [...errors, 'Tidak ada koneksi ke server'],
+                abortedDueToConnection: true,
+              );
+            }
             geoDataFail++;
             errors.add('GeoData ${geoData.id}: ${result.message}');
           }
@@ -621,6 +721,20 @@ class SyncService {
     return await _photoSyncService.processFormDataForPush(formData, project);
   }
 
+  /// Gabungkan pesan error yang identik menjadi satu baris dengan hitungan,
+  /// mis. ["A","A","B"] → ["A (2×)", "B"]. Mencegah dialog jadi tembok teks.
+  static List<String> groupErrors(List<String> errors) {
+    final counts = <String, int>{};
+    final order = <String>[];
+    for (final e in errors) {
+      if (!counts.containsKey(e)) order.add(e);
+      counts[e] = (counts[e] ?? 0) + 1;
+    }
+    return order
+        .map((e) => counts[e]! > 1 ? '$e (${counts[e]}×)' : e)
+        .toList();
+  }
+
   /// Test connection to backend
   Future<bool> testConnection() async {
     try {
@@ -644,10 +758,15 @@ class SyncResult {
   final String message;
   final Map<String, dynamic>? data;
 
+  /// True bila kegagalan karena masalah koneksi/DNS/timeout (bukan error data
+  /// atau server). Dipakai untuk early-abort & pesan ramah.
+  final bool isConnectionError;
+
   SyncResult({
     required this.success,
     required this.message,
     this.data,
+    this.isConnectionError = false,
   });
 }
 
@@ -657,11 +776,15 @@ class BatchSyncResult {
   final int failCount;
   final List<String> errors;
 
+  /// True bila sync dihentikan karena koneksi/server tidak terjangkau.
+  final bool abortedDueToConnection;
+
   BatchSyncResult({
     required this.total,
     required this.successCount,
     required this.failCount,
     required this.errors,
+    this.abortedDueToConnection = false,
   });
 
   bool get hasErrors => failCount > 0;
@@ -687,6 +810,9 @@ class FullSyncResult {
   final int geoDataFail;
   final List<String> errors;
 
+  /// True bila sync dihentikan karena koneksi/server tidak terjangkau.
+  final bool abortedDueToConnection;
+
   FullSyncResult({
     required this.projectsTotal,
     required this.projectsSuccess,
@@ -695,6 +821,7 @@ class FullSyncResult {
     required this.geoDataSuccess,
     required this.geoDataFail,
     required this.errors,
+    this.abortedDueToConnection = false,
   });
 
   bool get hasErrors => projectsFail > 0 || geoDataFail > 0 || errors.isNotEmpty;
