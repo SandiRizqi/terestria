@@ -8,10 +8,10 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - Verify: `flutter test test/services/photo_sync_service_test.dart` ✅ (5 test hijau)
 
 ## Fase 1 — Hentikan kerusakan baru
-- [ ] 1.1 Guard di `syncGeoData`: simpan progres parsial, blokir `isSynced=true` bila ada foto pending, laporkan Crashlytics
-  - AC: 1 foto gagal → record tetap `unsynced`, serverKey sukses tersimpan, `success=false`; tak ada jalur synced dgn serverKey null
-  - Verify: unit test fake upload (1 null)
-- [ ] **CP-A**: review guard (kebijakan foto file-hilang: ✅ tetap unsynced + ditandai — plan §3)
+- [x] 1.1 Guard di `syncGeoData`: simpan progres parsial, blokir `isSynced=true` bila ada foto pending, laporkan Crashlytics ✅
+  - AC: 1 foto gagal → record tetap `unsynced`, serverKey sukses tersimpan, `success=false`; tak ada jalur synced dgn serverKey null ✅
+  - Verify: unit test fake upload (1 null) ✅ (2 test hijau)
+- [x] **CP-A**: review guard (kebijakan foto file-hilang: ✅ tetap unsynced + ditandai — plan §3)
 
 ## Fase 2 — Ketahanan upload
 - [ ] 2.1 Timeout + `crashlytics.recordError` di `ApiService.uploadFile` (opsional retry)

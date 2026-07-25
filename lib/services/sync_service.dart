@@ -50,6 +50,34 @@ class SyncService {
         project,
       );
 
+      // Step 1b: Guard integritas — jangan tandai synced kalau masih ada foto
+      // yang belum ter-upload (serverKey null). Simpan dulu progres parsial ke
+      // lokal supaya foto yang SUDAH berhasil upload tidak di-upload ulang saat
+      // retry, lalu batalkan sync agar record tetap unsynced & dicoba lagi.
+      final pendingPhotos =
+          _photoSyncService.pendingPhotoUploads(processedFormData, project);
+      if (pendingPhotos.isNotEmpty) {
+        await _storageService.saveGeoData(
+          geoData.copyWith(formData: processedFormData, isSynced: false),
+        );
+        crashlytics.recordError(
+          Exception('Incomplete photo upload'),
+          StackTrace.current,
+          reason: 'Sync: photos not fully uploaded, record kept unsynced',
+          information: [
+            'geodata_id: ${geoData.id}',
+            'project_id: ${geoData.projectId}',
+            'pending_count: ${pendingPhotos.length}',
+            'pending_photos: ${pendingPhotos.map((p) => p.name).join(", ")}',
+          ],
+        );
+        return SyncResult(
+          success: false,
+          message:
+              '${pendingPhotos.length} foto belum ter-upload, data akan dicoba lagi nanti',
+        );
+      }
+
       // Step 2: Prepare data untuk dikirim (dengan OSS URLs)
       final Map<String, dynamic> payload = {
         'id': geoData.id,
