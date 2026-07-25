@@ -6,7 +6,7 @@ class ApiConfig {
 
   static const String bundleName = 'io.github.sandirizqi.terestria';
 
-  static const String appVersion = '4.3.3';
+  static const String appVersion = '4.3.6';
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';
@@ -21,6 +21,11 @@ class ApiConfig {
   // Timeout settings
   static const Duration connectionTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
+
+  /// Timeout khusus upload file (foto). Lebih longgar dari request biasa karena
+  /// foto bisa besar dan jaringan lapangan lambat, tapi tetap dibatasi supaya
+  /// upload tidak menggantung tanpa batas.
+  static const Duration uploadTimeout = Duration(seconds: 60);
   
   // API Keys (jika diperlukan)
   static const String? apiKey = null; // Ganti dengan API key Anda

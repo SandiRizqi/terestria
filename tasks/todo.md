@@ -14,9 +14,9 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
 - [x] **CP-A**: review guard (kebijakan foto file-hilang: ✅ tetap unsynced + ditandai — plan §3)
 
 ## Fase 2 — Ketahanan upload
-- [ ] 2.1 Timeout + `crashlytics.recordError` di `ApiService.uploadFile` (opsional retry)
-  - AC: upload menggantung berhenti oleh timeout; kegagalan tercatat dgn konteks
-  - Verify: simulasi upload lambat/gagal
+- [x] 2.1 Timeout + `crashlytics.recordError` di `ApiService.uploadFile` ✅
+  - AC: upload menggantung berhenti oleh timeout; kegagalan tercatat dgn konteks ✅
+  - Verify: simulasi upload lambat/gagal ✅ (3 test hijau via MockClient)
 
 ## Fase 3 — Pemulihan data lama
 - [ ] 3.1 `recoverIncompletePhotoSyncs()` di MigrationService (guard flag, idempotent), reset record rusak (file ada) → unsynced

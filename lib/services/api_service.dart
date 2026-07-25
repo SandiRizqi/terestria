@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -24,10 +25,46 @@ import 'crashlytics_service.dart';
 class ApiService {
   final AuthService _authService = AuthService();
 
+  /// HTTP client. Diinjeksi hanya untuk pengujian (mis. MockClient); produksi
+  /// memakai client default.
+  final http.Client _client;
+
   // Singleton pattern
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
-  ApiService._internal();
+  ApiService._internal() : _client = http.Client();
+
+  /// Konstruktor untuk pengujian: memungkinkan injeksi [http.Client].
+  ApiService.forTest({http.Client? client}) : _client = client ?? http.Client();
+
+  /// Deteksi apakah sebuah error berasal dari masalah koneksi/DNS/timeout.
+  /// `http.ClientException` membungkus `SocketException` (mis. "Failed host
+  /// lookup"), jadi kita periksa tipe & isi pesannya.
+  static bool _isConnectionError(Object e) {
+    if (e is SocketException) return true;
+    if (e is TimeoutException) return true;
+    if (e is http.ClientException) {
+      final msg = e.message.toLowerCase();
+      return msg.contains('failed host lookup') ||
+          msg.contains('socketexception') ||
+          msg.contains('connection closed') ||
+          msg.contains('connection refused') ||
+          msg.contains('network is unreachable') ||
+          msg.contains('connection reset');
+    }
+    return false;
+  }
+
+  /// Bangun ApiException yang sudah terklasifikasi dari error mentah.
+  static ApiException _buildApiException(String method, Object e) {
+    if (_isConnectionError(e)) {
+      return ApiException(
+        'Tidak ada koneksi ke server',
+        isConnectionError: true,
+      );
+    }
+    return ApiException('$method request failed: $e');
+  }
 
   /// Membuat headers dengan token authorization otomatis
   Future<Map<String, String>> _getHeaders({Map<String, String>? additionalHeaders}) async {
@@ -76,7 +113,7 @@ class ApiService {
       crashlytics.setContext('http_method', 'GET');
       crashlytics.setContext('endpoint', endpoint);
       crashlytics.recordError(e, stack, reason: 'API: GET request failed');
-      throw ApiException('GET request failed: $e');
+      throw _buildApiException('GET', e);
     }
   }
 
@@ -100,7 +137,7 @@ class ApiService {
       crashlytics.setContext('http_method', 'POST');
       crashlytics.setContext('endpoint', endpoint);
       crashlytics.recordError(e, stack, reason: 'API: POST request failed');
-      throw ApiException('POST request failed: $e');
+      throw _buildApiException('POST', e);
     }
   }
 
@@ -124,7 +161,7 @@ class ApiService {
       crashlytics.setContext('http_method', 'PUT');
       crashlytics.setContext('endpoint', endpoint);
       crashlytics.recordError(e, stack, reason: 'API: PUT request failed');
-      throw ApiException('PUT request failed: $e');
+      throw _buildApiException('PUT', e);
     }
   }
 
@@ -146,7 +183,7 @@ class ApiService {
       
       return response;
     } catch (e) {
-      throw ApiException('PATCH request failed: $e');
+      throw _buildApiException('PATCH', e);
     }
   }
 
@@ -170,7 +207,7 @@ class ApiService {
       crashlytics.setContext('http_method', 'DELETE');
       crashlytics.setContext('endpoint', endpoint);
       crashlytics.recordError(e, stack, reason: 'API: DELETE request failed');
-      throw ApiException('DELETE request failed: $e');
+      throw _buildApiException('DELETE', e);
     }
   }
 
@@ -205,52 +242,78 @@ class ApiService {
     }
   }
 
-  /// Upload file dan return parsed response
+  /// Upload file dan return parsed response.
+  ///
+  /// Mengembalikan `null` bila upload gagal (tipe file salah, non-2xx, timeout,
+  /// atau error jaringan) — kegagalan dilaporkan ke Crashlytics dengan konteks
+  /// nama file & status, bukan sekadar `print`. [timeout] default ke
+  /// [ApiConfig.uploadTimeout] supaya upload tidak menggantung tanpa batas.
   Future<Map<String, dynamic>?> uploadFile(
     String url,
     dynamic file, {
     String fileFieldName = 'file',
     Map<String, String>? fields,
     Map<String, String>? headers,
+    Duration? timeout,
   }) async {
-    try {
-      String filePath;
-      
-      // Handle different file types
-      if (file is String) {
-        filePath = file;
-      } else if (file is File) {
-        filePath = file.path;
-      } else {
-        throw ApiException('Invalid file type');
-      }
+    // Handle different file types
+    String? filePath;
+    if (file is String) {
+      filePath = file;
+    } else if (file is File) {
+      filePath = file.path;
+    }
 
+    if (filePath == null) {
+      crashlytics.recordError(
+        ApiException('Invalid file type'),
+        StackTrace.current,
+        reason: 'API: photo upload invalid file type',
+      );
+      return null;
+    }
+
+    final fileName = filePath.split('/').last;
+
+    try {
       final request = http.MultipartRequest('POST', Uri.parse(url));
-      
+
       // Tambahkan headers dengan token
       final requestHeaders = await _getHeaders(additionalHeaders: headers);
       request.headers.addAll(requestHeaders);
-      
+
       // Tambahkan file
       request.files.add(await http.MultipartFile.fromPath(fileFieldName, filePath));
-      
+
       // Tambahkan fields lain jika ada
       if (fields != null) {
         request.fields.addAll(fields);
       }
-      
-      // Send request
-      final streamedResponse = await request.send();
+
+      // Send request (dengan timeout supaya tidak menggantung)
+      final streamedResponse = await _client
+          .send(request)
+          .timeout(timeout ?? ApiConfig.uploadTimeout);
       final response = await http.Response.fromStream(streamedResponse);
-      
+
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return jsonDecode(response.body);
-      } else {
-        print('Upload failed with status ${response.statusCode}: ${response.body}');
-        return null;
       }
-    } catch (e) {
-      print('Error uploading file: $e');
+
+      crashlytics.recordError(
+        ApiException('Photo upload failed', statusCode: response.statusCode),
+        StackTrace.current,
+        reason: 'API: photo upload non-2xx',
+        information: ['file: $fileName', 'status: ${response.statusCode}'],
+      );
+      return null;
+    } catch (e, stack) {
+      crashlytics.recordError(
+        e,
+        stack,
+        reason: 'API: photo upload failed',
+        information: ['file: $fileName'],
+      );
       return null;
     }
   }
@@ -278,7 +341,12 @@ class ApiException implements Exception {
   final String message;
   final int? statusCode;
 
-  ApiException(this.message, {this.statusCode});
+  /// True bila error disebabkan masalah koneksi/DNS/timeout (bukan error
+  /// server). Dipakai lapisan sync untuk membedakan "tidak ada koneksi"
+  /// dari error lain, sehingga bisa berhenti rapi & beri pesan ramah.
+  final bool isConnectionError;
+
+  ApiException(this.message, {this.statusCode, this.isConnectionError = false});
 
   @override
   String toString() => 'ApiException: $message${statusCode != null ? ' (Status: $statusCode)' : ''}';
