@@ -78,6 +78,11 @@ class StorageService {
     return await _db.getUnsyncedGeoData(projectId: projectId);
   }
 
+  /// Get all synced geo data (optionally filtered by project)
+  Future<List<GeoData>> getSyncedGeoData({String? projectId}) async {
+    return await _db.getSyncedGeoData(projectId: projectId);
+  }
+
   /// Get count of geo data for a project
   Future<int> getGeoDataCount(String projectId) async {
     return await _db.getGeoDataCount(projectId);

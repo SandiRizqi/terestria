@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/project_model.dart';
 import '../models/geo_data_model.dart';
 import 'database_service.dart';
+import 'storage_service.dart';
+import 'photo_sync_service.dart';
 
 class MigrationService {
   static final MigrationService _instance = MigrationService._internal();
@@ -10,10 +12,88 @@ class MigrationService {
   MigrationService._internal();
 
   final DatabaseService _databaseService = DatabaseService();
-  
+
   static const String _migrationKey = 'has_migrated_to_sqlite';
   static const String _projectsKey = 'projects';
   static const String _geoDataKey = 'geo_data';
+
+  /// Flag one-time recovery untuk data yang terlanjur "synced" secara parsial
+  /// (ada foto tanpa serverKey). Versi disematkan agar bisa dijalankan ulang
+  /// bila logikanya perlu direvisi (mis. `_v2`).
+  static const String _partialPhotoRecoveryKey =
+      'has_recovered_partial_photo_sync_v1';
+
+  /// Pulihkan record yang `isSynced=true` tetapi masih punya foto tanpa
+  /// `serverKey` (bug sync parsial): reset menjadi unsynced supaya di-retry.
+  ///
+  /// Dijalankan sekali (di-guard [_partialPhotoRecoveryKey]) kecuali [force].
+  /// Record dengan foto yang file lokalnya sudah hilang tetap di-reset (agar
+  /// tampak "belum sync", bukan synced palsu) dan dihitung sebagai
+  /// [PhotoSyncRecoveryResult.unrecoverable].
+  Future<PhotoSyncRecoveryResult> recoverIncompletePhotoSyncs({
+    StorageService? storage,
+    PhotoSyncService? photoSync,
+    bool force = false,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!force && (prefs.getBool(_partialPhotoRecoveryKey) ?? false)) {
+      return PhotoSyncRecoveryResult(
+        alreadyRun: true,
+        scanned: 0,
+        resetForRetry: 0,
+        unrecoverable: 0,
+      );
+    }
+
+    final store = storage ?? StorageService();
+    final pss = photoSync ?? PhotoSyncService();
+
+    int scanned = 0;
+    int resetForRetry = 0;
+    int unrecoverable = 0;
+
+    try {
+      final syncedRecords = await store.getSyncedGeoData();
+      final projectCache = <String, Project?>{};
+
+      for (final geoData in syncedRecords) {
+        scanned++;
+
+        final project = projectCache.putIfAbsent(
+          geoData.projectId,
+          () => null,
+        );
+        final resolvedProject =
+            project ?? await store.getProjectById(geoData.projectId);
+        projectCache[geoData.projectId] = resolvedProject;
+        if (resolvedProject == null) continue; // tak bisa tentukan field foto
+
+        final pending = pss.pendingPhotoUploads(geoData.formData, resolvedProject);
+        if (pending.isEmpty) continue;
+
+        await store.updateGeoDataSyncStatus(geoData.id, false);
+
+        // Jika SEMUA foto pending filenya hilang → tak bisa dipulihkan.
+        final allFilesGone = pending.every((p) => !p.fileExists);
+        if (allFilesGone) {
+          unrecoverable++;
+        } else {
+          resetForRetry++;
+        }
+      }
+    } catch (e) {
+      print('Error during partial photo sync recovery: $e');
+    }
+
+    await prefs.setBool(_partialPhotoRecoveryKey, true);
+
+    return PhotoSyncRecoveryResult(
+      alreadyRun: false,
+      scanned: scanned,
+      resetForRetry: resetForRetry,
+      unrecoverable: unrecoverable,
+    );
+  }
 
   /// Check if migration has already been completed
   Future<bool> hasMigrated() async {
@@ -126,6 +206,36 @@ class MigrationService {
       await prefs.setStringList('backup_${_geoDataKey}_${project.id}', geoDataJson);
     }
   }
+}
+
+/// Hasil pemulihan record synced-parsial (foto tanpa serverKey).
+class PhotoSyncRecoveryResult {
+  /// True bila recovery dilewati karena sudah pernah dijalankan.
+  final bool alreadyRun;
+
+  /// Jumlah record synced yang diperiksa.
+  final int scanned;
+
+  /// Record yang di-reset & punya foto yang masih bisa di-upload (file ada).
+  final int resetForRetry;
+
+  /// Record yang di-reset tapi seluruh foto pending-nya hilang (tak pulih).
+  final int unrecoverable;
+
+  PhotoSyncRecoveryResult({
+    required this.alreadyRun,
+    required this.scanned,
+    required this.resetForRetry,
+    required this.unrecoverable,
+  });
+
+  int get totalReset => resetForRetry + unrecoverable;
+
+  @override
+  String toString() => alreadyRun
+      ? 'PhotoSyncRecovery: already run'
+      : 'PhotoSyncRecovery: scanned $scanned, reset $resetForRetry for retry, '
+          '$unrecoverable unrecoverable';
 }
 
 class MigrationResult {

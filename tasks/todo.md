@@ -19,9 +19,10 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - Verify: simulasi upload lambat/gagal ✅ (3 test hijau via MockClient)
 
 ## Fase 3 — Pemulihan data lama
-- [ ] 3.1 `recoverIncompletePhotoSyncs()` di MigrationService (guard flag, idempotent), reset record rusak (file ada) → unsynced
-  - AC: record 2 ok + 1 null(file ada) → `isSynced=false`; run kedua no-op
-  - Verify: seed DB rusak → jalankan → assert; jalankan lagi → no-op
+- [x] 3.1 `recoverIncompletePhotoSyncs()` di MigrationService (guard flag, idempotent), reset record rusak → unsynced ✅
+  - AC: record 2 ok + 1 null(file ada) → `isSynced=false`; run kedua no-op ✅
+  - Verify: seed via fake StorageService → jalankan → assert; jalankan lagi → no-op ✅ (2 test hijau)
+  - Catatan: tambah `getSyncedGeoData()` di StorageService + DatabaseService (mirror `getUnsyncedGeoData`)
 - [ ] **CP-B**: review ringkasan `{scanned, resetForRetry, unrecoverable}` di data nyata
 - [ ] 3.2 Panggil recovery di `app_initializer.dart` setelah `migrate()` (non-blocking)
   - Verify: app dengan data rusak → record jadi unsynced

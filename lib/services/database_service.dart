@@ -323,6 +323,27 @@ class DatabaseService {
     return maps.map((map) => _geoDataFromMap(map)).toList();
   }
 
+  Future<List<GeoData>> getSyncedGeoData({String? projectId}) async {
+    final db = await database;
+
+    String whereClause = 'isSynced = ?';
+    List<dynamic> whereArgs = [1];
+
+    if (projectId != null) {
+      whereClause += ' AND projectId = ?';
+      whereArgs.add(projectId);
+    }
+
+    final List<Map<String, dynamic>> maps = await db.query(
+      'geo_data',
+      where: whereClause,
+      whereArgs: whereArgs,
+      orderBy: 'createdAt DESC',
+    );
+
+    return maps.map((map) => _geoDataFromMap(map)).toList();
+  }
+
   Future<int> getGeoDataCount(String projectId) async {
     final db = await database;
     final result = await db.rawQuery(
