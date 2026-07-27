@@ -94,9 +94,19 @@ class PendingPhoto {
 class PhotoSyncService {
   static final PhotoSyncService _instance = PhotoSyncService._internal();
   factory PhotoSyncService() => _instance;
-  PhotoSyncService._internal();
 
-  final ApiService _apiService = ApiService();
+  final ApiService _apiService;
+
+  PhotoSyncService._internal() : _apiService = ApiService();
+
+  /// Konstruktor untuk pengujian: memungkinkan injeksi [ApiService].
+  PhotoSyncService.forTest({ApiService? apiService})
+      : _apiService = apiService ?? ApiService();
+
+  /// Batas jumlah upload foto yang berjalan bersamaan dalam satu record.
+  /// Cukup untuk mempercepat record berfoto banyak tanpa membanjiri jaringan
+  /// lapangan atau memicu rate-limit OSS.
+  static const int maxConcurrentUploads = 3;
 
   /// Kembalikan daftar foto pada [formData] yang belum ter-upload ke OSS,
   /// yaitu item foto dengan `serverKey == null` dan `localPath` bukan URL http.
@@ -265,6 +275,48 @@ class PhotoSyncService {
     return results;
   }
 
+  /// Upload satu foto bila perlu; kembalikan metadata dengan `serverKey`/
+  /// `serverUrl` terisi bila sukses. Bila gagal, metadata dikembalikan apa
+  /// adanya (serverKey tetap null → tertangkap guard sync).
+  Future<PhotoMetadata> _uploadIfNeeded(PhotoMetadata metadata) async {
+    if (!needsUpload(metadata)) return metadata;
+
+    print('Uploading photo: ${metadata.name}');
+    final ossData = await uploadSinglePhoto(metadata.localPath);
+    if (ossData != null) {
+      final updated = metadata.copyWith(
+        serverUrl: ossData['file_url'],
+        serverKey: ossData['key'],
+        updated: DateTime.now(),
+      );
+      print('Photo uploaded: ${updated.name} -> key=${ossData['key']}');
+      return updated;
+    }
+    return metadata;
+  }
+
+  /// Upload foto yang belum ter-upload di [metas] dengan konkurensi terbatas
+  /// ([maxConcurrentUploads]). Urutan & posisi item dipertahankan (hasil
+  /// ditulis balik ke indeks asalnya).
+  Future<void> _uploadPendingConcurrently(List<PhotoMetadata> metas) async {
+    final pendingIndexes = [
+      for (var i = 0; i < metas.length; i++)
+        if (needsUpload(metas[i])) i,
+    ];
+
+    for (var start = 0;
+        start < pendingIndexes.length;
+        start += maxConcurrentUploads) {
+      final batch =
+          pendingIndexes.skip(start).take(maxConcurrentUploads).toList();
+      final results =
+          await Future.wait(batch.map((i) => _uploadIfNeeded(metas[i])));
+      for (var j = 0; j < batch.length; j++) {
+        metas[batch[j]] = results[j];
+      }
+    }
+  }
+
   /// Process form data for push (upload photos and get OSS URLs)
   /// NEW FORMAT: Returns array of PhotoMetadata objects
   Future<Map<String, dynamic>> processFormDataForPush(
@@ -280,74 +332,39 @@ class PhotoSyncService {
 
         // Handle existing PhotoMetadata array format
         if (photoValue is List) {
+          // Parse dulu (jaga urutan), baru upload yang perlu secara paralel.
           for (var item in photoValue) {
-            PhotoMetadata? metadata;
-            
             if (item is Map) {
               // Already in PhotoMetadata format
               try {
-                metadata = PhotoMetadata.fromJson(Map<String, dynamic>.from(item));
+                photoMetadataList
+                    .add(PhotoMetadata.fromJson(Map<String, dynamic>.from(item)));
               } catch (e) {
                 print('Error parsing PhotoMetadata: $e');
                 continue;
               }
             } else if (item is String && item.isNotEmpty) {
               // Old format: string path
-              final file = File(item);
-              final filename = file.path.split('/').last;
-              metadata = PhotoMetadata(
-                name: filename,
+              photoMetadataList.add(PhotoMetadata(
+                name: item.split('/').last,
                 localPath: item,
                 serverUrl: null,
                 created: DateTime.now(),
                 updated: DateTime.now(),
-              );
-            }
-
-            if (metadata != null) {
-              // Upload if not yet uploaded (no stable serverKey yet)
-              if (needsUpload(metadata)) {
-                print('Uploading photo: ${metadata.name}');
-                final ossData = await uploadSinglePhoto(metadata.localPath);
-                
-                if (ossData != null) {
-                  metadata = metadata.copyWith(
-                    serverUrl: ossData['file_url'],
-                    serverKey: ossData['key'],
-                    updated: DateTime.now(),
-                  );
-                  print('Photo uploaded: ${metadata.name} -> key=${ossData['key']}');
-                }
-              }
-              photoMetadataList.add(metadata);
+              ));
             }
           }
+
+          await _uploadPendingConcurrently(photoMetadataList);
         } else if (photoValue is String && photoValue.isNotEmpty) {
           // Single photo - old format
-          final file = File(photoValue);
-          final filename = file.path.split('/').last;
-          var metadata = PhotoMetadata(
-            name: filename,
+          final metadata = await _uploadIfNeeded(PhotoMetadata(
+            name: photoValue.split('/').last,
             localPath: photoValue,
             serverUrl: null,
             created: DateTime.now(),
             updated: DateTime.now(),
-          );
-
-          // Upload if local path (no stable serverKey yet)
-          if (needsUpload(metadata)) {
-            print('Uploading single photo: ${metadata.name}');
-            final ossData = await uploadSinglePhoto(photoValue);
-            
-            if (ossData != null) {
-              metadata = metadata.copyWith(
-                serverUrl: ossData['file_url'],
-                serverKey: ossData['key'],
-                updated: DateTime.now(),
-              );
-              print('Photo uploaded: ${metadata.name} -> key=${ossData['key']}');
-            }
-          }
+          ));
           photoMetadataList.add(metadata);
         }
 
