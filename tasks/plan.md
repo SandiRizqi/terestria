@@ -291,3 +291,103 @@ Urutan: **5.1 → 5.2 → 5.3 → (5.4 opsional)**.
 - **CP-E (sebelum 5.4):** putuskan apakah paralelisasi dikerjakan sekarang atau
   ditunda (pertimbangkan rate-limit & penanganan error).
 - **CP-F (akhir):** `flutter test` hijau + `flutter analyze` tak menambah isu.
+
+---
+
+# Rencana Lanjutan — Optimasi `performTwoWaySync` (Fase 6)
+
+Status: **DRAFT — menunggu review**
+Tanggal: 2026-07-27
+Keputusan kunci: **backend BISA menambah filter `updated_after`** → pendekatan
+**delta sync berbasis watermark per-project**.
+
+## 13. Masalah & Pendekatan
+
+`performTwoWaySync` ([sync_service.dart:594](../lib/services/sync_service.dart#L594))
+menarik **semua** geodata **semua project** tiap kali (semua halaman), lalu
+skip per-record berdasarkan `updatedAt`. Boros network/parse walau tak ada
+perubahan.
+
+**Pendekatan:** klien menyimpan watermark per-project (timestamp `updatedAt`
+tertinggi yang berhasil ditarik). Saat pull, kirim `updated_after=<watermark>`
+sehingga server hanya balas record yang berubah. Watermark **hanya dimajukan
+setelah pull satu project sukses penuh** (semua halaman) agar tak ada record
+terlewat. Sync pertama (watermark null) = full pull.
+
+**Degradasi aman:** bila server mengabaikan param, klien tetap berfungsi (full
+pull seperti sekarang) — jadi klien boleh rilis lebih dulu.
+
+## 14. Kontrak `updated_after` (untuk tim server)
+
+- Query param `updated_after=<ISO8601 UTC>` pada `…/geodata/by-project/`.
+- Filter **inklusif** (`updated_at >= updated_after`) untuk menghindari record
+  di batas granularitas jam terlewat; klien sudah dedup via skip `updatedAt`.
+- Field acuan = `updated_at`; hasil diurutkan `updated_at` menaik lebih baik.
+- Tanpa param → perilaku lama (kembalikan semua). Backward-compatible.
+- **Deletion tidak tercakup** (butuh tombstone) — di luar scope, sama seperti
+  perilaku full-pull sekarang.
+
+## 15. Dependency Graph
+
+```
+Task 6.1 (SyncWatermarkService) ── Task 6.2 (delta pull pakai watermark)
+                                        └── Task 6.3 (opsi force full refresh)
+Task 6.4 (koordinasi backend `updated_after`) — prasyarat PROD, paralel
+```
+Urutan koding: **6.1 → 6.2 → 6.3**. 6.4 non-koding, jalan paralel.
+
+## 16. Tugas
+
+### Task 6.1 — `SyncWatermarkService` (fondasi)
+- Service tipis di atas SharedPreferences: `getLastPull(projectId)` →
+  `DateTime?` (UTC), `setLastPull(projectId, DateTime)`, `clear(projectId)`.
+  Key: `last_pull_<projectId>`, simpan ISO8601 UTC.
+- **Acceptance:** set→get mengembalikan instant sama (UTC); belum ada → null;
+  clear menghapus.
+- **Verify:** unit test dgn `SharedPreferences.setMockInitialValues`.
+
+### Task 6.2 — Delta pull di `pullGeoDataFromServer` (IMPORTANT)
+- Inject `SyncWatermarkService` ke `SyncService` (via `forTest`).
+- Di awal pull, baca watermark; bila ada, tambahkan `&updated_after=<iso>` ke
+  URL request. Lacak `maxUpdatedAt` lintas semua halaman.
+- **Hanya** setelah loop paginasi selesai tanpa error, tulis watermark =
+  `max(maxUpdatedAt, watermarkLama)`. Bila ada page gagal → return gagal, **tak
+  memajukan** watermark.
+- Watermark null → tak kirim param (full pull).
+- **Acceptance:**
+  - Watermark ada → URL memuat `updated_after=<watermark>`.
+  - Pull sukses penuh → watermark maju ke `updatedAt` tertinggi record.
+  - Page error → watermark tak berubah.
+  - Backward-compat: server abaikan param → tetap jalan.
+- **Verify:** unit test `SyncService.forTest` dgn fake `ApiService.get`
+  (canned JSON multi-page, tangkap URL), fake `StorageService`, fake
+  `PhotoSyncService.processFormDataForPull` (tanpa download), fake watermark.
+
+### Task 6.3 — Opsi "force full refresh"
+- `pullGeoDataFromServer(projectId, {bool forceFull = false})`: bila true,
+  abaikan watermark (full pull) — untuk pull-to-refresh manual / pemulihan bila
+  data terasa desync. Wire ke pemicu refresh manual di UI.
+- **Acceptance:** `forceFull:true` tidak mengirim `updated_after` walau watermark
+  ada; tetap menulis watermark baru setelah sukses.
+- **Verify:** unit test forceFull → URL tanpa `updated_after`.
+
+### Task 6.4 — Koordinasi backend (NON-KODING, prasyarat PROD)
+- Sampaikan kontrak §14 ke tim server; konfirmasi deploy `updated_after`.
+- **Acceptance:** endpoint mendukung `updated_after` inklusif & backward-compat.
+- **Verify:** uji manual: request dgn `updated_after` mengembalikan subset benar.
+
+## 17. Checkpoints Lanjutan
+
+- **CP-G (setelah 6.2):** verifikasi backward-compat (server abaikan param tetap
+  jalan) + korektnes watermark (maju hanya saat sukses penuh).
+- **CP-H (sebelum aktif di PROD):** pastikan backend `updated_after` sudah
+  deploy (Task 6.4). Klien aman rilis lebih dulu karena degradasi aman.
+
+## 18. Catatan / Risiko
+
+- **Watermark korup / jam device mundur** → bisa lewatkan record. Mitigasi:
+  simpan watermark dari `updated_at` server (bukan jam device), dan sediakan
+  force full refresh (6.3) untuk recovery.
+- **Deletion** tak tertangani (sama seperti sekarang) — perlu tombstone bila
+  nanti dibutuhkan; di luar scope.
+- **Zona waktu:** selalu format/simpan watermark dalam UTC.

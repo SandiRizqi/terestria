@@ -57,4 +57,25 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - Verify: test konkurensi (parallel >1, ≤3) + partial-failure + no re-upload; `flutter test` 26/26
 - [x] **CP-F**: `flutter test` hijau (26/26) + `flutter analyze` tak menambah isu ✅
 
+---
+
+# Fase 6 — Optimasi performTwoWaySync (delta sync) — plan §13-18
+
+Keputusan: backend BISA tambah `updated_after` → **delta sync berbasis watermark**.
+
+- [ ] 6.1 `SyncWatermarkService` (get/set/clear last-pull per project, UTC, SharedPreferences)
+  - AC: set→get instant sama (UTC); kosong→null; clear hapus
+  - Verify: unit test `setMockInitialValues`
+- [ ] 6.2 (IMPORTANT) Delta pull di `pullGeoDataFromServer` (kirim `updated_after`, majukan watermark hanya saat sukses penuh)
+  - AC: URL memuat `updated_after` bila watermark ada; watermark maju setelah sukses; page error → tak maju; server abaikan param → tetap jalan
+  - Verify: unit test `SyncService.forTest` + fake ApiService.get/Storage/PhotoSync/watermark
+- [ ] **CP-G**: verifikasi backward-compat + korektnes watermark
+- [ ] 6.3 Opsi `forceFull` (pull-to-refresh manual abaikan watermark)
+  - AC: `forceFull:true` → tak kirim `updated_after`; tetap tulis watermark baru
+  - Verify: unit test forceFull → URL tanpa param
+- [ ] 6.4 (NON-KODING) Koordinasi backend: deploy `updated_after` inklusif & backward-compat (kontrak plan §14)
+- [ ] **CP-H**: pastikan backend `updated_after` deploy sebelum aktif di PROD (klien aman rilis dulu — degradasi aman)
+
+> Deletion tak tertangani (perlu tombstone) — di luar scope, sama seperti sekarang.
+
 > Out of scope repo ini: validasi backend menolak payload `serverKey: null` — koordinasikan dgn tim server.
