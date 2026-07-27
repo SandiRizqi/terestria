@@ -73,7 +73,7 @@ Keputusan: backend BISA tambah `updated_after` → **delta sync berbasis waterma
 - [ ] 6.3 Opsi `forceFull` (pull-to-refresh manual abaikan watermark)
   - AC: `forceFull:true` → tak kirim `updated_after`; tetap tulis watermark baru
   - Verify: unit test forceFull → URL tanpa param
-- [ ] 6.4 (NON-KODING) Koordinasi backend: deploy `updated_after` inklusif & backward-compat (kontrak plan §14)
+- [~] 6.4 (NON-KODING) Kontrak API ditulis → `docs/sync-delta-api-contract.md` ✅; **menunggu deploy server** oleh tim backend
 - [ ] **CP-H**: pastikan backend `updated_after` deploy sebelum aktif di PROD (klien aman rilis dulu — degradasi aman)
 
 > Deletion tak tertangani (perlu tombstone) — di luar scope, sama seperti sekarang.
