@@ -51,10 +51,9 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
 - [x] 5.3 (IMPORTANT) Laporkan record `unrecoverable` (ID) ke Crashlytics + `unrecoverableIds` di result ✅
   - AC: result memuat daftar ID; dilaporkan ke Crashlytics; `unrecoverable` = `unrecoverableIds.length` ✅
   - Verify: `migration_recovery_test` → `unrecoverableIds` memuat `rec3`, bukan `rec1`; `flutter test` 24/24
-- [ ] **CP-E**: keputusan — kerjakan 5.4 sekarang atau tunda (rate-limit & error handling)
-- [ ] 5.4 (SUGGESTION, opsional) Paralelisasi upload per-record dgn konkurensi terbatas
-  - AC: N foto ter-proses; partial-failure tetap → record unsynced
-  - Verify: test partial-failure lulus; cek perf manual
-- [ ] **CP-F**: `flutter test` hijau + `flutter analyze` tak menambah isu
+- [x] **CP-E**: keputusan → **tunda 5.4** (performa murni; korektnes & keamanan sudah beres di 5.1-5.3) ✅
+- [ ] 5.4 (SUGGESTION, opsional) ⏸️ **DITUNDA** — paralelisasi upload per-record dgn konkurensi terbatas
+  - Alasan: perbaikan performa saja; bisa jadi task terpisah. Upload serial tetap aman.
+- [x] **CP-F**: `flutter test` hijau (24/24) + `flutter analyze` tak menambah isu → siap PR ✅
 
 > Out of scope repo ini: validasi backend menolak payload `serverKey: null` — koordinasikan dgn tim server.
