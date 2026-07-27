@@ -206,3 +206,88 @@ Urutan eksekusi: **0.1 → 1.1 → 2.1 → 3.1 → 3.2 → 4.1**
 - `lib/services/migration_service.dart` (recovery pass)
 - `lib/app_initializer.dart` (wiring)
 - `test/services/…` (unit test baru)
+
+---
+
+# Rencana Lanjutan — Hasil Review (Fase 5)
+
+Status: **DRAFT — menunggu review**
+Tanggal: 2026-07-27
+Konteks: temuan dari review alur upload/pull foto setelah Fase 0–4 selesai.
+
+## 9. Temuan yang Ditangani
+
+1. **(IMPORTANT)** Predikat "sudah ter-upload?" tidak konsisten: push memakai
+   `serverUrl == null` ([photo_sync_service.dart:297](../lib/services/photo_sync_service.dart#L297),
+   [:326](../lib/services/photo_sync_service.dart#L326)) sedangkan guard memakai
+   `serverKey == null`. Rapuh → potensi deadlock (guard blokir, push menolak
+   re-upload) bila kedua field tak sinkron. `serverKey` = source-of-truth
+   (serverUrl signed & diregenerasi server saat fetch).
+2. **(IMPORTANT)** Recovery hanya menyelamatkan foto di device sumber; record
+   dengan file lokal hilang = hilang permanen. Saat ini `unrecoverable` hanya
+   dihitung, ID-nya tidak dilaporkan → tak bisa dilacak.
+3. **(SUGGESTION)** Signed OSS URL (mengandung `Signature`) ikut ter-`print`
+   ([:307](../lib/services/photo_sync_service.dart#L307),
+   [:336](../lib/services/photo_sync_service.dart#L336)).
+4. **(SUGGESTION, opsional)** Upload/pull foto per-record masih serial;
+   `uploadMultiplePhotos`/`downloadMultiplePhotos` paralel ada tapi tak dipakai.
+
+Out of scope repo ini: validasi sisi server agar menolak payload `serverKey:
+null` (backend terpisah) — dicatat untuk dikoordinasikan, bukan task di sini.
+
+## 10. Dependency Graph
+
+```
+Task 5.1 (align predikat → serverKey) ── Task 5.2 (logging hygiene, file sama)
+Task 5.3 (laporkan unrecoverable IDs)  [independen]
+Task 5.4 (paralelisasi upload, opsional) ── butuh 5.1 lebih dulu
+```
+Urutan: **5.1 → 5.2 → 5.3 → (5.4 opsional)**.
+
+## 11. Tugas
+
+### Task 5.1 — Samakan predikat upload ke `serverKey` (IMPORTANT)
+- Tambah helper murni `_needsUpload(PhotoMetadata m)` =
+  `m.serverKey == null && !m.localPath.startsWith('http')`.
+- Pakai helper di kedua call-site push (baris ~297 & ~326) menggantikan cek
+  `serverUrl == null`.
+- **Acceptance:**
+  - Foto dengan `serverKey` terisi TIDAK pernah di-upload ulang (walau
+    `serverUrl` null/stale).
+  - Foto dengan `serverKey == null` (localPath non-http) → dicoba upload.
+  - Guard (`pendingPhotoUploads`) & push kini sepakat pada `serverKey`.
+- **Verify:** unit test helper (serverKey null→true; terisi→false; localPath
+  http→false). `flutter test` hijau.
+
+### Task 5.2 — Logging hygiene: jangan log signed URL (SUGGESTION)
+- Ganti log yang mencetak `file_url`/`serverUrl`/`ossUrl` penuh menjadi
+  `serverKey`/nama file saja (push :307 & :336; cek juga `downloadPhoto`).
+- **Acceptance:** tidak ada jalur yang mencetak URL bertanda tangan; log tetap
+  informatif (nama/serverKey).
+- **Verify:** grep tak menemukan `print` yang memuat `file_url`/`serverUrl`;
+  `flutter analyze` tak menambah isu; tests hijau.
+
+### Task 5.3 — Laporkan record unrecoverable (IMPORTANT)
+- `recoverIncompletePhotoSyncs` kumpulkan ID record `unrecoverable` (semua foto
+  pending file-nya hilang) dan laporkan ke Crashlytics (non-fatal) dengan
+  konteks. Tambah `unrecoverableIds` di `PhotoSyncRecoveryResult`.
+- **Acceptance:** hasil recovery memuat daftar ID unrecoverable; ID dilaporkan
+  ke Crashlytics; hitungan `unrecoverable` tetap konsisten dengan panjang list.
+- **Verify:** perluas `migration_recovery_test` → assert `unrecoverableIds`
+  memuat `rec3`. `flutter test` hijau.
+
+### Task 5.4 — Paralelisasi upload per-record (SUGGESTION, OPSIONAL)
+- Upload foto dalam satu record dengan konkurensi terbatas (mis. 3) alih-alih
+  serial; pemetaan hasil & urutan tetap benar; kegagalan sebagian tetap membuat
+  `serverKey` null → tertangkap guard.
+- **Acceptance:** N foto ter-proses; perilaku partial-failure tak berubah
+  (record tetap unsynced bila ada yang gagal).
+- **Verify:** unit test partial-failure tetap lulus; cek perf manual.
+- **Risiko:** rate-limit OSS, agregasi error → butuh keputusan di CP-E.
+
+## 12. Checkpoints Lanjutan
+
+- **CP-D (setelah 5.1):** pastikan tak ada deadlock guard↔push; test hijau.
+- **CP-E (sebelum 5.4):** putuskan apakah paralelisasi dikerjakan sekarang atau
+  ditunda (pertimbangkan rate-limit & penanganan error).
+- **CP-F (akhir):** `flutter test` hijau + `flutter analyze` tak menambah isu.

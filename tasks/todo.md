@@ -33,3 +33,26 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - Ditambah integration test (real `processFormDataForPush` + guard, hanya POST & storage difake)
   - Verify: `flutter test` hijau → **20/20 test**
 - [x] **CP-C**: `flutter test` hijau (20/20); `flutter analyze` tidak menambah isu baru dari perubahan ini (sisa 813 isu pre-existing repo-wide, di luar scope) → siap PR
+
+---
+
+# Fase Lanjutan — Hasil Review (plan §9-12)
+
+## Fase 5 — Konsistensi & Hardening
+- [ ] 5.1 (IMPORTANT) Samakan predikat upload push ke `serverKey` via helper `_needsUpload` + test
+  - AC: foto ber-`serverKey` tak pernah re-upload; `serverKey==null` → dicoba; guard & push sepakat pada `serverKey`
+  - Verify: unit test helper; `flutter test` hijau
+- [ ] **CP-D**: pastikan tak ada deadlock guard↔push; test hijau
+- [ ] 5.2 (SUGGESTION) Logging hygiene: jangan log signed URL (push :307/:336, cek `downloadPhoto`)
+  - AC: tak ada `print` memuat `file_url`/`serverUrl` penuh; log tetap informatif (serverKey/nama)
+  - Verify: grep bersih; `flutter analyze` tak menambah isu; test hijau
+- [ ] 5.3 (IMPORTANT) Laporkan record `unrecoverable` (ID) ke Crashlytics + `unrecoverableIds` di result
+  - AC: result memuat daftar ID; dilaporkan ke Crashlytics; hitungan konsisten
+  - Verify: perluas `migration_recovery_test` → `unrecoverableIds` memuat `rec3`
+- [ ] **CP-E**: keputusan — kerjakan 5.4 sekarang atau tunda (rate-limit & error handling)
+- [ ] 5.4 (SUGGESTION, opsional) Paralelisasi upload per-record dgn konkurensi terbatas
+  - AC: N foto ter-proses; partial-failure tetap → record unsynced
+  - Verify: test partial-failure lulus; cek perf manual
+- [ ] **CP-F**: `flutter test` hijau + `flutter analyze` tak menambah isu
+
+> Out of scope repo ini: validasi backend menolak payload `serverKey: null` — koordinasikan dgn tim server.
