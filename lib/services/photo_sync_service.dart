@@ -242,7 +242,8 @@ class PhotoSyncService {
         return null;
       }
     } catch (e) {
-      print('Error downloading photo from $ossUrl: $e');
+      // Strip query string — it carries the OSS signature/credentials.
+      print('Error downloading photo from ${ossUrl.split('?').first}: $e');
       return null;
     }
   }
@@ -315,7 +316,7 @@ class PhotoSyncService {
                     serverKey: ossData['key'],
                     updated: DateTime.now(),
                   );
-                  print('Photo uploaded: ${metadata.name} -> ${ossData['file_url']}');
+                  print('Photo uploaded: ${metadata.name} -> key=${ossData['key']}');
                 }
               }
               photoMetadataList.add(metadata);
@@ -344,7 +345,7 @@ class PhotoSyncService {
                 serverKey: ossData['key'],
                 updated: DateTime.now(),
               );
-              print('Photo uploaded: ${metadata.name} -> ${ossData['file_url']}');
+              print('Photo uploaded: ${metadata.name} -> key=${ossData['key']}');
             }
           }
           photoMetadataList.add(metadata);

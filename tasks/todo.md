@@ -43,9 +43,11 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - AC: foto ber-`serverKey` tak pernah re-upload (walau serverUrl null/stale); `serverKey==null` → dicoba; guard & push sepakat pada `serverKey` ✅
   - Verify: unit test helper (4 kasus); `flutter test` hijau → 24/24
 - [x] **CP-D**: guard (`pendingPhotoUploads`) & push (`needsUpload`) kini sama-sama key ke `serverKey` → tak ada deadlock; test hijau ✅
-- [ ] 5.2 (SUGGESTION) Logging hygiene: jangan log signed URL (push :307/:336, cek `downloadPhoto`)
-  - AC: tak ada `print` memuat `file_url`/`serverUrl` penuh; log tetap informatif (serverKey/nama)
-  - Verify: grep bersih; `flutter analyze` tak menambah isu; test hijau
+- [x] 5.2 (SUGGESTION) Logging hygiene: jangan log signed URL ✅
+  - Ganti 2 log upload sukses → `key=...`; download error → strip query (buang signature)
+  - AC: tak ada `print` memuat signed URL penuh; log tetap informatif (serverKey/nama) ✅
+  - Verify: grep bersih (sisa `$response` hanya di jalur gagal, tanpa signed URL); `flutter test` 24/24; analyze tak menambah isu
+  - Catatan: perubahan logging murni → verifikasi lewat grep+regresi (tak ada seam unit-test yang bersih)
 - [ ] 5.3 (IMPORTANT) Laporkan record `unrecoverable` (ID) ke Crashlytics + `unrecoverableIds` di result
   - AC: result memuat daftar ID; dilaporkan ke Crashlytics; hitungan konsisten
   - Verify: perluas `migration_recovery_test` → `unrecoverableIds` memuat `rec3`
