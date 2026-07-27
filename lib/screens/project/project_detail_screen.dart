@@ -277,8 +277,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
-  /// Sync GeoData untuk project ini dari server
-  Future<void> _syncGeoDataFromServer() async {
+  /// Sync GeoData untuk project ini dari server.
+  ///
+  /// [forceFull] true → abaikan watermark delta (tarik semua record project),
+  /// dipakai untuk pull-to-refresh manual / pemulihan bila data terasa desync.
+  Future<void> _syncGeoDataFromServer({bool forceFull = false}) async {
     if (_isSyncing || !_isOnline) return;
 
     setState(() {
@@ -289,6 +292,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     try {
       final result = await _syncService.pullGeoDataFromServer(
         _currentProject.id,
+        forceFull: forceFull,
         onProgress: (message) {
           if (mounted) {
             setState(() => _syncProgress = message);
@@ -895,14 +899,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         Navigator.pop(context); // Close loading dialog
         
         if (result.success) {
-          // Update project sync status if needed
-          final updatedProject = _currentProject.copyWith(
-            updatedAt: DateTime.now(),
-          );
-          await _storageService.saveProject(updatedProject);
-          
+          // SyncService.syncProject sudah menandai isSynced=true di storage.
+          // Reload dari storage sebagai satu-satunya sumber kebenaran —
+          // saveProject di sini dulu justru meng-clobber status sync.
+          final refreshed =
+              await _storageService.getProjectById(_currentProject.id);
+
           setState(() {
-            _currentProject = updatedProject;
+            _currentProject = refreshed ?? _currentProject;
           });
           
           ScaffoldMessenger.of(context).showSnackBar(
@@ -979,6 +983,28 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       return;
     }
 
+    // Gate: geodata tidak boleh di-push sebelum project-nya tersinkron ke
+    // server (kalau tidak, server menolak: "project does not exist").
+    if (!_currentProject.isSynced) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.cloud_off, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Project belum tersinkron ke server. Sync project dulu sebelum push data.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange[800],
+        ),
+      );
+      return;
+    }
+
     final unsyncedData = _geoDataList.where((data) => !data.isSynced).toList();
     
     if (unsyncedData.isEmpty) {
@@ -1018,21 +1044,34 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     try {
       int successCount = 0;
       List<String> errors = [];
-      
-      // Sync each unsynced data to backend
-      for (var i = 0; i < unsyncedData.length; i++) {
-        final data = unsyncedData[i];
-        
-        setState(() {
-          _syncProgress = 'Uploading record ${i + 1}/${unsyncedData.length}...';
-        });
-        
-        final result = await _syncService.syncGeoData(data, _currentProject);
-        
-        if (result.success) {
-          successCount++;
-        } else {
-          errors.add(result.message);
+      bool abortedConnection = false;
+
+      // Pre-flight: pastikan host server benar-benar bisa dijangkau
+      // (internet umum bisa ada tapi domain server gagal di-resolve).
+      final reachable = await _connectivityService.checkServerReachable();
+      if (!reachable) {
+        abortedConnection = true;
+      } else {
+        // Sync each unsynced data to backend
+        for (var i = 0; i < unsyncedData.length; i++) {
+          final data = unsyncedData[i];
+
+          setState(() {
+            _syncProgress = 'Uploading record ${i + 1}/${unsyncedData.length}...';
+          });
+
+          final result = await _syncService.syncGeoData(data, _currentProject);
+
+          if (result.success) {
+            successCount++;
+          } else {
+            // Early-abort: koneksi putus → hentikan, sisanya tetap tersimpan.
+            if (result.isConnectionError) {
+              abortedConnection = true;
+              break;
+            }
+            errors.add(result.message);
+          }
         }
       }
 
@@ -1040,8 +1079,35 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       await _loadGeoData();
 
       if (mounted) {
-        
-        if (successCount == unsyncedData.length) {
+        final grouped = SyncService.groupErrors(errors);
+
+        if (abortedConnection) {
+          // Satu pesan ringkas, bukan tembok error koneksi.
+          final remaining = unsyncedData.length - successCount;
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.wifi_off, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Text('Sync Tertunda'),
+                ],
+              ),
+              content: Text(
+                'Tidak ada koneksi ke server.\n\n'
+                '$successCount data terkirim, $remaining belum. '
+                'Data tersimpan aman dan akan bisa disync lagi saat sinyal stabil.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        } else if (successCount == unsyncedData.length) {
           // All synced successfully
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1083,15 +1149,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    ...errors.take(5).map((error) => Padding(
+                    ...grouped.take(5).map((error) => Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
                         '• $error',
                         style: const TextStyle(fontSize: 12),
                       ),
                     )),
-                    if (errors.length > 5)
-                      Text('... and ${errors.length - 5} more errors'),
+                    if (grouped.length > 5)
+                      Text('... dan ${grouped.length - 5} error lain'),
                   ],
                 ),
               ),
@@ -1127,15 +1193,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    ...errors.take(5).map((error) => Padding(
+                    ...grouped.take(5).map((error) => Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
                         '• $error',
                         style: const TextStyle(fontSize: 12),
                       ),
                     )),
-                    if (errors.length > 5)
-                      Text('... and ${errors.length - 5} more errors'),
+                    if (grouped.length > 5)
+                      Text('... dan ${grouped.length - 5} error lain'),
                   ],
                 ),
               ),
@@ -1540,9 +1606,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         ? _buildNoResultsState()
                         : RefreshIndicator(
                             onRefresh: () async {
-                              // Saat pull to refresh, sync geodata dari server
+                              // Pull-to-refresh manual = full refresh (abaikan
+                              // watermark delta) sebagai jalur pemulihan.
                               if (_isOnline) {
-                                await _syncGeoDataFromServer();
+                                await _syncGeoDataFromServer(forceFull: true);
                               } else {
                                 await _loadGeoData();
                               }
@@ -1747,6 +1814,59 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ],
             ),
           ),
+          // Banner: project belum tersinkron → tawarkan Sync Project.
+          // Push geodata baru aktif setelah project synced.
+          if (!_currentProject.isSynced) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.08),
+                border: Border(
+                  top: BorderSide(color: Colors.grey[300]!, width: 1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.cloud_off, size: 18, color: Colors.blue[700]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Project belum tersinkron. Sync project dulu agar data bisa di-push.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: (_isOnline && !_isSyncing) ? _syncProject : null,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Sync Project',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _isOnline ? Colors.blue[800] : Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.cloud_sync, size: 16, color: _isOnline ? Colors.blue[800] : Colors.grey),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (unsyncedCount > 0) ...[
             Container(
               width: double.infinity,
@@ -1770,29 +1890,33 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     ),
                   ),
                   const Spacer(),
-                  TextButton(
-                    onPressed: _isOnline ? _syncAllData : null,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Sync Now',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _isOnline ? Colors.orange[800] : Colors.grey,
+                  // Push geodata hanya aktif kalau online DAN project sudah synced.
+                  Builder(builder: (context) {
+                    final canPush = _isOnline && _currentProject.isSynced;
+                    return TextButton(
+                      onPressed: canPush ? _syncAllData : null,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Sync Now',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: canPush ? Colors.orange[800] : Colors.grey,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.sync, size: 16, color: _isOnline ? Colors.orange[800] : Colors.grey),
-                      ],
-                    ),
-                  ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.sync, size: 16, color: canPush ? Colors.orange[800] : Colors.grey),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
               ),
             ),
@@ -2360,11 +2484,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         );
       },
     ).whenComplete(() {
-      // Pastikan controllers ter-dispose jika user swipe dismiss
+      // Pastikan controllers ter-dispose jika user swipe dismiss.
+      // Dispose tanpa cek hasListeners (member protected & controller tetap
+      // perlu di-dispose walau tanpa listener). try/catch menjaga dari
+      // double-dispose.
       for (final c in textControllers.values) {
-        if (c.hasListeners) {
-          try { c.dispose(); } catch (_) {}
-        }
+        try { c.dispose(); } catch (_) {}
       }
     });
   }

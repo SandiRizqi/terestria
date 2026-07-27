@@ -73,7 +73,7 @@ Keputusan: backend BISA tambah `updated_after` → **delta sync berbasis waterma
 - [x] 6.3 Opsi `forceFull` (pull-to-refresh manual abaikan watermark) ✅
   - AC: `forceFull:true` → tak kirim `updated_after`; tetap tulis watermark baru ✅
   - Verify: unit test forceFull → URL tanpa param, watermark maju → 35/35 hijau
-  - Catatan: parameter/mekanisme selesai; **wiring ke tombol refresh UI** belum (follow-up opsional, tak ada unit-test bersih untuk UI)
+  - Catatan: mekanisme + wiring UI selesai — pull-to-refresh di project_detail_screen kini `forceFull:true`; tombol sync tetap delta
 - [~] 6.4 (NON-KODING) Kontrak API ditulis → `docs/sync-delta-api-contract.md` ✅; **menunggu deploy server** oleh tim backend
 - [ ] **CP-H**: pastikan backend `updated_after` deploy sebelum aktif di PROD (klien aman rilis dulu — degradasi aman)
 
