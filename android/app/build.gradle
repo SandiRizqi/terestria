@@ -27,7 +27,7 @@ android {
     defaultConfig {
         applicationId = "io.github.sandirizqi.terestria"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         // Version akan otomatis diambil dari pubspec.yaml oleh Flutter
         versionCode = flutter.versionCode
         versionName = flutter.versionName
