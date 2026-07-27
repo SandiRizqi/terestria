@@ -119,6 +119,20 @@ void main() {
     expect(wm!.isAtSameMomentAs(DateTime.utc(2026, 6, 21, 10, 37, 1)), isTrue);
   });
 
+  test('forceFull ignores the watermark (no updated_after) but still advances it',
+      () async {
+    await SyncWatermarkService().setLastPull('p1', DateTime.utc(2026, 6, 1));
+    final api = _FakeApi([_page([_rec('g1', '2026-06-21T10:37:01.000Z')], 1)]);
+
+    final result =
+        await _sync(api).pullGeoDataFromServer('p1', forceFull: true);
+
+    expect(result.success, isTrue);
+    expect(api.requested.single, isNot(contains('updated_after')));
+    final wm = await SyncWatermarkService().getLastPull('p1');
+    expect(wm!.isAtSameMomentAs(DateTime.utc(2026, 6, 21, 10, 37, 1)), isTrue);
+  });
+
   test('page error does not advance the watermark', () async {
     await SyncWatermarkService().setLastPull('p1', DateTime.utc(2026, 6, 1));
     final api = _FakeApi([

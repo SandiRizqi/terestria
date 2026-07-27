@@ -70,9 +70,10 @@ Keputusan: backend BISA tambah `updated_after` → **delta sync berbasis waterma
   - AC: URL memuat `updated_after` bila watermark ada; watermark maju setelah sukses; page error → tak maju; server abaikan param → tetap jalan ✅
   - Verify: unit test `SyncService.forTest` + fake ApiService.get/Storage/PhotoSync + watermark real (mock prefs) → 3 test hijau (34/34)
 - [x] **CP-G**: backward-compat aman (param aditif; klien tak bergantung server menghormatinya — per-record skip tetap jalan) + korektnes watermark (maju hanya saat sukses penuh, tak mundur) ✅
-- [ ] 6.3 Opsi `forceFull` (pull-to-refresh manual abaikan watermark)
-  - AC: `forceFull:true` → tak kirim `updated_after`; tetap tulis watermark baru
-  - Verify: unit test forceFull → URL tanpa param
+- [x] 6.3 Opsi `forceFull` (pull-to-refresh manual abaikan watermark) ✅
+  - AC: `forceFull:true` → tak kirim `updated_after`; tetap tulis watermark baru ✅
+  - Verify: unit test forceFull → URL tanpa param, watermark maju → 35/35 hijau
+  - Catatan: parameter/mekanisme selesai; **wiring ke tombol refresh UI** belum (follow-up opsional, tak ada unit-test bersih untuk UI)
 - [~] 6.4 (NON-KODING) Kontrak API ditulis → `docs/sync-delta-api-contract.md` ✅; **menunggu deploy server** oleh tim backend
 - [ ] **CP-H**: pastikan backend `updated_after` deploy sebelum aktif di PROD (klien aman rilis dulu — degradasi aman)
 

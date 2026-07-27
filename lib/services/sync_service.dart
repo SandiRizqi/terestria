@@ -484,15 +484,18 @@ class SyncService {
   Future<SyncResult> pullGeoDataFromServer(
     String projectId, {
     void Function(String message)? onProgress,
+    bool forceFull = false,
   }) async {
     try {
       // Get project for photo field identification (once, outside the loop)
       final project = await _storageService.getProjectById(projectId);
 
       // Delta sync: hanya tarik record yang berubah sejak pull sukses terakhir.
-      // Null → full pull (sync pertama). Watermark hanya dimajukan setelah
-      // seluruh halaman project sukses (lihat akhir metode).
-      final watermark = await _watermark.getLastPull(projectId);
+      // Null → full pull (sync pertama, atau [forceFull] untuk pull-to-refresh
+      // manual/pemulihan). Watermark tetap dimajukan setelah seluruh halaman
+      // project sukses (lihat akhir metode).
+      final watermark =
+          forceFull ? null : await _watermark.getLastPull(projectId);
       final deltaParam = watermark != null
           ? '&updated_after=${watermark.toUtc().toIso8601String()}'
           : '';
