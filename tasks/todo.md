@@ -39,10 +39,10 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
 # Fase Lanjutan — Hasil Review (plan §9-12)
 
 ## Fase 5 — Konsistensi & Hardening
-- [ ] 5.1 (IMPORTANT) Samakan predikat upload push ke `serverKey` via helper `_needsUpload` + test
-  - AC: foto ber-`serverKey` tak pernah re-upload; `serverKey==null` → dicoba; guard & push sepakat pada `serverKey`
-  - Verify: unit test helper; `flutter test` hijau
-- [ ] **CP-D**: pastikan tak ada deadlock guard↔push; test hijau
+- [x] 5.1 (IMPORTANT) Samakan predikat upload push ke `serverKey` via helper `needsUpload` + test ✅
+  - AC: foto ber-`serverKey` tak pernah re-upload (walau serverUrl null/stale); `serverKey==null` → dicoba; guard & push sepakat pada `serverKey` ✅
+  - Verify: unit test helper (4 kasus); `flutter test` hijau → 24/24
+- [x] **CP-D**: guard (`pendingPhotoUploads`) & push (`needsUpload`) kini sama-sama key ke `serverKey` → tak ada deadlock; test hijau ✅
 - [ ] 5.2 (SUGGESTION) Logging hygiene: jangan log signed URL (push :307/:336, cek `downloadPhoto`)
   - AC: tak ada `print` memuat `file_url`/`serverUrl` penuh; log tetap informatif (serverKey/nama)
   - Verify: grep bersih; `flutter analyze` tak menambah isu; test hijau

@@ -145,6 +145,17 @@ class PhotoSyncService {
     return pending;
   }
 
+  /// Apakah foto ini masih perlu di-upload ke OSS?
+  ///
+  /// Predikat tunggal untuk seluruh alur push, di-*key* ke `serverKey` (bukan
+  /// `serverUrl`). `serverKey` adalah identitas stabil di OSS; `serverUrl`
+  /// hanyalah signed URL yang diregenerasi server saat fetch, jadi tidak boleh
+  /// dipakai sebagai penanda "sudah ter-upload". Ini juga menyamakan keputusan
+  /// push dengan [pendingPhotoUploads] agar tidak terjadi deadlock (guard
+  /// menganggap pending sementara push menolak re-upload).
+  bool needsUpload(PhotoMetadata m) =>
+      m.serverKey == null && !m.localPath.startsWith('http');
+
   /// Upload single photo to OSS
   Future<Map<String, String>?> uploadSinglePhoto(String localPath) async {
     try {
@@ -293,8 +304,8 @@ class PhotoSyncService {
             }
 
             if (metadata != null) {
-              // Upload if not yet uploaded (serverUrl is null)
-              if (metadata.serverUrl == null && !metadata.localPath.startsWith('http')) {
+              // Upload if not yet uploaded (no stable serverKey yet)
+              if (needsUpload(metadata)) {
                 print('Uploading photo: ${metadata.name}');
                 final ossData = await uploadSinglePhoto(metadata.localPath);
                 
@@ -322,8 +333,8 @@ class PhotoSyncService {
             updated: DateTime.now(),
           );
 
-          // Upload if local path
-          if (!photoValue.startsWith('http')) {
+          // Upload if local path (no stable serverKey yet)
+          if (needsUpload(metadata)) {
             print('Uploading single photo: ${metadata.name}');
             final ossData = await uploadSinglePhoto(photoValue);
             

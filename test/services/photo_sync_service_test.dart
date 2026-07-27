@@ -117,4 +117,36 @@ void main() {
       expect(pending, isEmpty);
     });
   });
+
+  group('needsUpload (keyed on serverKey)', () {
+    PhotoMetadata meta({String? serverKey, String? serverUrl, String localPath = '/tmp/a.jpg'}) =>
+        PhotoMetadata(
+          name: 'a.jpg',
+          localPath: localPath,
+          serverKey: serverKey,
+          serverUrl: serverUrl,
+          created: DateTime(2026, 1, 1),
+          updated: DateTime(2026, 1, 1),
+        );
+
+    test('true when serverKey is null and localPath is local', () {
+      expect(service.needsUpload(meta(serverKey: null)), isTrue);
+    });
+
+    test('false when serverKey is set (even if serverUrl is null/stale)', () {
+      // Regression: must NOT re-upload just because serverUrl is missing.
+      expect(service.needsUpload(meta(serverKey: 'Production/a.jpg', serverUrl: null)), isFalse);
+    });
+
+    test('false when serverKey is set and serverUrl present', () {
+      expect(
+        service.needsUpload(meta(serverKey: 'Production/a.jpg', serverUrl: 'https://oss/a.jpg')),
+        isFalse,
+      );
+    });
+
+    test('false when localPath is an http url regardless of serverKey', () {
+      expect(service.needsUpload(meta(serverKey: null, localPath: 'https://oss/a.jpg')), isFalse);
+    });
+  });
 }
