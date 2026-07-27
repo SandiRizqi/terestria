@@ -63,9 +63,9 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
 
 Keputusan: backend BISA tambah `updated_after` → **delta sync berbasis watermark**.
 
-- [ ] 6.1 `SyncWatermarkService` (get/set/clear last-pull per project, UTC, SharedPreferences)
-  - AC: set→get instant sama (UTC); kosong→null; clear hapus
-  - Verify: unit test `setMockInitialValues`
+- [x] 6.1 `SyncWatermarkService` (get/set/clear last-pull per project, UTC, SharedPreferences) ✅
+  - AC: set→get instant sama (UTC); kosong→null; clear hapus; terpisah per project ✅
+  - Verify: unit test `setMockInitialValues` → 5 test hijau (total 31/31)
 - [ ] 6.2 (IMPORTANT) Delta pull di `pullGeoDataFromServer` (kirim `updated_after`, majukan watermark hanya saat sukses penuh)
   - AC: URL memuat `updated_after` bila watermark ada; watermark maju setelah sukses; page error → tak maju; server abaikan param → tetap jalan
   - Verify: unit test `SyncService.forTest` + fake ApiService.get/Storage/PhotoSync/watermark
