@@ -48,9 +48,9 @@ Branch: `fix/partial-photo-sync` · Plan: [plan.md](plan.md)
   - AC: tak ada `print` memuat signed URL penuh; log tetap informatif (serverKey/nama) ✅
   - Verify: grep bersih (sisa `$response` hanya di jalur gagal, tanpa signed URL); `flutter test` 24/24; analyze tak menambah isu
   - Catatan: perubahan logging murni → verifikasi lewat grep+regresi (tak ada seam unit-test yang bersih)
-- [ ] 5.3 (IMPORTANT) Laporkan record `unrecoverable` (ID) ke Crashlytics + `unrecoverableIds` di result
-  - AC: result memuat daftar ID; dilaporkan ke Crashlytics; hitungan konsisten
-  - Verify: perluas `migration_recovery_test` → `unrecoverableIds` memuat `rec3`
+- [x] 5.3 (IMPORTANT) Laporkan record `unrecoverable` (ID) ke Crashlytics + `unrecoverableIds` di result ✅
+  - AC: result memuat daftar ID; dilaporkan ke Crashlytics; `unrecoverable` = `unrecoverableIds.length` ✅
+  - Verify: `migration_recovery_test` → `unrecoverableIds` memuat `rec3`, bukan `rec1`; `flutter test` 24/24
 - [ ] **CP-E**: keputusan — kerjakan 5.4 sekarang atau tunda (rate-limit & error handling)
 - [ ] 5.4 (SUGGESTION, opsional) Paralelisasi upload per-record dgn konkurensi terbatas
   - AC: N foto ter-proses; partial-failure tetap → record unsynced

@@ -117,6 +117,9 @@ void main() {
     expect(result.scanned, 3);
     expect(result.resetForRetry, 1);
     expect(result.unrecoverable, 1);
+    expect(result.unrecoverableIds, contains('rec3'));
+    expect(result.unrecoverableIds, isNot(contains('rec1')));
+    expect(result.unrecoverable, result.unrecoverableIds.length);
     expect(storage.resetIds, containsAll(['rec1', 'rec3']));
     expect(storage.resetIds, isNot(contains('rec2')));
   });

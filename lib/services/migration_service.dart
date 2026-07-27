@@ -5,6 +5,7 @@ import '../models/geo_data_model.dart';
 import 'database_service.dart';
 import 'storage_service.dart';
 import 'photo_sync_service.dart';
+import 'crashlytics_service.dart';
 
 class MigrationService {
   static final MigrationService _instance = MigrationService._internal();
@@ -41,7 +42,7 @@ class MigrationService {
         alreadyRun: true,
         scanned: 0,
         resetForRetry: 0,
-        unrecoverable: 0,
+        unrecoverableIds: const [],
       );
     }
 
@@ -50,7 +51,7 @@ class MigrationService {
 
     int scanned = 0;
     int resetForRetry = 0;
-    int unrecoverable = 0;
+    final unrecoverableIds = <String>[];
 
     try {
       final syncedRecords = await store.getSyncedGeoData();
@@ -76,7 +77,7 @@ class MigrationService {
         // Jika SEMUA foto pending filenya hilang → tak bisa dipulihkan.
         final allFilesGone = pending.every((p) => !p.fileExists);
         if (allFilesGone) {
-          unrecoverable++;
+          unrecoverableIds.add(geoData.id);
         } else {
           resetForRetry++;
         }
@@ -89,7 +90,21 @@ class MigrationService {
         alreadyRun: false,
         scanned: scanned,
         resetForRetry: resetForRetry,
-        unrecoverable: unrecoverable,
+        unrecoverableIds: List.unmodifiable(unrecoverableIds),
+      );
+    }
+
+    // Laporkan record yang fotonya benar-benar hilang supaya bisa dilacak —
+    // recovery tak bisa menyelamatkannya, jadi butuh perhatian manual.
+    if (unrecoverableIds.isNotEmpty) {
+      crashlytics.recordError(
+        Exception('Unrecoverable photo-sync records'),
+        StackTrace.current,
+        reason: 'Recovery: records reset with permanently missing photo files',
+        information: [
+          'count: ${unrecoverableIds.length}',
+          'ids: ${unrecoverableIds.join(", ")}',
+        ],
       );
     }
 
@@ -99,7 +114,7 @@ class MigrationService {
       alreadyRun: false,
       scanned: scanned,
       resetForRetry: resetForRetry,
-      unrecoverable: unrecoverable,
+      unrecoverableIds: List.unmodifiable(unrecoverableIds),
     );
   }
 
@@ -227,15 +242,18 @@ class PhotoSyncRecoveryResult {
   /// Record yang di-reset & punya foto yang masih bisa di-upload (file ada).
   final int resetForRetry;
 
-  /// Record yang di-reset tapi seluruh foto pending-nya hilang (tak pulih).
-  final int unrecoverable;
+  /// ID record yang di-reset tapi seluruh foto pending-nya hilang (tak pulih).
+  final List<String> unrecoverableIds;
 
   PhotoSyncRecoveryResult({
     required this.alreadyRun,
     required this.scanned,
     required this.resetForRetry,
-    required this.unrecoverable,
+    required this.unrecoverableIds,
   });
+
+  /// Jumlah record yang tak bisa dipulihkan (file foto hilang permanen).
+  int get unrecoverable => unrecoverableIds.length;
 
   int get totalReset => resetForRetry + unrecoverable;
 
