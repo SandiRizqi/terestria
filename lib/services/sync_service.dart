@@ -10,6 +10,7 @@ import 'storage_service.dart';
 import 'photo_sync_service.dart';
 import 'crashlytics_service.dart';
 import 'connectivity_service.dart';
+import 'sync_watermark_service.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -19,12 +20,14 @@ class SyncService {
   final StorageService _storageService;
   final PhotoSyncService _photoSyncService;
   final ConnectivityService _connectivity;
+  final SyncWatermarkService _watermark;
 
   SyncService._internal()
       : _apiService = ApiService(),
         _storageService = StorageService(),
         _photoSyncService = PhotoSyncService(),
-        _connectivity = ConnectivityService();
+        _connectivity = ConnectivityService(),
+        _watermark = SyncWatermarkService();
 
   /// Konstruktor untuk pengujian: memungkinkan injeksi dependency.
   /// Argumen yang tidak diberikan jatuh ke singleton default.
@@ -33,10 +36,12 @@ class SyncService {
     StorageService? storageService,
     PhotoSyncService? photoSyncService,
     ConnectivityService? connectivity,
+    SyncWatermarkService? watermark,
   })  : _apiService = apiService ?? ApiService(),
         _storageService = storageService ?? StorageService(),
         _photoSyncService = photoSyncService ?? PhotoSyncService(),
-        _connectivity = connectivity ?? ConnectivityService();
+        _connectivity = connectivity ?? ConnectivityService(),
+        _watermark = watermark ?? SyncWatermarkService();
 
   // ==================== UPLOAD TO SERVER ====================
 
@@ -484,6 +489,15 @@ class SyncService {
       // Get project for photo field identification (once, outside the loop)
       final project = await _storageService.getProjectById(projectId);
 
+      // Delta sync: hanya tarik record yang berubah sejak pull sukses terakhir.
+      // Null → full pull (sync pertama). Watermark hanya dimajukan setelah
+      // seluruh halaman project sukses (lihat akhir metode).
+      final watermark = await _watermark.getLastPull(projectId);
+      final deltaParam = watermark != null
+          ? '&updated_after=${watermark.toUtc().toIso8601String()}'
+          : '';
+      DateTime? maxUpdatedAt;
+
       int savedCount = 0;
       int updatedCount = 0;
       int currentPage = 1;
@@ -495,7 +509,7 @@ class SyncService {
         );
 
         final response = await _apiService.get(
-          '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&page=$currentPage',
+          '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&page=$currentPage$deltaParam',
         );
 
         if (response.statusCode == 200) {
@@ -512,6 +526,12 @@ class SyncService {
               final geoData = GeoData.fromJson(
                 Map<String, dynamic>.from(geoDataList[i]),
               );
+
+              // Lacak updatedAt tertinggi (untuk memajukan watermark) atas
+              // SEMUA record, termasuk yang di-skip karena tak lebih baru.
+              if (maxUpdatedAt == null || geoData.updatedAt.isAfter(maxUpdatedAt)) {
+                maxUpdatedAt = geoData.updatedAt;
+              }
 
               // Check if geo data exists locally
               final existingGeoData = await _storageService.getGeoDataById(geoData.id);
@@ -562,6 +582,17 @@ class SyncService {
           );
         }
       } while (currentPage <= totalPages);
+
+      // Semua halaman sukses → majukan watermark ke updatedAt tertinggi yang
+      // terlihat (tak pernah mundur dari nilai sebelumnya).
+      DateTime? newWatermark = watermark;
+      if (maxUpdatedAt != null &&
+          (newWatermark == null || maxUpdatedAt.isAfter(newWatermark))) {
+        newWatermark = maxUpdatedAt;
+      }
+      if (newWatermark != null) {
+        await _watermark.setLastPull(projectId, newWatermark);
+      }
 
       return SyncResult(
         success: true,

@@ -66,10 +66,10 @@ Keputusan: backend BISA tambah `updated_after` → **delta sync berbasis waterma
 - [x] 6.1 `SyncWatermarkService` (get/set/clear last-pull per project, UTC, SharedPreferences) ✅
   - AC: set→get instant sama (UTC); kosong→null; clear hapus; terpisah per project ✅
   - Verify: unit test `setMockInitialValues` → 5 test hijau (total 31/31)
-- [ ] 6.2 (IMPORTANT) Delta pull di `pullGeoDataFromServer` (kirim `updated_after`, majukan watermark hanya saat sukses penuh)
-  - AC: URL memuat `updated_after` bila watermark ada; watermark maju setelah sukses; page error → tak maju; server abaikan param → tetap jalan
-  - Verify: unit test `SyncService.forTest` + fake ApiService.get/Storage/PhotoSync/watermark
-- [ ] **CP-G**: verifikasi backward-compat + korektnes watermark
+- [x] 6.2 (IMPORTANT) Delta pull di `pullGeoDataFromServer` (kirim `updated_after`, majukan watermark hanya saat sukses penuh) ✅
+  - AC: URL memuat `updated_after` bila watermark ada; watermark maju setelah sukses; page error → tak maju; server abaikan param → tetap jalan ✅
+  - Verify: unit test `SyncService.forTest` + fake ApiService.get/Storage/PhotoSync + watermark real (mock prefs) → 3 test hijau (34/34)
+- [x] **CP-G**: backward-compat aman (param aditif; klien tak bergantung server menghormatinya — per-record skip tetap jalan) + korektnes watermark (maju hanya saat sukses penuh, tak mundur) ✅
 - [ ] 6.3 Opsi `forceFull` (pull-to-refresh manual abaikan watermark)
   - AC: `forceFull:true` → tak kirim `updated_after`; tetap tulis watermark baru
   - Verify: unit test forceFull → URL tanpa param
