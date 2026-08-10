@@ -8,6 +8,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../models/geo_data_model.dart';
 import 'notification_service.dart';
+import '../../config/location_config.dart';
+import '../../utils/app_logger.dart';
 
 /// Service untuk background tracking dengan proper isolate communication
 @pragma('vm:entry-point')
@@ -39,11 +41,11 @@ class BackgroundTrackingService {
   /// Initialize background service
   Future<void> initialize() async {
     if (_isInitialized) {
-      print('⚠️ Background service already initialized');
+      logDebug('⚠️ Background service already initialized');
       return;
     }
     
-    print('🚀 Initializing background service...');
+    logDebug('🚀 Initializing background service...');
     
     try {
       // 1. Initialize notification FIRST (CRITICAL untuk Android)
@@ -69,19 +71,19 @@ class BackgroundTrackingService {
       );
       
       _isInitialized = true;
-      print('✅ Background service initialized');
+      logDebug('✅ Background service initialized');
       
     } catch (e) {
-      print('❌ Failed to initialize background service: $e');
+      logError('❌ Failed to initialize background service: $e');
       rethrow;
     }
   }
   
   // ✅ FIXED: Setup listeners dengan retry mechanism
   void _setupListeners() {
-    print('═══════════════════════════════════════');
-    print('📡 Setting up background service listeners...');
-    print('═══════════════════════════════════════');
+    logDebug('═══════════════════════════════════════');
+    logDebug('📡 Setting up background service listeners...');
+    logDebug('═══════════════════════════════════════');
     
     // Cancel existing subscriptions dan retry timer
     _locationUpdateSubscription?.cancel();
@@ -91,7 +93,7 @@ class BackgroundTrackingService {
     
     // Setup listener untuk data dari background
     _locationUpdateSubscription = _service.on('location_update').listen((event) {
-      print('🔔 LISTENER TRIGGERED! Event received: ${event != null}');
+      logDebug('🔔 LISTENER TRIGGERED! Event received: ${event != null}');
       
       // ✅ Reset retry count karena listener berhasil terima data
       _listenerRetryCount = 0;
@@ -110,18 +112,18 @@ class BackgroundTrackingService {
             ),
           );
           
-          print('📥 RECEIVED FROM BACKGROUND:');
-          print('   Raw event: $event');
-          print('   Lat: ${point.latitude}');
-          print('   Lon: ${point.longitude}');
-          print('   Time: ${point.timestamp}');
+          logDebug('📥 RECEIVED FROM BACKGROUND:');
+          logDebug('   Raw event: $event');
+          logDebug('   Lat: ${point.latitude}');
+          logDebug('   Lon: ${point.longitude}');
+          logDebug('   Time: ${point.timestamp}');
           
           _locationStreamController.add(point);
           
-          print('✅ Added to stream controller');
+          logDebug('✅ Added to stream controller');
         }
       } catch (e) {
-        print('❌ Error parsing location update: $e');
+        logError('❌ Error parsing location update: $e');
       }
     });
     
@@ -129,11 +131,11 @@ class BackgroundTrackingService {
     _statusSubscription = _service.on('service_status').listen((event) {
       if (event != null && event is Map) {
         _isRunning = event['isRunning'] as bool? ?? false;
-        print('📊 Service status: ${_isRunning ? "Running" : "Stopped"}');
+        logDebug('📊 Service status: ${_isRunning ? "Running" : "Stopped"}');
       }
     });
     
-    print('✅ Listeners setup complete');
+    logDebug('✅ Listeners setup complete');
     
     // ✅ NEW: Start verification timer - cek apakah listener benar-benar terkoneksi
     _startListenerVerification();
@@ -141,7 +143,7 @@ class BackgroundTrackingService {
   
   // ✅ NEW: Verify listener connection dengan retry
   void _startListenerVerification() {
-    print('🔍 Starting listener verification...');
+    logDebug('🔍 Starting listener verification...');
     
     _listenerRetryTimer?.cancel();
     
@@ -152,11 +154,11 @@ class BackgroundTrackingService {
     _listenerRetryTimer = Timer(const Duration(seconds: 3), () {
       if (_listenerRetryCount < _maxRetries) {
         _listenerRetryCount++;
-        print('⚠️ Listener not responding, retry #$_listenerRetryCount/$_maxRetries');
+        logDebug('⚠️ Listener not responding, retry #$_listenerRetryCount/$_maxRetries');
         
         // Retry setup dengan delay lebih lama
         final retryDelay = Duration(milliseconds: 1000 * _listenerRetryCount);
-        print('⏳ Retry in ${retryDelay.inMilliseconds}ms...');
+        logDebug('⏳ Retry in ${retryDelay.inMilliseconds}ms...');
         
         Future.delayed(retryDelay, () {
           if (_isRunning) {
@@ -164,33 +166,33 @@ class BackgroundTrackingService {
           }
         });
       } else {
-        print('❌ Listener setup failed after $_maxRetries retries');
-        print('⚠️ Background tracking may not work properly');
+        logError('❌ Listener setup failed after $_maxRetries retries');
+        logDebug('⚠️ Background tracking may not work properly');
       }
     });
   }
   
   /// Start background tracking
   Future<bool> start() async {
-    print('▶️ START BACKGROUND TRACKING CALLED');
+    logDebug('▶️ START BACKGROUND TRACKING CALLED');
     
     if (!_isInitialized) {
-      print('🔧 Service not initialized, initializing...');
+      logDebug('🔧 Service not initialized, initializing...');
       await initialize();
     }
     
     if (_isRunning) {
-      print('⚠️ Background service already running');
+      logDebug('⚠️ Background service already running');
       return true;
     }
     
     try {
       // Verifikasi permission di foreground sebelum start background service
-      print('🔑 Verifying location permission in foreground...');
+      logDebug('🔑 Verifying location permission in foreground...');
 
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        print('❌ Location service not enabled');
+        logError('❌ Location service not enabled');
         return false;
       }
 
@@ -200,16 +202,16 @@ class BackgroundTrackingService {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        print('❌ Location permission not granted: $permission');
+        logError('❌ Location permission not granted: $permission');
         return false;
       }
 
-      print('✅ Location permission verified: $permission');
+      logDebug('✅ Location permission verified: $permission');
 
       // Enable wakelock untuk menjaga tracking aktif
       if (Platform.isAndroid) {
         await WakelockPlus.enable();
-        print('🔋 WakeLock enabled');
+        logDebug('🔋 WakeLock enabled');
       }
 
       // iOS: background tracking ditangani oleh flutter_background_service.
@@ -217,7 +219,7 @@ class BackgroundTrackingService {
       // mengonfigurasi CLLocationManager untuk background.
       
       // Start service
-      print('🚀 Starting background service...');
+      logDebug('🚀 Starting background service...');
       final started = await _service.startService();
       
       if (started) {
@@ -227,8 +229,8 @@ class BackgroundTrackingService {
           'Location tracking active',
         );
         
-        print('✅ Background service started successfully');
-        print('📊 Service is running: $_isRunning');
+        logDebug('✅ Background service started successfully');
+        logDebug('📊 Service is running: $_isRunning');
         
         // ✅ CRITICAL FIX: Tunggu lebih lama untuk Android
         // Android butuh waktu lebih lama untuk fully initialize isolate
@@ -236,21 +238,21 @@ class BackgroundTrackingService {
             ? const Duration(milliseconds: 1500)  // Android: 1.5s
             : const Duration(milliseconds: 800);   // iOS: 0.8s
         
-        print('⏳ Waiting ${initDelay.inMilliseconds}ms for isolate initialization...');
+        logDebug('⏳ Waiting ${initDelay.inMilliseconds}ms for isolate initialization...');
         await Future.delayed(initDelay);
         
         _setupListeners();
-        print('✅ Listeners setup complete after service start');
+        logDebug('✅ Listeners setup complete after service start');
         
         return true;
       } else {
-        print('❌ Failed to start background service');
+        logError('❌ Failed to start background service');
         return false;
       }
       
     } catch (e) {
-      print('❌ Error starting background service: $e');
-      print('═══════════════════════════════════════');
+      logError('❌ Error starting background service: $e');
+      logDebug('═══════════════════════════════════════');
       return false;
     }
   }
@@ -262,18 +264,18 @@ class BackgroundTrackingService {
     try {
       _service.invoke('heartbeat');
     } catch (e) {
-      print('❌ Error sending heartbeat: $e');
+      logError('❌ Error sending heartbeat: $e');
     }
   }
   
   /// Stop background tracking
   Future<void> stop() async {
     if (!_isRunning) {
-      print('⚠️ Background service not running');
+      logDebug('⚠️ Background service not running');
       return;
     }
     
-    print('⏹️ Stopping background service...');
+    logDebug('⏹️ Stopping background service...');
     
     try {
       _service.invoke('stop_service');
@@ -281,7 +283,7 @@ class BackgroundTrackingService {
       // Disable wakelock
       if (Platform.isAndroid) {
         await WakelockPlus.disable();
-        print('🔋 WakeLock disabled');
+        logDebug('🔋 WakeLock disabled');
       }
       // iOS: tidak ada enableBackgroundMode yang perlu dimatikan,
       // flutter_background_service akan stop sendiri saat service.stopSelf() dipanggil.
@@ -294,10 +296,10 @@ class BackgroundTrackingService {
       _listenerRetryTimer?.cancel();
       
       _isRunning = false;
-      print('✅ Background service stopped');
+      logDebug('✅ Background service stopped');
       
     } catch (e) {
-      print('❌ Error stopping background service: $e');
+      logError('❌ Error stopping background service: $e');
     }
   }
   
@@ -305,7 +307,7 @@ class BackgroundTrackingService {
   Future<void> pause() async {
     if (!_isRunning) return;
     
-    print('⏸️ Pausing tracking...');
+    logDebug('⏸️ Pausing tracking...');
     _service.invoke('pause_tracking');
     
     await NotificationService.updateNotification(
@@ -318,7 +320,7 @@ class BackgroundTrackingService {
   Future<void> resume() async {
     if (!_isRunning) return;
     
-    print('▶️ Resuming tracking...');
+    logDebug('▶️ Resuming tracking...');
     _service.invoke('resume_tracking');
     
     await NotificationService.updateNotification(
@@ -334,47 +336,55 @@ class BackgroundTrackingService {
     WidgetsFlutterBinding.ensureInitialized();
     DartPluginRegistrant.ensureInitialized();
     
-    print('═══════════════════════════════════════');
-    print('BACKGROUND SERVICE STARTED IN ISOLATE');
-    print('═══════════════════════════════════════');
+    logDebug('═══════════════════════════════════════');
+    logDebug('BACKGROUND SERVICE STARTED IN ISOLATE');
+    logDebug('═══════════════════════════════════════');
     
     // Add delay to ensure plugins fully initialized
     await Future.delayed(const Duration(milliseconds: 500));
-    print('✅ Flutter bindings initialized');
+    logDebug('✅ Flutter bindings initialized');
     
     bool isPaused = false;
     int locationCount = 0;
+    // Akurasi filter adaptif: sebelum dapat fix bagus pertama, terima semua
+    // reading agar tracking tidak beku di area sinyal lemah. Konsisten dengan
+    // PhoneGpsService (foreground).
+    bool hasGoodFix = false;
+    // EMA smoothing state (konsisten dengan foreground) — diratakan agar
+    // track tetap halus. Dilewati saat bergerak cepat agar tidak lag.
+    double? smoothLat;
+    double? smoothLon;
     StreamSubscription<Position>? subscription;
     Timer? heartbeatTimer;
     DateTime lastHeartbeat = DateTime.now();
     
     try {
-      print('📍 Setting up Geolocator for background tracking...');
+      logDebug('📍 Setting up Geolocator for background tracking...');
       
       // Check if location service is enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        print('❌ Location service not enabled');
+        logError('❌ Location service not enabled');
         service.stopSelf();
         return;
       }
       
-      print('✅ Location service enabled');
-      print('✅ Permission assumed granted (verified in foreground)');
-      print('✅ Location settings configured');
+      logDebug('✅ Location service enabled');
+      logDebug('✅ Permission assumed granted (verified in foreground)');
+      logDebug('✅ Location settings configured');
       
       // ✅ NEW: Listen for ping test command
       service.on('ping_test').listen((event) {
-        print('Received from foreground');
+        logDebug('Received from foreground');
         // Send immediate location update as pong response
         if (locationCount > 0) {
-          print('Sending location update');
+          logDebug('Sending location update');
         }
       });
       
       // Listen for commands
       service.on('stop_service').listen((event) async {
-        print('⏹️ Stop command received in background');
+        logDebug('⏹️ Stop command received in background');
         heartbeatTimer?.cancel();
         await subscription?.cancel();
         await NotificationService.cancelNotification();
@@ -382,19 +392,19 @@ class BackgroundTrackingService {
       });
       
       service.on('pause_tracking').listen((event) {
-        print('⏸️ Pause command received in background');
+        logDebug('⏸️ Pause command received in background');
         isPaused = true;
       });
       
       service.on('resume_tracking').listen((event) {
-        print('▶️ Resume command received in background');
+        logDebug('▶️ Resume command received in background');
         isPaused = false;
       });
       
       // Listen for heartbeat from foreground
       service.on('heartbeat').listen((event) {
         lastHeartbeat = DateTime.now();
-        print('💓 Heartbeat received from foreground');
+        logDebug('💓 Heartbeat received from foreground');
       });
       
       // Start heartbeat checker - auto-stop if no heartbeat for 15 seconds
@@ -402,41 +412,43 @@ class BackgroundTrackingService {
         final timeSinceLastHeartbeat = DateTime.now().difference(lastHeartbeat);
         
         if (timeSinceLastHeartbeat.inSeconds > 15) {
-          print('❌ No heartbeat for ${timeSinceLastHeartbeat.inSeconds}s - app likely closed');
-          print('⏹️ Auto-stopping background service...');
+          logError('❌ No heartbeat for ${timeSinceLastHeartbeat.inSeconds}s - app likely closed');
+          logDebug('⏹️ Auto-stopping background service...');
           
           timer.cancel();
           await subscription?.cancel();
           await NotificationService.cancelNotification();
           service.stopSelf();
         } else {
-          print('💚 Service alive - last heartbeat ${timeSinceLastHeartbeat.inSeconds}s ago');
+          logDebug('💚 Service alive - last heartbeat ${timeSinceLastHeartbeat.inSeconds}s ago');
         }
       });
       
-      print('✅ Command listeners setup');
-      print('🚀 Starting Geolocator location stream...');
+      logDebug('✅ Command listeners setup');
+      logDebug('🚀 Starting Geolocator location stream...');
       
       // Background location settings dengan distanceFilter untuk hemat baterai
-      // dan kurangi noise — konsisten dengan PhoneGpsService di foreground.
+      // dan kurangi noise — konsisten dengan PhoneGpsService (LocationConfig).
+      final distanceFilterM = LocationConfig.distanceFilterMeters.toInt();
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.high,
-              distanceFilter: 2, // minimum 2 meter baru update
-              intervalDuration: const Duration(seconds: 1),
+              distanceFilter: distanceFilterM,
+              intervalDuration:
+                  const Duration(milliseconds: LocationConfig.trackingIntervalMs),
               forceLocationManager: false,
             )
           : Platform.isIOS
               ? AppleSettings(
                   accuracy: LocationAccuracy.high,
-                  distanceFilter: 2,
+                  distanceFilter: distanceFilterM,
                   activityType: ActivityType.other,
                   pauseLocationUpdatesAutomatically: false,
                   showBackgroundLocationIndicator: true, // tunjukkan indicator background di iOS
                 )
-              : const LocationSettings(
+              : LocationSettings(
                   accuracy: LocationAccuracy.high,
-                  distanceFilter: 2,
+                  distanceFilter: distanceFilterM,
                 );
 
       subscription = Geolocator.getPositionStream(
@@ -444,36 +456,67 @@ class BackgroundTrackingService {
       ).listen(
         (position) async {
           if (isPaused) {
-            print('⏸️ Tracking paused, skipping location');
+            logDebug('⏸️ Tracking paused, skipping location');
             return;
           }
 
-          // Accuracy filter
-          if (position.accuracy > 25.0) {
-            print('⚠️ BG: Skip — akurasi buruk (${position.accuracy.toStringAsFixed(1)}m)');
+          // Tandai fix bagus begitu akurasi cukup baik.
+          if (position.accuracy <= LocationConfig.goodFixThresholdMeters) {
+            hasGoodFix = true;
+          }
+
+          // Accuracy filter ADAPTIF — sebelum fix bagus, jangan buang reading.
+          final accuracyFilterActive =
+              hasGoodFix || !LocationConfig.acceptAllUntilGoodFix;
+          if (accuracyFilterActive &&
+              position.accuracy > LocationConfig.maxAccuracyMeters) {
+            logDebug('⚠️ BG: Skip — akurasi buruk (${position.accuracy.toStringAsFixed(1)}m)');
             return;
           }
 
-          // Speed filter — tolak spike GPS di atas 180 km/h
+          // Speed filter — tolak spike GPS yang tidak wajar.
           final speedMs = position.speed;
-          if (speedMs >= 0 && speedMs * 3.6 > 180.0) {
-            print('⚠️ BG: Skip — kecepatan tidak wajar (${(speedMs * 3.6).toStringAsFixed(1)} km/h)');
+          if (speedMs >= 0 &&
+              speedMs * 3.6 > LocationConfig.maxRealisticSpeedKmh) {
+            logDebug('⚠️ BG: Skip — kecepatan tidak wajar (${(speedMs * 3.6).toStringAsFixed(1)} km/h)');
             return;
           }
 
           locationCount++;
           
-          print('═══════════════════════════════════════');
-          print('📍 BACKGROUND ISOLATE #$locationCount');
-          print('   Lat: ${position.latitude}');
-          print('   Lon: ${position.longitude}');
-          print('   Accuracy: ${position.accuracy}m');
-          print('   Paused: $isPaused');
-          print('═══════════════════════════════════════');
-          
-          // Round coords to 6 decimal places (~11 cm precision)
-          final lat = (position.latitude * 1000000).round() / 1000000;
-          final lon = (position.longitude * 1000000).round() / 1000000;
+          logDebug('📍 BG #$locationCount '
+              '${position.latitude},${position.longitude} '
+              '±${position.accuracy.toStringAsFixed(1)}m paused=$isPaused');
+
+
+          // EMA smoothing — dilewati saat bergerak cepat agar marker tidak lag.
+          final speedKmhRaw = speedMs >= 0 ? speedMs * 3.6 : -1.0;
+          double outLat;
+          double outLon;
+          if (speedKmhRaw > LocationConfig.emaBypassSpeedKmh) {
+            // Gerak cepat: pakai koordinat mentah, tetap simpan sebagai basis EMA.
+            smoothLat = position.latitude;
+            smoothLon = position.longitude;
+            outLat = position.latitude;
+            outLon = position.longitude;
+          } else if (smoothLat == null || smoothLon == null) {
+            // Reading pertama — tanpa smoothing agar langsung responsif.
+            smoothLat = position.latitude;
+            smoothLon = position.longitude;
+            outLat = position.latitude;
+            outLon = position.longitude;
+          } else {
+            const alpha = LocationConfig.emaAlpha;
+            smoothLat = alpha * position.latitude + (1.0 - alpha) * smoothLat!;
+            smoothLon = alpha * position.longitude + (1.0 - alpha) * smoothLon!;
+            outLat = smoothLat!;
+            outLon = smoothLon!;
+          }
+
+          // Round coords sesuai LocationConfig.coordinateDecimals (~11 cm).
+          const rf = LocationConfig.coordinateRoundFactor;
+          final lat = (outLat * rf).round() / rf;
+          final lon = (outLon * rf).round() / rf;
           final speedKmh = speedMs >= 0 ? (speedMs * 3.6 * 10).round() / 10.0 : null;
 
           // ✅ CRITICAL: Send location to UI via service communication
@@ -486,10 +529,10 @@ class BackgroundTrackingService {
             'timestamp': position.timestamp.millisecondsSinceEpoch,
           };
           
-          print('📤 SENDING TO FOREGROUND: $locationMap');
+          logDebug('📤 SENDING TO FOREGROUND: $locationMap');
           
           service.invoke('location_update', locationMap);
-          print('✅ Data sent via service.invoke()');
+          logDebug('✅ Data sent via service.invoke()');
           
           // Save to SharedPreferences untuk persistence
           await _saveLocationToPrefs(
@@ -513,15 +556,15 @@ class BackgroundTrackingService {
           service.invoke('service_status', {'isRunning': true});
         },
         onError: (error) {
-          print('❌ Location stream error in background: $error');
+          logError('❌ Location stream error in background: $error');
         },
       );
       
-      print('✅ Location tracking started in background isolate');
-      print('═══════════════════════════════════════');
+      logDebug('✅ Location tracking started in background isolate');
+      logDebug('═══════════════════════════════════════');
       
     } catch (e) {
-      print('❌ Error in background service: $e');
+      logError('❌ Error in background service: $e');
       service.stopSelf();
     }
   }
@@ -531,7 +574,7 @@ class BackgroundTrackingService {
   static Future<bool> _onIosBackground(ServiceInstance service) async {
     WidgetsFlutterBinding.ensureInitialized();
     DartPluginRegistrant.ensureInitialized();
-    print('📱 iOS background handler called');
+    logDebug('📱 iOS background handler called');
     return true;
   }
   
@@ -552,7 +595,7 @@ class BackgroundTrackingService {
       if (speed != null) await prefs.setDouble('last_speed', speed);
       await prefs.setInt('last_time', DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
-      print('❌ Error saving location to prefs: $e');
+      logError('❌ Error saving location to prefs: $e');
     }
   }
 
@@ -576,7 +619,7 @@ class BackgroundTrackingService {
         ),
       );
     } catch (e) {
-      print('❌ Error loading last location: $e');
+      logError('❌ Error loading last location: $e');
       return null;
     }
   }

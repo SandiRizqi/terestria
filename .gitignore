@@ -39,6 +39,11 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# ...KECUALI symbols rilis yang diarsipkan per versi (wajib disimpan untuk
+# membaca crash report Dart obfuscated). Jangan hapus folder ini.
+!/release_symbols/
+!/release_symbols/**
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
@@ -48,3 +53,7 @@ app.*.map.json
 
 /android/app/google-services.json
 .claude
+*.md
+
+/tasks/
+docs/*

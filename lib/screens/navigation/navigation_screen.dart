@@ -27,6 +27,7 @@ import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
 import 'widgets/instruction_bar.dart';
+import 'widgets/step_list_sheet.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -79,7 +80,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   LatLng?            _destinationPoint;
   SnappedResult?     _snapped;
   int                _currentSegment  = 0;
-  RouteInstruction?  _currentInstruction;
+  String             _activeProfile   = 'car_recommended'; // car | car_recommended | foot
+  RouteInstruction?  _currentInstruction;   // upcoming maneuver (shown to user)
+  RouteInstruction?  _followingInstruction; // maneuver after the upcoming one
   double             _distToNext      = 0;
   bool               _isNavigating    = false;
   bool               _isFollowingUser = false; // auto-center map on GPS updates
@@ -284,7 +287,13 @@ class _NavigationScreenState extends State<NavigationScreen>
       );
       _currentSegment = snap.segmentIndex;
 
-      final instr = _routingService.updateInstruction(
+      // Show the UPCOMING maneuver (ahead of the current segment) so the
+      // prompt appears BEFORE the turn — Google-style — instead of the
+      // maneuver we are already on.
+      final instr = _routingService.upcomingInstruction(
+        _currentSegment, _routeResult!.instructions,
+      );
+      final following = _routingService.followingInstruction(
         _currentSegment, _routeResult!.instructions,
       );
       final distNext = _routingService.distanceToNextInstruction(
@@ -318,8 +327,9 @@ class _NavigationScreenState extends State<NavigationScreen>
         _currentGps         = point;
         _snapped            = snap;
         _isOffRoute         = snap.isOffRoute;
-        _currentInstruction = instr;
-        _distToNext         = distNext;
+        _currentInstruction   = instr;
+        _followingInstruction = following;
+        _distToNext           = distNext;
       });
     } else {
       setState(() {
@@ -336,7 +346,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   Future<void> _calculateRoute({
     required LatLng to,
-    String profile  = 'car',
+    String? profile,                // null → reuse the last chosen profile
     bool fitBounds  = true, // false when recalculating during active navigation
   }) async {
     if (_isInitializingRouter) {
@@ -347,11 +357,16 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (gps == null) { _showSnackBar('⚠️ GPS not available yet'); return; }
     if (_osmFilePath == null) { _showOsmMissingDialog(); return; }
 
+    // Persist the active profile so off-route recalculation keeps the same
+    // vehicle + mode (car / car_recommended / foot) instead of reverting to car.
+    final activeProfile = profile ?? _activeProfile;
+    _activeProfile = activeProfile;
+
     setState(() { _isCalculating = true; _isOffRoute = false; });
     try {
       final from   = LatLng(gps.latitude, gps.longitude);
       final result = await _routingService.calculateRoute(
-        from: from, to: to, profile: profile,
+        from: from, to: to, profile: activeProfile,
       );
       if (!mounted) return;
       if (result == null) {
@@ -362,9 +377,12 @@ class _NavigationScreenState extends State<NavigationScreen>
         _routeResult        = result;
         _destinationPoint   = to;
         _currentSegment     = 0;
-        _currentInstruction = result.instructions.isNotEmpty
-            ? result.instructions.first
-            : null;
+        _currentInstruction = _routingService.upcomingInstruction(
+          0, result.instructions,
+        );
+        _followingInstruction = _routingService.followingInstruction(
+          0, result.instructions,
+        );
       });
       // Only zoom to fit the full route when explicitly requested —
       // never during active navigation (would zoom out and break follow mode)
@@ -374,6 +392,20 @@ class _NavigationScreenState extends State<NavigationScreen>
     } finally {
       if (mounted) setState(() => _isCalculating = false);
     }
+  }
+
+  String get _profileLabel {
+    switch (_activeProfile) {
+      case 'car_recommended': return 'Rekomendasi';
+      case 'foot':            return 'Jalan kaki';
+      default:                return 'Tercepat';
+    }
+  }
+
+  void _showStepList() {
+    final route = _routeResult;
+    if (route == null) return;
+    showStepListSheet(context, route: route, currentSegment: _currentSegment);
   }
 
   void _startNavigation() {
@@ -393,6 +425,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _isFollowingUser    = false; // disengage follow mode
       _isOffRoute         = false;
       _currentInstruction = null;
+      _followingInstruction = null;
     });
   }
 
@@ -899,6 +932,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                 ? InstructionBar(
                     instruction:    _currentInstruction,
                     distanceToNext: _distToNext,
+                    following:      _followingInstruction,
                     isOffRoute:     _isOffRoute,
                   )
                 : _isCalculating
@@ -1300,7 +1334,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                     ),
                   ),
                   Text(
-                    '${_routeResult!.formattedDistance}  •  ${_routeResult!.formattedTime}',
+                    '$_profileLabel  •  ${_routeResult!.formattedDistance}  •  ${_routeResult!.formattedTime}',
                     style: TextStyle(
                       fontSize: 11,
                       color:    _isNavigating
@@ -1309,6 +1343,25 @@ class _NavigationScreenState extends State<NavigationScreen>
                     ),
                   ),
                 ],
+              ),
+            ),
+            // Directions / step list button (always available with a route)
+            GestureDetector(
+              onTap: _showStepList,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: _isNavigating
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : AppTheme.primaryGreen.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.list_alt_rounded,
+                  color: _isNavigating ? Colors.white : AppTheme.primaryGreen,
+                  size: 18,
+                ),
               ),
             ),
             // Start button (not yet navigating)
@@ -1840,25 +1893,46 @@ class _RouteTargetSheet extends StatelessWidget {
               ),
             ),
           ] else ...[
+            // ── Mobil: pilih mode rute ──
+            Text('Mobil',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade600)),
+            const SizedBox(height: 6),
             Row(children: [
               Expanded(
                 child: _RouteBtn(
-                  icon:  Icons.directions_car_rounded,
-                  label: 'Car / Motorcycle',
+                  icon:  Icons.recommend_rounded,
+                  label: 'Rekomendasi',
+                  sublabel: 'Utamakan jalan utama',
                   color: AppTheme.primaryGreen,
-                  onTap: () => onRoute('car'),
+                  highlighted: true,
+                  onTap: () => onRoute('car_recommended'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _RouteBtn(
-                  icon:  Icons.directions_walk_rounded,
-                  label: 'Walking',
+                  icon:  Icons.bolt_rounded,
+                  label: 'Tercepat',
+                  sublabel: 'Waktu tempuh minimum',
                   color: AppTheme.darkGreen,
-                  onTap: () => onRoute('foot'),
+                  onTap: () => onRoute('car'),
                 ),
               ),
             ]),
+            const SizedBox(height: 10),
+            // ── Jalan kaki ──
+            SizedBox(
+              width: double.infinity,
+              child: _RouteBtn(
+                icon:  Icons.directions_walk_rounded,
+                label: 'Jalan kaki',
+                color: AppTheme.accentGreen,
+                onTap: () => onRoute('foot'),
+              ),
+            ),
           ],
           const SizedBox(height: 8),
         ],
@@ -1871,7 +1945,9 @@ class _RouteTargetSheet extends StatelessWidget {
 class _RouteBtn extends StatelessWidget {
   final IconData     icon;
   final String       label;
+  final String?      sublabel;
   final Color        color;
+  final bool         highlighted;
   final VoidCallback onTap;
 
   const _RouteBtn({
@@ -1879,20 +1955,59 @@ class _RouteBtn extends StatelessWidget {
     required this.label,
     required this.color,
     required this.onTap,
+    this.sublabel,
+    this.highlighted = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton.icon(
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        if (sublabel != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            sublabel!,
+            style: TextStyle(
+                fontSize: 10, color: Colors.white.withValues(alpha: 0.85)),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    );
+
+    return ElevatedButton(
       onPressed: onTap,
-      icon:      Icon(icon, size: 18),
-      label:     Text(label, style: const TextStyle(fontSize: 13)),
       style: ElevatedButton.styleFrom(
         backgroundColor: color,
         foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: highlighted ? 3 : 1,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: highlighted
+              ? const BorderSide(color: Colors.white, width: 1.5)
+              : BorderSide.none,
+        ),
       ),
+      child: content,
     );
   }
 }

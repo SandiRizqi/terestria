@@ -10,6 +10,8 @@ import 'background/background_tracking_service.dart';
 import 'background/phone_gps_service.dart';
 import 'gps_logger_service.dart';
 import 'crashlytics_service.dart';
+import '../utils/app_logger.dart';
+import '../config/location_config.dart';
 
 // Enums untuk Location Provider
 enum LocationProvider { phone, emlid }
@@ -62,70 +64,77 @@ class LocationServiceV2 {
   
   bool get isEmlidStreaming {
     if (!_isEmlidConnected || _lastEmlidDataTime == null) return false;
-    return DateTime.now().difference(_lastEmlidDataTime!).inSeconds < 10;
+    return DateTime.now().difference(_lastEmlidDataTime!).inSeconds <
+        LocationConfig.emlidStaleSeconds;
   }
+
+  /// True bila provider Emlid dipilih TAPI datanya tidak streaming (stale /
+  /// belum konek). Saat ini sistem otomatis fallback ke GPS phone.
+  bool get _shouldFallbackToPhone =>
+      _currentProvider == LocationProvider.emlid &&
+      (!_isEmlidConnected || !isEmlidStreaming);
   
   // ============================================================================
   // INITIALIZATION
   // ============================================================================
 Future<bool> initialize() async {
-  print('Initializing LocationService...');
+  logDebug('Initializing LocationService...');
  
   try {
     // 1. Check if location service is enabled
-    print('Checking location service...');
+    logDebug('Checking location service...');
     final serviceEnabled = await PermissionService.isLocationServiceEnabled();
     
     if (!serviceEnabled) {
-      print('❌ Location service is disabled');
+      logError('❌ Location service is disabled');
       throw Exception('Location service is disabled. Please enable GPS in device settings.');
     }
-    print('✅ Location service is enabled');
+    logDebug('✅ Location service is enabled');
     
     // 2. Request permissions
-    print('Requesting permissions...');
+    logDebug('Requesting permissions...');
     final hasPermission = await PermissionService.requestAllPermissions();
     
     if (!hasPermission) {
-      print('❌ Failed to get required permissions');
+      logError('❌ Failed to get required permissions');
       
       // Print detailed status for debugging
       final status = await PermissionService.getDetailedStatus();
-      print('📊 Detailed Status: $status');
+      logDebug('📊 Detailed Status: $status');
       
       throw Exception('Location permissions not granted. Please allow location access in Settings.');
     }
-    print('✅ Permissions granted');
+    logDebug('✅ Permissions granted');
     
     // 3. Verify permission again
-    print('📍 Step 3/5: Verifying permissions...');
+    logDebug('📍 Step 3/5: Verifying permissions...');
     final hasLocationPermission = await PermissionService.hasLocationPermission();
     
     if (!hasLocationPermission) {
-      print('❌ Permission verification failed');
+      logError('❌ Permission verification failed');
       throw Exception('Permission verification failed after grant');
     }
-    print('✅ Permissions verified');
+    logDebug('✅ Permissions verified');
     
     // 4. Initialize notification service
-    print('📍 Step 4/5: Initializing notification service...');
+    logDebug('📍 Step 4/5: Initializing notification service...');
     try {
       await NotificationService.initialize();
-      print('✅ Notification service initialized');
+      logDebug('✅ Notification service initialized');
     } catch (e, stack) {
-      print('⚠️ Notification service initialization failed: $e');
+      logDebug('⚠️ Notification service initialization failed: $e');
       crashlytics.recordError(e, stack,
           reason: 'GPS: Notification service init failed');
       // Continue anyway - not critical for iOS
     }
 
     // 5. Initialize background tracking service
-    print('📍 Step 5/5: Initializing background tracking...');
+    logDebug('📍 Step 5/5: Initializing background tracking...');
     try {
       await _backgroundTracking.initialize();
-      print('✅ Background tracking service initialized');
+      logDebug('✅ Background tracking service initialized');
     } catch (e, stack) {
-      print('⚠️ Background tracking initialization failed: $e');
+      logDebug('⚠️ Background tracking initialization failed: $e');
       crashlytics.recordError(e, stack,
           reason: 'GPS: Background tracking service init failed');
       // Continue anyway - can still use foreground tracking
@@ -133,23 +142,23 @@ Future<bool> initialize() async {
     
     // 6. Load saved settings
     await loadLocationSettings();
-    print('✅ Settings loaded');
-    print('✅ LocationService initialized successfully');
+    logDebug('✅ Settings loaded');
+    logDebug('✅ LocationService initialized successfully');
 
     if (_currentProvider == LocationProvider.phone) {
       await _phoneGps.startTracking();
-      print('✅ Started foreground GPS tracking');
+      logDebug('✅ Started foreground GPS tracking');
     }
 
 
     return true;
     
   } catch (e, stackTrace) {
-    print('❌ ========================================');
-    print('❌ Failed to initialize LocationServiceV2');
-    print('❌ Error: $e');
-    print('❌ ========================================');
-    print('Stack trace: $stackTrace');
+    logError('❌ ========================================');
+    logError('❌ Failed to initialize LocationServiceV2');
+    logError('❌ Error: $e');
+    logError('❌ ========================================');
+    logDebug('Stack trace: $stackTrace');
     crashlytics.log('GPS init failed: $e');
     crashlytics.setContext('gps_provider', _currentProvider.name);
     crashlytics.recordError(e, stackTrace,
@@ -178,23 +187,23 @@ Future<bool> initialize() async {
     _isActivelyTracking = true;
     _activeTrackingPoints.clear();
     await _gpsLogger.startSession();
-    print('✅ Active tracking started');
+    logDebug('✅ Active tracking started');
   }
   
   void pauseActiveTracking() {
     _isActivelyTracking = true; // Still tracking, just paused
-    print('⏸️ Active tracking paused');
+    logDebug('⏸️ Active tracking paused');
   }
   
   void resumeActiveTracking() {
     _isActivelyTracking = true;
-    print('▶️ Active tracking resumed');
+    logDebug('▶️ Active tracking resumed');
   }
   
   Future<void> stopActiveTracking() async {
     _isActivelyTracking = false;
     await _gpsLogger.stopSession();
-    print('⏹️ Active tracking stopped');
+    logDebug('⏹️ Active tracking stopped');
   }
 
   void addTrackingPoint(GeoPoint point) {
@@ -221,19 +230,33 @@ Future<bool> initialize() async {
   
   /// Get current location (single shot)
   Future<GeoPoint?> getCurrentLocation() async {
-    if (_currentProvider == LocationProvider.emlid && _isEmlidConnected) {
+    if (_currentProvider == LocationProvider.emlid &&
+        _isEmlidConnected &&
+        isEmlidStreaming) {
       // Return last known Emlid location
       return await _backgroundTracking.getLastSavedLocation();
     }
-    
+
+    // Provider Emlid tapi stale/terputus → fallback otomatis ke GPS phone.
+    if (_shouldFallbackToPhone) {
+      logDebug('⚠️ Emlid stale/terputus — fallback getCurrentLocation ke phone GPS');
+    }
+
     // Use phone GPS
     return await _phoneGps.getCurrentLocation();
   }
-  
+
   /// Get continuous location stream based on active provider
   Stream<GeoPoint> getActiveLocationStream() {
-    if (_currentProvider == LocationProvider.emlid && _isEmlidConnected) {
+    if (_currentProvider == LocationProvider.emlid &&
+        _isEmlidConnected &&
+        isEmlidStreaming) {
       return trackEmlidLocation();
+    }
+    // Provider Emlid tapi stale/terputus → fallback otomatis ke GPS phone
+    // supaya posisi tidak beku saat Emlid berhenti mengirim data.
+    if (_shouldFallbackToPhone) {
+      logDebug('⚠️ Emlid stale/terputus — fallback stream ke phone GPS');
     }
     return trackLocation();
   }
@@ -262,9 +285,9 @@ Future<bool> initialize() async {
   
   /// Start background location tracking
   Future<bool> startBackgroundTracking() async {
-    print('═══════════════════════════════════════');
-    print('📍 Starting background tracking...');
-    print('═══════════════════════════════════════');
+    logDebug('═══════════════════════════════════════');
+    logDebug('📍 Starting background tracking...');
+    logDebug('═══════════════════════════════════════');
     
     try {
       // 🔧 FIX: Cancel existing subscription untuk avoid duplicate
@@ -273,47 +296,47 @@ Future<bool> initialize() async {
       
       // Ensure initialized
       if (!_backgroundTracking.isRunning) {
-        print('🚀 Background service not running, starting...');
+        logDebug('🚀 Background service not running, starting...');
         
         final success = await _backgroundTracking.start();
         if (!success) {
-          print('❌ Failed to start background tracking service');
-          print('═══════════════════════════════════════');
+          logError('❌ Failed to start background tracking service');
+          logDebug('═══════════════════════════════════════');
           return false;
         }
         
-        print('✅ Background service started successfully');
+        logDebug('✅ Background service started successfully');
       } else {
-        print('✅ Background service already running');
+        logDebug('✅ Background service already running');
       }
       
       // 🔧 FIX: HANYA SATU listener, simpan subscription untuk cleanup
-      print('📡 Setting up location stream listener...');
+      logDebug('📡 Setting up location stream listener...');
       _backgroundTrackingSubscription = _backgroundTracking.locationStream.listen(
         (point) {
-          print('📥 RECEIVED in LocationServiceV2:');
-          print('   Lat: ${point.latitude}');
-          print('   Lon: ${point.longitude}');
-          print('   Time: ${point.timestamp}');
+          logDebug('📥 RECEIVED in LocationServiceV2:');
+          logDebug('   Lat: ${point.latitude}');
+          logDebug('   Lon: ${point.longitude}');
+          logDebug('   Time: ${point.timestamp}');
           
           addTrackingPoint(point);
           
           // Debug: Print total points
-          print('✅ Added to tracking points (Total: ${_activeTrackingPoints.length})');
+          logDebug('✅ Added to tracking points (Total: ${_activeTrackingPoints.length})');
         },
         onError: (error) {
-          print('❌ Error in background location stream: $error');
+          logError('❌ Error in background location stream: $error');
         },
         cancelOnError: false,
       );
       
-      print('✅ Background tracking listener setup complete');
-      print('═══════════════════════════════════════');
+      logDebug('✅ Background tracking listener setup complete');
+      logDebug('═══════════════════════════════════════');
       return true;
       
     } catch (e, stack) {
-      print('❌ Error starting background tracking: $e');
-      print('═══════════════════════════════════════');
+      logError('❌ Error starting background tracking: $e');
+      logDebug('═══════════════════════════════════════');
       crashlytics.setContext('gps_provider', _currentProvider.name);
       crashlytics.recordError(e, stack,
           reason: 'GPS: startBackgroundTracking failed');
@@ -326,26 +349,26 @@ Future<bool> initialize() async {
     try {
       _backgroundTracking.sendHeartbeat();
     } catch (e) {
-      print('❌ Error sending heartbeat: $e');
+      logError('❌ Error sending heartbeat: $e');
     }
   }
   
   
   /// Stop background location tracking
   Future<void> stopBackgroundTracking() async {
-    print('═══════════════════════════════════════');
-    print('⏹️ Stopping background tracking...');
-    print('═══════════════════════════════════════');
+    logDebug('═══════════════════════════════════════');
+    logDebug('⏹️ Stopping background tracking...');
+    logDebug('═══════════════════════════════════════');
     
     // 🔧 FIX: Cancel subscription first
     await _backgroundTrackingSubscription?.cancel();
     _backgroundTrackingSubscription = null;
-    print('✅ Subscription cancelled');
+    logDebug('✅ Subscription cancelled');
     
     // Stop background service
     await _backgroundTracking.stop();
-    print('✅ Background service stopped');
-    print('═══════════════════════════════════════');
+    logDebug('✅ Background service stopped');
+    logDebug('═══════════════════════════════════════');
   }
   
   /// Pause background tracking
@@ -373,7 +396,7 @@ Future<bool> initialize() async {
     _currentProvider = provider;
     _requiredFixQuality = requiredFixQuality;
     await _saveLocationSettings();
-    print('📍 Provider set to: ${provider.name}, Quality: ${requiredFixQuality.name}');
+    logDebug('📍 Provider set to: ${provider.name}, Quality: ${requiredFixQuality.name}');
   }
   
   Future<void> loadLocationSettings() async {
@@ -386,9 +409,9 @@ Future<bool> initialize() async {
       final fixQualityIndex = prefs.getInt('fix_quality') ?? 0;
       _requiredFixQuality = FixQuality.values[fixQualityIndex];
       
-      print('📖 Loaded settings - Provider: ${_currentProvider.name}, Fix: ${_requiredFixQuality.name}');
+      logDebug('📖 Loaded settings - Provider: ${_currentProvider.name}, Fix: ${_requiredFixQuality.name}');
     } catch (e, stack) {
-      print('❌ Failed to load location settings: $e');
+      logError('❌ Failed to load location settings: $e');
       crashlytics.recordError(e, stack, reason: 'GPS: Load settings failed');
       _currentProvider = LocationProvider.phone;
       _requiredFixQuality = FixQuality.any;
@@ -400,9 +423,9 @@ Future<bool> initialize() async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('location_provider', _currentProvider.index);
       await prefs.setInt('fix_quality', _requiredFixQuality.index);
-      print('💾 Saved settings');
+      logDebug('💾 Saved settings');
     } catch (e) {
-      print('❌ Failed to save location settings: $e');
+      logError('❌ Failed to save location settings: $e');
     }
   }
   
@@ -420,9 +443,9 @@ Future<bool> initialize() async {
       await prefs.setString('emlid_host', host);
       await prefs.setInt('emlid_port', port);
       await prefs.setInt('emlid_format', format.index);
-      print('💾 Saved Emlid settings - $host:$port');
+      logDebug('💾 Saved Emlid settings - $host:$port');
     } catch (e) {
-      print('❌ Failed to save Emlid settings: $e');
+      logError('❌ Failed to save Emlid settings: $e');
     }
   }
   
@@ -435,7 +458,7 @@ Future<bool> initialize() async {
         'format': prefs.getInt('emlid_format')?.toString(),
       };
     } catch (e) {
-      print('❌ Failed to load Emlid settings: $e');
+      logError('❌ Failed to load Emlid settings: $e');
       return {'host': null, 'port': null, 'format': null};
     }
   }
@@ -446,7 +469,7 @@ Future<bool> initialize() async {
     required CoordinateFormat coordinateFormat,
   }) async {
     try {
-      print('🔌 Connecting to Emlid at $host:$port...');
+      logDebug('🔌 Connecting to Emlid at $host:$port...');
       _addConsoleLog('Connecting to $host:$port...');
       
       await disconnectEmlidTCP();
@@ -549,7 +572,7 @@ Future<bool> initialize() async {
       _emlidBuffer = '';
       _addConsoleLog('Disconnected');
     } catch (e) {
-      print('❌ Error disconnecting: $e');
+      logError('❌ Error disconnecting: $e');
     }
   }
   
@@ -835,7 +858,7 @@ Future<bool> initialize() async {
   // ============================================================================
   
   void dispose() {
-    print('🗑️ Disposing LocationServiceV2...');
+    logDebug('🗑️ Disposing LocationServiceV2...');
 
     // Cancel background tracking subscription
     _backgroundTrackingSubscription?.cancel();
@@ -854,6 +877,6 @@ Future<bool> initialize() async {
     _phoneGps.dispose();
     _backgroundTracking.dispose();
 
-    print('✅ LocationServiceV2 disposed');
+    logDebug('✅ LocationServiceV2 disposed');
   }
 }

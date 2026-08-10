@@ -1,4 +1,4 @@
-import 'dart:math' show cos, asin, sqrt;
+import 'dart:math' show cos, sin, asin, sqrt;
 import 'package:latlong2/latlong.dart';
 
 /// Turn sign constants (same values as GraphHopper)
@@ -60,6 +60,50 @@ class RouteInstruction {
   String get formattedDistance {
     if (distance < 1000) return '${distance.toStringAsFixed(0)} m';
     return '${(distance / 1000).toStringAsFixed(1)} km';
+  }
+
+  /// Best-effort street/road name extracted from GraphHopper's [text].
+  /// e.g. "Turn right onto Jl. Merdeka" → "Jl. Merdeka",
+  ///      "Belok kanan ke Jalan Sudirman" → "Jalan Sudirman".
+  /// Returns '' when no road name is present (e.g. roundabouts, finish).
+  String get streetName {
+    final t = text.trim();
+    if (t.isEmpty) return '';
+    // Connector words that precede a road name across GraphHopper locales.
+    final markers = [' onto ', ' on ', ' ke ', ' menuju ', ' di ', ' pada '];
+    for (final m in markers) {
+      final idx = t.toLowerCase().indexOf(m);
+      if (idx != -1) {
+        final name = t.substring(idx + m.length).trim();
+        // Only accept the cut when it looks like a road name — connectors
+        // also appear before directions/targets ("Tiba di tujuan",
+        // "Belok kanan ke arah selatan"), which are not street names.
+        if (name.isNotEmpty && !_isNonStreetWord(name)) return name;
+      }
+    }
+    // If the text doesn't merely restate the maneuver, surface it as-is.
+    final startsGeneric = _genericManeuverWords
+        .any((g) => t.toLowerCase().startsWith(g));
+    return startsGeneric ? '' : t;
+  }
+
+  static const _genericManeuverWords = [
+    'turn', 'continue', 'keep', 'arrive', 'depart', 'head',
+    'belok', 'lurus', 'lanjut', 'tiba', 'jaga', 'putar', 'sedikit',
+  ];
+
+  /// Words that follow a connector but are NOT street names: directions,
+  /// destinations, roundabout phrasing (EN + ID GraphHopper locales).
+  static const _nonStreetWords = [
+    'tujuan', 'kiri', 'kanan', 'arah', 'bundaran',
+    'utara', 'selatan', 'timur', 'barat',
+    'destination', 'left', 'right', 'roundabout',
+    'north', 'south', 'east', 'west',
+  ];
+
+  static bool _isNonStreetWord(String name) {
+    final first = name.toLowerCase().split(RegExp(r'\s+')).first;
+    return _nonStreetWords.contains(first);
   }
 
   /// Localized direction label mapped from sign
@@ -188,9 +232,11 @@ class RouteResult {
     const toRad = 3.141592653589793 / 180;
     final dLat  = (lat2 - lat1) * toRad;
     final dLon  = (lon2 - lon1) * toRad;
-    final a     = (dLat / 2) * (dLat / 2) +
+    final sinLat = sin(dLat / 2);
+    final sinLon = sin(dLon / 2);
+    final a     = sinLat * sinLat +
         cos(lat1 * toRad) * cos(lat2 * toRad) *
-            (dLon / 2) * (dLon / 2);
+            sinLon * sinLon;
     return r * 2 * asin(sqrt(a.clamp(0.0, 1.0)));
   }
 }

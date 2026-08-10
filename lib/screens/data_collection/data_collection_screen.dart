@@ -1309,7 +1309,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
         // PENTING: Delay lebih lama dan pastikan map controller ready
         Future.delayed(const Duration(milliseconds: 1000), () {
-          if (mounted && _mapController.camera != null) {
+          if (mounted) {
             try {
               // FIX: LatLngBounds constructor menerima southwest dan northeast corners
               // southwest = LatLng(minLat, minLon)
@@ -1408,7 +1408,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     if (initialLocation != null && !_hasInitialZoom) {
       // Wait untuk map controller ready
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _mapController.camera != null) {
+        if (mounted) {
           try {
             _mapController.move(
               LatLng(initialLocation.latitude, initialLocation.longitude), 
@@ -3381,9 +3381,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                         : 15, // Non-PDF: zoom lebih tinggi ke user location
                     onTap: _onMapTap,
                     onPositionChanged: (position, hasGesture) {
-                      _currentZoom = position.zoom ?? _currentZoom;
+                      _currentZoom = position.zoom;
                       setState(() {
-                        _centerCoordinates = position.center!;
+                        _centerCoordinates = position.center;
                       });
                       // P2: debounce culling 200ms agar tidak terlalu sering
                       _cullingDebounce?.cancel();

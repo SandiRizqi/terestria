@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Menahan resource yang dirujuk lewat NAMA/STRING (bukan R.id), sehingga
+  tidak dihapus oleh `shrinkResources true`.
+
+  Kritis — ikon notifikasi yang dipanggil via string Dart:
+    * ic_stat_edit_location  → NotificationService + AndroidManifest (FCM default)
+    * ic_stat_notification   → FirebaseMessagingService (init FCM)
+  Resource shrinker tidak mendeteksi referensi dari string Dart, jadi wajib
+  di-keep. Pakai wildcard ic_stat_* agar ikon notifikasi lain ikut aman.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_*,@mipmap/ic_launcher,@mipmap/ic_launcher_*,@mipmap/launcher_icon,@drawable/launcher_icon,@drawable/ic_launcher_foreground" />

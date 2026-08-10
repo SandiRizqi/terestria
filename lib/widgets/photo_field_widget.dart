@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -112,6 +113,26 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
 
   // Watermark: device ID loaded once from SharedPreferences
   String? _deviceId;
+
+  // Watermark: Terestria logo decoded once and cached across instances.
+  static ui.Image? _cachedLogo;
+
+  /// Load (and cache) the transparent Terestria logo for the watermark.
+  Future<ui.Image?> _loadLogo() async {
+    if (_cachedLogo != null) return _cachedLogo;
+    try {
+      final data = await rootBundle
+          .load('assets/terestria_logo_square-removebg-preview.png');
+      final codec =
+          await ui.instantiateImageCodec(data.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      _cachedLogo = frame.image;
+      return _cachedLogo;
+    } catch (e) {
+      print('⚠️ Watermark: failed to load logo: $e');
+      return null;
+    }
+  }
 
   // ─────────────────────────────────────────────────────────
   // Lifecycle
@@ -301,74 +322,167 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       // Draw original image
       canvas.drawImage(original, Offset.zero, Paint());
 
-      // ── Watermark text lines ──
-      final now = DateTime.now();
-      final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(now);
+      // ─────────────────────────────────────────────────────────
+      // Premium watermark card (bottom-left) with Terestria logo
+      // ─────────────────────────────────────────────────────────
+      final now     = DateTime.now();
+      final dateStr = DateFormat('dd MMM yyyy').format(now);
+      final timeStr = DateFormat('HH:mm:ss').format(now);
 
-      final latStr = widget.latitude != null
-          ? widget.latitude!.toStringAsFixed(6)
-          : 'N/A';
-      final lngStr = widget.longitude != null
-          ? widget.longitude!.toStringAsFixed(6)
-          : 'N/A';
+      String fmtLat(double? v) => v == null
+          ? 'N/A'
+          : '${v >= 0 ? 'N' : 'S'} ${v.abs().toStringAsFixed(6)}°';
+      String fmtLng(double? v) => v == null
+          ? 'N/A'
+          : '${v >= 0 ? 'E' : 'W'} ${v.abs().toStringAsFixed(6)}°';
 
-      final lines = [
-        'Terestria v${ApiConfig.appVersion}',
-        'User: ${widget.username ?? 'Unknown'}',
-        'Lat: $latStr',
-        'Lng: $lngStr',
-        'ID: ${_deviceId ?? 'N/A'}',
-        dateStr,
-      ];
+      // Scale everything relative to the photo's width so the card looks
+      // consistent on any resolution.
+      final unit      = (w * 0.0125).clamp(9.0, 26.0);
+      final pad       = unit * 1.25;
+      final brandSize = unit * 1.55;
+      final subSize   = unit * 0.82;
+      final metaSize  = unit * 1.02;
+      final lineH     = metaSize * 1.62;
+      final logoSize  = brandSize + subSize + unit * 0.6;
+      final accentH   = (unit * 0.16).clamp(2.0, 6.0);
+      final radius    = unit * 0.9;
 
-      // ── Layout calculations (relative to image size) ──
-      final fontSize = (w * 0.022).clamp(12.0, 30.0);
-      final lineSpacing = fontSize * 1.55;
-      final pad = fontSize * 0.9;
-      final boxH = lines.length * lineSpacing + pad * 2;
-      final boxW = w * 0.50;
-      final startX = pad;
-      final startY = h - boxH - pad;
+      final logo = await _loadLogo();
 
-      // ── Background rounded rect ──
-      final bgPaint = Paint()..color = const Color(0xD2000000);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(startX, startY, boxW, boxH),
-          Radius.circular(pad * 0.5),
-        ),
-        bgPaint,
-      );
+      // Card metrics
+      const metaCount = 4;
+      final cardW  = (w * 0.52).clamp(240.0, w - unit * 2);
+      final cardH  = pad + logoSize + unit * 0.7 + accentH + unit * 0.7 +
+          metaCount * lineH + pad * 0.55;
+      final cardX  = unit;
+      final cardY  = h - cardH - unit;
+      final cardRect = Rect.fromLTWH(cardX, cardY, cardW, cardH);
+      final rrect  = RRect.fromRectAndRadius(cardRect, Radius.circular(radius));
 
-      // ── Draw each text line ──
-      for (int i = 0; i < lines.length; i++) {
+      // Helper to draw a line of text.
+      void drawText(
+        String s,
+        double x,
+        double y,
+        double size,
+        Color color, {
+        FontWeight weight = FontWeight.w600,
+        double? maxWidth,
+      }) {
         final pb = ui.ParagraphBuilder(
           ui.ParagraphStyle(
             textDirection: ui.TextDirection.ltr,
             textAlign: ui.TextAlign.left,
+            maxLines: 1,
+            ellipsis: '…',
           ),
         )
           ..pushStyle(ui.TextStyle(
-            color: const Color(0xFFFFFFFF),
-            fontSize: fontSize,
-            fontWeight: ui.FontWeight.w700,
+            color: color,
+            fontSize: size,
+            fontWeight: weight,
+            letterSpacing: 0.2,
             shadows: const [
               ui.Shadow(
-                color: Color(0xAA000000),
-                offset: Offset(1, 1),
-                blurRadius: 3,
+                color: Color(0x99000000),
+                offset: Offset(0, 1),
+                blurRadius: 2,
               ),
             ],
           ))
-          ..addText(lines[i]);
+          ..addText(s);
+        final p = pb.build()
+          ..layout(ui.ParagraphConstraints(width: maxWidth ?? (cardW - pad * 2)));
+        canvas.drawParagraph(p, Offset(x, y));
+      }
 
-        final para = pb.build();
-        para.layout(ui.ParagraphConstraints(width: boxW - pad * 1.5));
+      // Soft drop shadow behind the card.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          cardRect.translate(0, unit * 0.15),
+          Radius.circular(radius),
+        ),
+        Paint()
+          ..color = const Color(0x55000000)
+          ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 6),
+      );
 
-        canvas.drawParagraph(
-          para,
-          Offset(startX + pad, startY + pad + i * lineSpacing),
+      // Card background — dark gradient for a premium glassy look.
+      canvas.drawRRect(
+        rrect,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(cardX, cardY),
+            Offset(cardX, cardY + cardH),
+            const [Color(0xF00C2014), Color(0xE0081109)],
+          ),
+      );
+      // Subtle hairline border.
+      canvas.drawRRect(
+        rrect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = unit * 0.06
+          ..color = const Color(0x33FFFFFF),
+      );
+      // Left accent bar (brand green).
+      canvas.save();
+      canvas.clipRRect(rrect);
+      canvas.drawRect(
+        Rect.fromLTWH(cardX, cardY, unit * 0.34, cardH),
+        Paint()..color = const Color(0xFF019A3E),
+      );
+      canvas.restore();
+
+      final cx = cardX + pad;
+      double cy = cardY + pad * 0.85;
+
+      // Header: logo + brand text.
+      if (logo != null) {
+        canvas.drawImageRect(
+          logo,
+          Rect.fromLTWH(0, 0, logo.width.toDouble(), logo.height.toDouble()),
+          Rect.fromLTWH(cx, cy, logoSize, logoSize),
+          Paint()..filterQuality = FilterQuality.high,
         );
+      }
+      final textX = cx + (logo != null ? logoSize + pad * 0.7 : 0);
+      drawText('TERESTRIA', textX, cy + logoSize * 0.06, brandSize,
+          const Color(0xFFFFFFFF),
+          weight: FontWeight.w800, maxWidth: cardW - (textX - cardX) - pad);
+      drawText('Geospatial Survey  •  v${ApiConfig.appVersion}', textX,
+          cy + logoSize * 0.06 + brandSize * 1.18, subSize,
+          const Color(0xFF8FE3A8),
+          weight: FontWeight.w500, maxWidth: cardW - (textX - cardX) - pad);
+
+      cy += logoSize + unit * 0.7;
+
+      // Accent divider.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(cx, cy, cardW - pad * 2, accentH),
+          Radius.circular(accentH / 2),
+        ),
+        Paint()..color = const Color(0x33FFFFFF),
+      );
+      cy += accentH + unit * 0.7;
+
+      // Metadata rows: label (green) + value (white).
+      final rows = <List<String>>[
+        ['Lat', fmtLat(widget.latitude)],
+        ['Lng', fmtLng(widget.longitude)],
+        ['Waktu', '$dateStr  $timeStr'],
+        ['Surveyor',
+            '${widget.username ?? 'Unknown'}   ·   ID ${_deviceId ?? 'N/A'}'],
+      ];
+      final labelW = unit * 4.6;
+      for (final r in rows) {
+        drawText(r[0], cx, cy, metaSize, const Color(0xFF8FE3A8),
+            weight: FontWeight.w700, maxWidth: labelW);
+        drawText(r[1], cx + labelW, cy, metaSize, const Color(0xFFFFFFFF),
+            weight: FontWeight.w600, maxWidth: cardW - pad * 2 - labelW);
+        cy += lineH;
       }
 
       // ── Render & export ──

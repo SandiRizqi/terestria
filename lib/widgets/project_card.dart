@@ -44,6 +44,35 @@ class _ProjectCardState extends State<ProjectCard> {
     }
   }
 
+  /// Badge status sinkronisasi project ke server (Synced / Local).
+  Widget _buildSyncBadge(bool isSynced) {
+    final color = isSynced ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+    final icon = isSynced ? Icons.cloud_done : Icons.cloud_off;
+    final label = isSynced ? 'Synced' : 'Local';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _canEditProject() {
     //print(widget.project.createdBy);
     if (_currentUsername == null) return false;
@@ -198,13 +227,19 @@ class _ProjectCardState extends State<ProjectCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            widget.project.geometryType.toString().split('.').last.toUpperCase(),
-                            style: TextStyle(
-                              color: geometryColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                widget.project.geometryType.toString().split('.').last.toUpperCase(),
+                                style: TextStyle(
+                                  color: geometryColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _buildSyncBadge(widget.project.isSynced),
+                            ],
                           ),
                         ],
                       ),

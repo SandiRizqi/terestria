@@ -7,6 +7,14 @@ import android.util.Log
 import com.graphhopper.GHRequest
 import com.graphhopper.GraphHopper
 import com.graphhopper.config.Profile
+import com.graphhopper.routing.DefaultWeightingFactory
+import com.graphhopper.routing.WeightingFactory
+import com.graphhopper.routing.ev.EnumEncodedValue
+import com.graphhopper.routing.ev.RoadClass
+import com.graphhopper.routing.weighting.AbstractAdjustedWeighting
+import com.graphhopper.routing.weighting.Weighting
+import com.graphhopper.util.EdgeIteratorState
+import com.graphhopper.util.PMap
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -94,7 +102,17 @@ class RoutingPlugin(private val context: Context) : MethodCallHandler {
 
                 // Delete stale graph cache when a new PBF file has been imported,
                 // so GraphHopper is forced to rebuild from the new source data.
-                val graphCacheDir = File(context.filesDir, "gh-graph-cache")
+                // NOTE: the "-v2" suffix bumps the cache version — adding the
+                // road_class encoded value + the car_recommended profile changes
+                // the graph layout, so every existing install must rebuild once.
+                val graphCacheDir = File(context.filesDir, "gh-graph-cache-v2")
+                // Clean up the legacy v1 cache (built without road_class) to
+                // reclaim space and avoid load mismatches.
+                val legacyCacheDir = File(context.filesDir, "gh-graph-cache")
+                if (legacyCacheDir.exists()) {
+                    legacyCacheDir.deleteRecursively()
+                    Log.i(TAG, "initGraphHopper: legacy graph cache removed")
+                }
                 if (forceRebuild && graphCacheDir.exists()) {
                     graphCacheDir.deleteRecursively()
                     Log.i(TAG, "initGraphHopper: graph cache deleted for rebuild")
@@ -102,11 +120,50 @@ class RoutingPlugin(private val context: Context) : MethodCallHandler {
                 val graphDir = graphCacheDir.absolutePath
                 Log.i(TAG, "initGraphHopper: graph dir = $graphDir")
 
-                val gh = GraphHopper()
+                // GraphHopper's CustomModel cannot run on Android — it compiles
+                // the model expressions at runtime with Janino, which needs JVM
+                // .class files (Android only has DEX) → "Cannot compile expression".
+                // So the "recommended" mode is implemented as a plain Kotlin
+                // Weighting (RecommendedWeighting) injected via a custom
+                // WeightingFactory below — no Janino involved.
+                val gh = object : GraphHopper() {
+                    override fun createWeightingFactory(): WeightingFactory {
+                        val em = encodingManager
+                        return object : DefaultWeightingFactory(baseGraph, em) {
+                            override fun createWeighting(
+                                profile: Profile,
+                                requestHints: PMap,
+                                disableTurnCosts: Boolean
+                            ): Weighting {
+                                if (profile.weighting.equals("recommended", ignoreCase = true)) {
+                                    // Base = the normal fastest weighting for this vehicle…
+                                    val base = super.createWeighting(
+                                        Profile(profile.name)
+                                            .setVehicle(profile.vehicle)
+                                            .setWeighting("fastest")
+                                            .setTurnCosts(profile.isTurnCosts),
+                                        requestHints, disableTurnCosts
+                                    )
+                                    // …then bias it by road_class priority.
+                                    val rcEnc = em.getEnumEncodedValue(
+                                        RoadClass.KEY, RoadClass::class.java
+                                    )
+                                    return RecommendedWeighting(base, rcEnc)
+                                }
+                                return super.createWeighting(profile, requestHints, disableTurnCosts)
+                            }
+                        }
+                    }
+                }
                 gh.setOSMFile(osmPath)
                 gh.setGraphHopperLocation(graphDir)
+                // road_class is required by RecommendedWeighting.
+                gh.setEncodedValuesString("road_class")
+                // "car_recommended" uses our custom "recommended" weighting;
+                // base speeds still come from the "car" vehicle.
                 gh.setProfiles(
                     Profile("car").setWeighting("fastest"),
+                    Profile("car_recommended").setVehicle("car").setWeighting("recommended"),
                     Profile("foot").setWeighting("fastest")
                 )
                 // CH intentionally NOT configured: without setCHProfiles() the handler
@@ -152,8 +209,12 @@ class RoutingPlugin(private val context: Context) : MethodCallHandler {
             return
         }
 
-        // Use car as fallback if requested profile not loaded
-        val safeProfile = if (profile == "foot") "foot" else "car"
+        // Map to a registered profile; fall back to fastest car if unknown.
+        val safeProfile = when (profile) {
+            "foot"            -> "foot"
+            "car_recommended" -> "car_recommended"
+            else              -> "car"
+        }
 
         executor.submit {
             try {
@@ -218,4 +279,39 @@ class RoutingPlugin(private val context: Context) : MethodCallHandler {
             }
         }
     }
+}
+
+/**
+ * "Recommendation" weighting: wraps the fastest [Weighting] and biases routing
+ * toward higher road classes by dividing each edge weight by a road_class
+ * priority (<= 1.0). Pure Kotlin — no Janino / CustomModel — so it runs on
+ * Android, unlike GraphHopper's CustomModel-based custom weighting.
+ *
+ * Because every priority is <= 1.0 the adjusted weight is always >= the base
+ * (fastest) weight, so delegating getMinWeight() to the base stays an
+ * admissible A* heuristic.
+ */
+private class RecommendedWeighting(
+    superWeighting: Weighting,
+    private val roadClassEnc: EnumEncodedValue<RoadClass>
+) : AbstractAdjustedWeighting(superWeighting) {
+
+    private fun priorityOf(rc: RoadClass): Double = when (rc) {
+        RoadClass.MOTORWAY, RoadClass.TRUNK, RoadClass.PRIMARY -> 1.0
+        RoadClass.SECONDARY    -> 0.85
+        RoadClass.TERTIARY     -> 0.70
+        RoadClass.UNCLASSIFIED -> 0.60
+        RoadClass.RESIDENTIAL  -> 0.50
+        RoadClass.SERVICE      -> 0.30
+        RoadClass.TRACK        -> 0.15
+        else                   -> 0.40
+    }
+
+    override fun calcEdgeWeight(edgeState: EdgeIteratorState, reverse: Boolean): Double {
+        val w = superWeighting.calcEdgeWeight(edgeState, reverse)
+        if (w.isInfinite()) return w
+        return w / priorityOf(edgeState.get(roadClassEnc))
+    }
+
+    override fun getName(): String = "recommended"
 }

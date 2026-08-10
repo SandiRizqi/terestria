@@ -6,7 +6,7 @@ class ApiConfig {
 
   static const String bundleName = 'io.github.sandirizqi.terestria';
 
-  static const String appVersion = '4.3.6';
+  static const String appVersion = '4.3.8';
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';

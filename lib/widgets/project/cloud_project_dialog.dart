@@ -170,7 +170,9 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
           continue;
         }
         
-        // Convert CloudProject ke Project
+        // Convert CloudProject ke Project.
+        // Project dari cloud sudah ada di server → tandai SUDAH synced,
+        // supaya geodata-nya bisa langsung di-push.
         final project = Project(
           id: cloudProject.id,
           name: cloudProject.name,
@@ -181,6 +183,8 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
           updatedAt: cloudProject.updatedAt,
           createdBy: cloudProject.createdBy,
           collectors: cloudProject.collectors,
+          isSynced: true,
+          syncedAt: DateTime.now(),
         );
         
         await _storageService.saveProject(project);

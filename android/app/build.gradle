@@ -56,9 +56,11 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
-            shrinkResources false
-        } 
+            // R8 code shrinking/optimize/obfuscate + resource shrinking aktif.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
 
     applicationVariants.all { variant ->

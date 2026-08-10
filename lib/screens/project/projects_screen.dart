@@ -279,12 +279,31 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       return;
     }
 
+    // Hanya project yang belum tersinkron yang perlu di-push;
+    // yang sudah synced di server tidak perlu diupload ulang.
+    final toSync = _projects.where((p) => !p.isSynced).toList();
+    if (toSync.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.cloud_done, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Semua project sudah tersinkron ke server.'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      return;
+    }
+
     // Show confirmation dialog
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Sync Projects'),
-        content: Text('Upload ${_projects.length} project${_projects.length > 1 ? "s" : ""} to server?\n\nThis will upload project structures and form fields.'),
+        content: Text('Upload ${toSync.length} project${toSync.length > 1 ? "s" : ""} to server?\n\nThis will upload project structures and form fields.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -326,20 +345,28 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     try {
       int successCount = 0;
       List<String> errors = [];
-      
-      // Sync each project to backend
-      for (var project in _projects) {
-        final result = await _syncService.syncProject(project);
-        
-        if (result.success) {
-          // Update project sync status
-          final updatedProject = project.copyWith(
-            updatedAt: DateTime.now(),
-          );
-          await _storageService.saveProject(updatedProject);
-          successCount++;
-        } else {
-          errors.add('${project.name}: ${result.message}');
+      bool abortedConnection = false;
+
+      // Pre-flight: pastikan host server benar-benar bisa dijangkau.
+      final reachable = await _connectivityService.checkServerReachable();
+      if (!reachable) {
+        abortedConnection = true;
+      } else {
+        // Sync each project to backend. SyncService.syncProject sudah
+        // menandai isSynced=true di storage saat sukses — jangan saveProject
+        // lagi di sini (dulu justru meng-clobber status sync).
+        for (var project in toSync) {
+          final result = await _syncService.syncProject(project);
+
+          if (result.success) {
+            successCount++;
+          } else {
+            if (result.isConnectionError) {
+              abortedConnection = true;
+              break;
+            }
+            errors.add('${project.name}: ${result.message}');
+          }
         }
       }
 
@@ -348,8 +375,34 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        
-        if (successCount == _projects.length) {
+        final grouped = SyncService.groupErrors(errors);
+
+        if (abortedConnection) {
+          final remaining = toSync.length - successCount;
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.wifi_off, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Text('Sync Tertunda'),
+                ],
+              ),
+              content: Text(
+                'Tidak ada koneksi ke server.\n\n'
+                '$successCount terkirim, $remaining belum. '
+                'Data tersimpan aman dan bisa disync lagi saat sinyal stabil.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        } else if (successCount == toSync.length) {
           // All synced successfully
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -384,22 +437,22 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('$successCount of ${_projects.length} projects synced.'),
+                    Text('$successCount of ${toSync.length} projects synced.'),
                     const SizedBox(height: 12),
                     const Text(
                       'Errors:',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    ...errors.take(5).map((error) => Padding(
+                    ...grouped.take(5).map((error) => Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
                         '• $error',
                         style: const TextStyle(fontSize: 12),
                       ),
                     )),
-                    if (errors.length > 5)
-                      Text('... and ${errors.length - 5} more errors'),
+                    if (grouped.length > 5)
+                      Text('... dan ${grouped.length - 5} error lain'),
                   ],
                 ),
               ),
@@ -435,15 +488,15 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    ...errors.take(5).map((error) => Padding(
+                    ...grouped.take(5).map((error) => Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
                         '• $error',
                         style: const TextStyle(fontSize: 12),
                       ),
                     )),
-                    if (errors.length > 5)
-                      Text('... and ${errors.length - 5} more errors'),
+                    if (grouped.length > 5)
+                      Text('... dan ${grouped.length - 5} error lain'),
                   ],
                 ),
               ),

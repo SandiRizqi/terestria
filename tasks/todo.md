@@ -80,3 +80,55 @@ Keputusan: backend BISA tambah `updated_after` → **delta sync berbasis waterma
 > Deletion tak tertangani (perlu tombstone) — di luar scope, sama seperti sekarang.
 
 > Out of scope repo ini: validasi backend menolak payload `serverKey: null` — koordinasikan dgn tim server.
+
+---
+
+# Fase 7 — Aktifkan R8 (minify + shrinkResources) Build Release Android — plan §19-24
+
+Status: **DRAFT — menunggu review**. Catatan: build & uji APK release dijalankan **user** (CLI tak ada di sandbox agent).
+
+## Phase 1 — Fondasi
+- [x] 7.1 Buat `android/app/proguard-rules.pro` dengan keep rules lengkap (GraphHopper/JTS/hppc, ML Kit, local_notifications, Play Core, Firebase, geolocator/permission/background) ✅
+  - AC: file dibuat; semua dependency berisiko native/refleksi tercakup keep/dontwarn ✅
+- [x] 7.2 `build.gradle` release: `minifyEnabled true` + `proguardFiles ...optimize.txt, proguard-rules.pro` (shrinkResources tetap false) ✅ (edit selesai)
+  - AC: minify + proguardFiles aktif; shrinkResources false ✅
+  - Verify (USER): `flutter run --release` → **build sukses (app-release.apk 48.5MB), tanpa Missing class, app launch ke home** ✅
+  - Catatan: perlu bump `google-services` 4.4.0 → 4.4.2 (settings.gradle + build.gradle classpath) karena Crashlytics plugin v3 mensyaratkan 4.4.1+ saat minify aktif.
+- [x] **CP-I** ✅: build release sukses tanpa `Missing class`; app buka sampai home (Firebase/FCM/migration/recovery OK)
+
+## Phase 2 — Uji fungsional & resource shrinking
+- [~] 7.3 Smoke-test subsistem berisiko di APK release (minify) — ⏳ SEDANG DIUJI USER
+  - Startup/init: Firebase, Crashlytics, FCM token, migration, recovery, navigasi ✅ (dari log launch)
+  - ✅ Terverifikasi di release (no crash R8): login+sync (fetch 51 project, pull geodata), FCM token+subscribe, GPS foreground+background isolate+notif service, basemap+tile cache SQLite, permission flow
+  - ⏳ Belum diuji (paling rawan R8, belum disentuh): [ ] routing GraphHopper (Navigation)  [ ] QR scanner (mobile_scanner/ML Kit)  [ ] render PDF basemap
+  - Warning non-R8 (pre-existing, aman): flutter_background_service "main isolate" warning; listener retry #1/5 — tracking tetap jalan
+  - AC: semua subsistem jalan di APK release; tiap crash → kirim stacktrace → keep rule ditambah → rebuild
+  - Catatan APK size (minify, shrinkResources off): 48.5MB
+- [~] 7.4 `shrinkResources true` + `res/raw/keep.xml` — ⏳ menunggu rebuild user
+  - Iterasi 1: keep hanya `ic_stat_edit_location` → FCM error `invalid_icon: @drawable/ic_stat_notification could not be found` (ikut ke-strip)
+  - Iterasi 2 (fix): keep pakai wildcard `@drawable/ic_stat_*` → menahan ic_stat_edit_location & ic_stat_notification (dirujuk via string Dart di firebase_messaging_service.dart:139)
+  - AC: shrinkResources aktif; kedua ikon notifikasi tetap ada; ikon notif tampil (tracking/FCM) ✅
+  - Verify (user): `flutter run --release` → **FCM init bersih, no invalid_icon** ✅; APK 48.4MB (dari 48.5MB, turun tipis — wajar utk Flutter, dominan .so 4-ABI)
+- [x] **CP-J** ✅: shrinkResources aktif, ikon notifikasi selamat, app launch bersih
+  - Catatan ukuran: penghematan besar butuh split per-ABI (AAB Play Store / `--split-per-abi`) — dibahas di 7.6
+
+## Phase 3 — Verifikasi & rilis
+- [x] 7.5 Mapping Crashlytics — task `uploadCrashlyticsMappingFileRelease` jalan saat build sukses ✅ (opsional: uji crash sintetis konfirmasi deobfuscate)
+  - Ukuran: minify only 48.5MB → +shrinkResources 48.4MB (dominan .so 4-ABI; hemat besar via AAB split)
+
+### Keputusan rilis (dari user)
+- Format: **AAB (Play Store)** → uji via bundletool/internal track
+- Obfuscation Dart: **YA** (`--obfuscate --split-debug-info`)
+
+- [~] 7.6 Regresi penuh + siap rilis (AAB + obfuscate) — ⏳ USER
+  - Setup selesai: `build.sh` → AAB + obfuscate, symbols → `release_symbols/<versi>/`; `.gitignore` diperbaiki agar symbols rilis tetap tersimpan
+  - [ ] Jalankan `./build.sh` → AAB build sukses
+  - [ ] Uji AAB via bundletool `--local-testing` (atau internal testing track Play)
+  - [ ] Regresi penuh alur utama di build obfuscated: project, data collection, layers, basemap/PDF, **navigation (GraphHopper)**, notifications/FCM, sync, settings, **QR scanner**
+  - [ ] Simpan `release_symbols/<versi>/` (commit atau arsip aman) — wajib utk symbolicate crash Dart
+- [ ] **CP-K**: semua alur lulus di AAB obfuscated; symbols tersimpan; siap upload Play Store
+
+### Catatan penting
+- **R8 mapping.txt** → otomatis ke Crashlytics (Android/Java crash terbaca).
+- **Symbols Dart** → TIDAK auto-upload; baca crash Dart manual: `flutter symbolize -i <trace> -d release_symbols/<versi>/app.android-arm64.symbols`.
+- Belum diuji sejak awal (WAJIB di regresi 7.6): routing GraphHopper, QR scanner, PDF basemap render.

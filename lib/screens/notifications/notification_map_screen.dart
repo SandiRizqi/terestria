@@ -27,6 +27,7 @@ import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
 import '../navigation/widgets/instruction_bar.dart';
+import '../navigation/widgets/step_list_sheet.dart';
 
 /// Fullscreen map viewer for notification GeoJSON data.
 /// Supports basemap switching, user GeoJSON layers, click-to-inspect,
@@ -86,7 +87,8 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
   String?           _destinationLabel;
   SnappedResult?    _snapped;
   int               _currentSegment  = 0;
-  RouteInstruction? _currentInstruction;
+  RouteInstruction? _currentInstruction;   // upcoming maneuver (shown to user)
+  RouteInstruction? _followingInstruction; // maneuver after the upcoming one
   double            _distToNext      = 0;
   bool              _isNavigating    = false;
   bool              _isOffRoute      = false;
@@ -235,7 +237,13 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
       );
       _currentSegment = snap.segmentIndex;
 
-      final instr = _routingService.updateInstruction(
+      // Show the UPCOMING maneuver (ahead of current segment) so the prompt
+      // appears BEFORE the turn — same Google-style logic as NavigationScreen.
+      final instr = _routingService.upcomingInstruction(
+        _currentSegment,
+        _routeResult!.instructions,
+      );
+      final following = _routingService.followingInstruction(
         _currentSegment,
         _routeResult!.instructions,
       );
@@ -264,11 +272,12 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
       }
 
       setState(() {
-        _currentLocation    = loc;
-        _snapped            = snap;
-        _isOffRoute         = snap.isOffRoute;
-        _currentInstruction = instr;
-        _distToNext         = distNext;
+        _currentLocation      = loc;
+        _snapped              = snap;
+        _isOffRoute           = snap.isOffRoute;
+        _currentInstruction   = instr;
+        _followingInstruction = following;
+        _distToNext           = distNext;
       });
     } else {
       setState(() {
@@ -539,9 +548,12 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
         _routeResult        = result;
         _destinationPoint   = to;
         _currentSegment     = 0;
-        _currentInstruction = result.instructions.isNotEmpty
-            ? result.instructions.first
-            : null;
+        _currentInstruction = _routingService.upcomingInstruction(
+          0, result.instructions,
+        );
+        _followingInstruction = _routingService.followingInstruction(
+          0, result.instructions,
+        );
       });
 
       _fitRouteBounds(result.latLngs);
@@ -550,6 +562,12 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
     } finally {
       if (mounted) setState(() => _isCalculating = false);
     }
+  }
+
+  void _showStepList() {
+    final route = _routeResult;
+    if (route == null) return;
+    showStepListSheet(context, route: route, currentSegment: _currentSegment);
   }
 
   void _startGhNavigation() {
@@ -568,6 +586,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
       _isNavigating       = false;
       _isOffRoute         = false;
       _currentInstruction = null;
+      _followingInstruction = null;
     });
   }
 
@@ -582,6 +601,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
       _destinationLabel   = null;
       _snapped            = null;
       _currentInstruction = null;
+      _followingInstruction = null;
       _distToNext         = 0;
     });
   }
@@ -1376,6 +1396,25 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
                 ],
               ),
             ),
+            // Directions / step list (always available with a route)
+            GestureDetector(
+              onTap: _showStepList,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: _isNavigating
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : AppTheme.primaryGreen.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.list_alt_rounded,
+                  color: _isNavigating ? Colors.white : AppTheme.primaryGreen,
+                  size: 18,
+                ),
+              ),
+            ),
             // Start button (only when not yet navigating)
             if (!_isNavigating) ...[
               GestureDetector(
@@ -1917,6 +1956,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen> {
                 ? InstructionBar(
                     instruction:    _currentInstruction,
                     distanceToNext: _distToNext,
+                    following:      _followingInstruction,
                     isOffRoute:     _isOffRoute,
                   )
                 : _isCalculating

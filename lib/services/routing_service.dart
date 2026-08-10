@@ -280,6 +280,7 @@ class RoutingService {
   // ─────────────────────────────────────────────────────────────────────────
 
   /// Find the active instruction based on the current segment index.
+  /// (The maneuver you are currently on — kept for backward compatibility.)
   RouteInstruction? updateInstruction(
     int segmentIndex,
     List<RouteInstruction> instructions,
@@ -293,6 +294,41 @@ class RoutingService {
       }
     }
     return active;
+  }
+
+  /// Index of the UPCOMING instruction — the first maneuver ahead of the
+  /// current segment (interval > segmentIndex). This is what should be shown
+  /// to the driver, Google-style ("in 200 m turn left"), so the prompt appears
+  /// BEFORE the turn rather than after it.
+  int? upcomingInstructionIndex(
+    int segmentIndex,
+    List<RouteInstruction> instructions,
+  ) {
+    for (int i = 0; i < instructions.length; i++) {
+      if (instructions[i].interval > segmentIndex) return i;
+    }
+    return null;
+  }
+
+  /// The upcoming maneuver ahead of the current segment.
+  /// Falls back to the last instruction (e.g. "arrive") when none remain ahead.
+  RouteInstruction? upcomingInstruction(
+    int segmentIndex,
+    List<RouteInstruction> instructions,
+  ) {
+    if (instructions.isEmpty) return null;
+    final idx = upcomingInstructionIndex(segmentIndex, instructions);
+    return idx == null ? instructions.last : instructions[idx];
+  }
+
+  /// The maneuver AFTER the upcoming one — used for the "then …" preview row.
+  RouteInstruction? followingInstruction(
+    int segmentIndex,
+    List<RouteInstruction> instructions,
+  ) {
+    final idx = upcomingInstructionIndex(segmentIndex, instructions);
+    if (idx == null || idx + 1 >= instructions.length) return null;
+    return instructions[idx + 1];
   }
 
   /// Distance to the next instruction from current segment (meters).
@@ -362,9 +398,11 @@ class RoutingService {
     const toRad = pi / 180;
     final dLat  = (lat2 - lat1) * toRad;
     final dLon  = (lon2 - lon1) * toRad;
-    final a     = (dLat / 2) * (dLat / 2) +
+    final sinLat = sin(dLat / 2);
+    final sinLon = sin(dLon / 2);
+    final a     = sinLat * sinLat +
         cos(lat1 * toRad) * cos(lat2 * toRad) *
-            (dLon / 2) * (dLon / 2);
+            sinLon * sinLon;
     return r * 2 * asin(sqrt(a.clamp(0.0, 1.0)));
   }
 

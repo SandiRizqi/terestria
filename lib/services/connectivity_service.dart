@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import '../config/api_config.dart';
 
 class ConnectivityService {
   static final ConnectivityService _instance = ConnectivityService._internal();
@@ -55,12 +56,27 @@ class ConnectivityService {
     }
   }
 
-  // Manual check (untuk digunakan sebelum sync)
+  // Manual check internet umum (DNS google.com)
   Future<bool> checkConnection() async {
     try {
       final result = await InternetAddress.lookup('google.com')
           .timeout(const Duration(seconds: 5));
-      
+
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Cek apakah HOST SERVER sebenarnya (mis. django.tap-agri.com) bisa
+  /// di-resolve. Dipakai sebagai pre-flight sebelum sync — internet umum
+  /// bisa saja ada (google jalan) tapi domain server gagal di-resolve.
+  Future<bool> checkServerReachable() async {
+    try {
+      final host = Uri.parse(ApiConfig.baseUrl).host;
+      if (host.isEmpty) return false;
+      final result = await InternetAddress.lookup(host)
+          .timeout(const Duration(seconds: 5));
       return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
     } catch (_) {
       return false;

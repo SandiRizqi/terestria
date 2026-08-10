@@ -391,3 +391,164 @@ Urutan koding: **6.1 → 6.2 → 6.3**. 6.4 non-koding, jalan paralel.
 - **Deletion** tak tertangani (sama seperti sekarang) — perlu tombstone bila
   nanti dibutuhkan; di luar scope.
 - **Zona waktu:** selalu format/simpan watermark dalam UTC.
+
+---
+
+# Rencana: Aktifkan R8 (minify + shrinkResources) untuk Build Release Android (Fase 7)
+
+Status: **DRAFT — menunggu review**
+Tanggal: 2026-08-06
+
+## 19. Konteks & Akar Masalah
+
+Build release Android **tidak** mengaktifkan R8. Di
+[android/app/build.gradle](../android/app/build.gradle#L56) blok `release`:
+`minifyEnabled false`, `shrinkResources false`, dan **tidak ada** file
+`android/app/proguard-rules.pro`. Akibatnya APK release lebih besar dan kode
+Android/Java tidak di-shrink/optimize/obfuscate.
+
+Mengaktifkan R8 berisiko **crash release-only** karena R8 bisa menghapus/obfuscate
+kelas yang dipakai lewat refleksi/JNI. Dependency berisiko (dari `pubspec.yaml`):
+GraphHopper 7.0 + JTS + hppc (routing, pure-Java tanpa consumer rules),
+mobile_scanner (ML Kit), flutter_local_notifications, flutter_background_service,
+in_app_update (Play Core), firebase_*, geolocator/location/permission_handler/
+wakelock_plus, printing/pdf.
+
+**Batasan lingkungan:** `flutter`/`gradle` CLI tidak tersedia di sandbox agent →
+semua build & uji APK release dijalankan **user**. Agent hanya mengedit
+`build.gradle` + `proguard-rules.pro` dan menambal keep rules dari log yang
+dilaporkan user.
+
+## 20. Keputusan Arsitektur
+
+- Aktifkan **bertahap**: `minifyEnabled` dulu (uji) → baru `shrinkResources`.
+- Basis `proguard-android-optimize.txt` + `proguard-rules.pro` custom.
+- Keep rules konservatif untuk lib tanpa consumer rules + `-dontwarn` untuk
+  dependency Java desktop (java.awt/javax) yang tak ada di Android.
+- Uji di **APK release fisik** pada subsistem berisiko.
+- Pastikan mapping Crashlytics ter-upload agar stacktrace release terbaca.
+
+## 21. Dependency Graph
+
+```
+Task 7.1 proguard-rules.pro (keep rules)          ← fondasi
+   └── Task 7.2 minifyEnabled true + proguardFiles
+            └── Task 7.3 uji fungsional APK release (minify)   ← gate risiko
+                     └── Task 7.4 shrinkResources true
+                              └── Task 7.5 verifikasi mapping/ukuran
+                                       └── Task 7.6 regresi penuh + rilis
+```
+Urutan: **7.1 → 7.2 → 7.3 → 7.4 → 7.5 → 7.6**.
+
+## 22. Tugas
+
+### Task 7.1 — Buat `android/app/proguard-rules.pro`
+Buat keep rules lengkap untuk semua dependency sensitif. Belum ubah `build.gradle`
+(R8 masih mati → tanpa risiko build). Isi draft:
+```proguard
+# Flutter
+-keep class io.flutter.** { *; }
+-keep class io.flutter.plugins.** { *; }
+-keep class io.flutter.embedding.** { *; }
+-dontwarn io.flutter.**
+# Firebase / Crashlytics
+-keep class com.google.firebase.** { *; }
+-keepattributes *Annotation*,SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+# GraphHopper + JTS + hppc
+-keep class com.graphhopper.** { *; }
+-dontwarn com.graphhopper.**
+-keep class com.carrotsearch.hppc.** { *; }
+-dontwarn com.carrotsearch.hppc.**
+-keep class org.locationtech.jts.** { *; }
+-dontwarn org.locationtech.jts.**
+-dontwarn java.awt.**
+-dontwarn javax.**
+-dontwarn org.slf4j.**
+-dontwarn com.fasterxml.**
+# flutter_local_notifications
+-keep class com.dexterous.** { *; }
+-keep class com.google.gson.** { *; }
+-keepattributes Signature
+# mobile_scanner / ML Kit
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**
+-keep class com.google.android.gms.** { *; }
+-dontwarn com.google.android.gms.**
+# in_app_update (Play Core)
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
+# printing / pdf
+-dontwarn com.itextpdf.**
+# Plugin lain (jaga-jaga)
+-keep class com.baseflow.geolocator.** { *; }
+-keep class com.baseflow.permissionhandler.** { *; }
+-keep class id.flutter.flutter_background_service.** { *; }
+# Umum
+-keepattributes EnclosingMethod,InnerClasses,Signature
+-keepclassmembers enum * { *; }
+```
+- **Acceptance:** file dibuat; semua dependency berisiko tercakup keep/dontwarn.
+- **Verify:** review manual tiap paket `pubspec.yaml` native/refleksi tercakup.
+- **Dependencies:** None · **Files:** `android/app/proguard-rules.pro` · **Scope:** S
+
+### Task 7.2 — Aktifkan `minifyEnabled true` + `proguardFiles`
+Ubah `buildTypes.release`: `minifyEnabled true`, `shrinkResources false` (dulu),
+`proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'`.
+- **Acceptance:** minify aktif + proguardFiles terpasang; shrinkResources masih false.
+- **Verify (user):** `flutter build apk --release` sukses; jika `Missing class …`,
+  tambahkan `-keep`/`-dontwarn` sesuai → build ulang; app launch tanpa crash.
+- **Dependencies:** 7.1 · **Files:** `android/app/build.gradle` · **Scope:** S
+
+### Checkpoint CP-I (setelah 7.1–7.2)
+- [ ] Build release sukses, tanpa `Missing class` tersisa.
+- [ ] App terbuka sampai home tanpa crash. Review dengan user.
+
+### Task 7.3 — Smoke-test subsistem berisiko (APK release, minify)
+Uji manual di perangkat fisik; tiap crash → tambah keep rule dari stacktrace.
+- **Acceptance (jalan semua):** login+sync; GPS foreground+background+notif service;
+  routing GraphHopper; FCM diterima/dibuka; PDF basemap render; scanner; in-app update.
+- **Verify:** tiap subsistem hijau di APK release; crash → keep rule → rebuild.
+- **Dependencies:** 7.2 · **Files:** `proguard-rules.pro` (iteratif) · **Scope:** M
+
+### Task 7.4 — Aktifkan `shrinkResources true`
+Nyalakan resource shrinking; bila ikon/aset yang dirujuk by-name hilang, tahan via
+`android/app/src/main/res/raw/keep.xml`.
+- **Acceptance:** shrinkResources true; ikon notifikasi & aset by-name tetap tampil.
+- **Verify (user):** build sukses; ulangi smoke test 7.3 — semua tetap jalan.
+- **Dependencies:** 7.3 · **Files:** `build.gradle`, (opsional) `res/raw/keep.xml` · **Scope:** S
+
+### Checkpoint CP-J (setelah 7.3–7.4)
+- [ ] Semua subsistem berisiko lulus di APK release; aset tak hilang. Review user.
+
+### Task 7.5 — Verifikasi mapping Crashlytics & ukuran APK
+- **Acceptance:** mapping ter-upload ke Crashlytics (deobfuscate); catat selisih
+  ukuran APK sebelum/sesudah; crash sintetis → stacktrace terbaca.
+- **Verify (user):** dashboard Crashlytics punya mapping; catat ukuran di todo.
+- **Dependencies:** 7.4 · **Files:** (opsional) `build.gradle`
+  `firebaseCrashlytics { mappingFileUploadEnabled true }` · **Scope:** XS–S
+
+### Task 7.6 — Regresi penuh + siap rilis
+- **Acceptance:** semua alur utama lulus di APK release; tak ada crash/ANR baru.
+- **Verify (user):** full regression; `flutter build appbundle --release` sukses bila rilis AAB.
+- **Dependencies:** 7.5 · **Scope:** M
+
+### Checkpoint CP-K (Complete)
+- [ ] Semua acceptance terpenuhi; APK lebih kecil & optimize tanpa crash; siap rilis.
+
+## 23. Risiko & Mitigasi
+
+| Risiko | Dampak | Mitigasi |
+|---|---|---|
+| GraphHopper/JTS/hppc di-strip → routing crash release-only | High | Keep rules (7.1) + uji routing (7.3) |
+| ML Kit (mobile_scanner) hilang → scanner crash | High | `-keep com.google.mlkit.**` + uji |
+| local_notifications hilang → notif/FCM gagal | High | `-keep com.dexterous.**` + uji FCM |
+| in_app_update (Play Core) di-strip | Medium | `-keep com.google.android.play.core.**` |
+| shrinkResources hapus ikon notif by-name | Medium | Nyalakan terpisah (7.4) + `res/raw/keep.xml` |
+| Stacktrace release ter-obfuscate | Medium | Verifikasi mapping Crashlytics (7.5) |
+| CLI build tak ada di agent | Med | Build/uji dijalankan user; agent edit config saja |
+
+## 24. Open Questions
+- Rilis via **APK** atau **AAB (Play Store)**? (menentukan uji `appbundle` di 7.6)
+- Perlu **obfuscation Dart** (`flutter build --obfuscate --split-debug-info`) juga?
+  Itu terpisah dari R8 (sisi Dart) — bisa jadi task tambahan bila diinginkan.

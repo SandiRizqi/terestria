@@ -315,7 +315,9 @@ class GeoPdfService {
       }
 
       final pdfBytes  = await file.readAsBytes();
-      final pageImages = await Printing.raster(
+      // Printing.raster() mengembalikan Stream<PdfRaster>, bukan Future —
+      // jadi tidak perlu di-await; dikumpulkan via toList() di bawah.
+      final pageImages = Printing.raster(
         pdfBytes,
         pages: [page],
         dpi: dpi?.toDouble() ?? 200.0,

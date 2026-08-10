@@ -196,6 +196,7 @@ class TileCacheSqliteService {
       [DateTime.now().millisecondsSinceEpoch, tileKey],
     ).catchError((e) {
       // Ignore errors - this is just for statistics
+      return 0; // catchError pada Future<int> wajib mengembalikan int
     });
   }
 
