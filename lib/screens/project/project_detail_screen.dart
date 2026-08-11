@@ -277,11 +277,35 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  /// Pull manual: user memilih tanggal, hanya tarik record yang di-update setelah
+  /// tanggal itu. TIDAK mengubah watermark delta (lihat pullGeoDataFromServer).
+  Future<void> _pullSinceDate() async {
+    if (_isSyncing || !_isOnline) return;
+
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      helpText: 'Pull data updated since',
+    );
+    if (picked == null) return;
+
+    // Awal hari (lokal) tanggal terpilih; konversi ke UTC ditangani di service.
+    await _syncGeoDataFromServer(
+      updatedAfter: DateTime(picked.year, picked.month, picked.day),
+    );
+  }
+
   /// Sync GeoData untuk project ini dari server.
   ///
   /// [forceFull] true → abaikan watermark delta (tarik semua record project),
   /// dipakai untuk pull-to-refresh manual / pemulihan bila data terasa desync.
-  Future<void> _syncGeoDataFromServer({bool forceFull = false}) async {
+  Future<void> _syncGeoDataFromServer({
+    bool forceFull = false,
+    DateTime? updatedAfter,
+  }) async {
     if (_isSyncing || !_isOnline) return;
 
     setState(() {
@@ -293,6 +317,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       final result = await _syncService.pullGeoDataFromServer(
         _currentProject.id,
         forceFull: forceFull,
+        updatedAfter: updatedAfter,
         onProgress: (message) {
           if (mounted) {
             setState(() => _syncProgress = message);
@@ -1455,6 +1480,48 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 ),
               ),
               PopupMenuItem<String>(
+                value: 'pull_since_date',
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.event_rounded,
+                        color: Colors.teal,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Pull Since Date',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Download data updated after a date',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
                 value: 'sync_to_server',
                 child: Row(
                   children: [
@@ -1544,6 +1611,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             onSelected: (value) {
               if (value == 'pull_from_server') {
                 _syncGeoDataFromServer();
+              } else if (value == 'pull_since_date') {
+                _pullSinceDate();
               } else if (value == 'sync_to_server') {
                 _syncAllData();
               } else if (value == 'info') {
