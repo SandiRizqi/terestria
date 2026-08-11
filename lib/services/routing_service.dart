@@ -13,10 +13,10 @@ import 'api_service.dart';
 
 /// Company yang bisa diunduh data jalannya (dari /mobile/roads/companies/).
 class DownloadableCompany {
-  final String code;
+  final int id;
   final String name;
   final int roadCount;
-  const DownloadableCompany({required this.code, required this.name, required this.roadCount});
+  const DownloadableCompany({required this.id, required this.name, required this.roadCount});
 
   bool get hasData => roadCount > 0;
 }
@@ -39,11 +39,11 @@ List<DownloadableCompany> parseCompanies(String body) {
         : const [];
     return list
         .map((e) => DownloadableCompany(
-              code: e['code']?.toString() ?? '',
+              id: (e['id'] as num?)?.toInt() ?? 0,
               name: e['name']?.toString() ?? '',
               roadCount: (e['road_count'] as num?)?.toInt() ?? 0,
             ))
-        .where((c) => c.code.isNotEmpty)
+        .where((c) => c.id > 0)
         .toList();
   } catch (_) {
     return [];
@@ -154,7 +154,7 @@ class RoutingService {
   /// Unduh .osm.pbf sebuah company, simpan, LALU pasang ke GraphHopper hingga siap.
   /// Return status ready/empty/error (bukan sekadar file tersimpan).
   Future<RoadPrepareResult> downloadAndPrepareRoads(
-    String companyCode, {
+    int companyId, {
     void Function(String message)? onProgress,
   }) async {
     if (!_isAndroid) {
@@ -162,9 +162,7 @@ class RoutingService {
     }
     try {
       onProgress?.call('Downloading road data…');
-      final resp = await _api.get(
-        '${ApiConfig.roadsOsmEndpoint}?comp=${Uri.encodeQueryComponent(companyCode)}',
-      );
+      final resp = await _api.get('${ApiConfig.roadsOsmEndpoint}?id=$companyId');
 
       if (resp.statusCode == 404) {
         return const RoadPrepareResult(

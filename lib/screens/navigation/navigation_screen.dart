@@ -756,7 +756,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
 
     final result = await _routingService.downloadAndPrepareRoads(
-      picked.code,
+      picked.id,
       onProgress: (m) => status.value = m,
     );
     if (mounted) Navigator.pop(context);
@@ -809,7 +809,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                   return ListTile(
                     leading: Icon(Icons.alt_route_rounded,
                         color: c.hasData ? AppTheme.primaryGreen : Colors.grey),
-                    title: Text(c.name.isNotEmpty ? c.name : c.code),
+                    title: Text(c.name.isNotEmpty ? c.name : 'Company #${c.id}'),
                     subtitle: Text(c.hasData
                         ? '${c.roadCount} ruas jalan'
                         : 'Belum tersedia'),
