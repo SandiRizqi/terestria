@@ -11,6 +11,10 @@ class ApiConfig {
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';
   static const String userSearchEndpoint = '/mobile/users/search/';
+
+  // Road data (navigation) endpoints
+  static const String roadsCompaniesEndpoint = '/mobile/roads/companies/';
+  static const String roadsOsmEndpoint = '/mobile/roads/osm/';
   
   // FCM Token Endpoints
   static const String fcmTokenRegisterEndpoint = '/mobile/fcm-tokens/register/';

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -6,7 +7,48 @@ import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 import '../models/route_result.dart';
+import 'api_service.dart';
+
+/// Company yang bisa diunduh data jalannya (dari /mobile/roads/companies/).
+class DownloadableCompany {
+  final String code;
+  final String name;
+  final int roadCount;
+  const DownloadableCompany({required this.code, required this.name, required this.roadCount});
+
+  bool get hasData => roadCount > 0;
+}
+
+/// Hasil download+prepare road data.
+enum RoadPrepareStatus { ready, empty, error }
+
+class RoadPrepareResult {
+  final RoadPrepareStatus status;
+  final String message;
+  const RoadPrepareResult(this.status, this.message);
+}
+
+/// Parse body /mobile/roads/companies/ → daftar company (buang yang code kosong).
+List<DownloadableCompany> parseCompanies(String body) {
+  try {
+    final data = jsonDecode(body);
+    final list = (data is Map && data['companies'] is List)
+        ? data['companies'] as List
+        : const [];
+    return list
+        .map((e) => DownloadableCompany(
+              code: e['code']?.toString() ?? '',
+              name: e['name']?.toString() ?? '',
+              roadCount: (e['road_count'] as num?)?.toInt() ?? 0,
+            ))
+        .where((c) => c.code.isNotEmpty)
+        .toList();
+  } catch (_) {
+    return [];
+  }
+}
 
 /// Routing service backed by GraphHopper on Android via MethodChannel.
 /// On iOS the routing methods return null — handle gracefully.
@@ -89,6 +131,68 @@ class RoutingService {
     await prefs.remove(_prefOsmKey);
     _isInitialized = false;
     debugPrint('🗑️ RoutingService: OSM file deleted');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SERVER ROAD DATA (download dari TR_ROAD, filter company)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  final ApiService _api = ApiService();
+
+  /// Daftar company (dalam scope user) yang bisa diunduh data jalannya.
+  Future<List<DownloadableCompany>> fetchDownloadableCompanies() async {
+    try {
+      final resp = await _api.get(ApiConfig.roadsCompaniesEndpoint);
+      if (resp.statusCode != 200) return [];
+      return parseCompanies(resp.body);
+    } catch (e) {
+      debugPrint('❌ RoutingService: fetchDownloadableCompanies — $e');
+      return [];
+    }
+  }
+
+  /// Unduh .osm.pbf sebuah company, simpan, LALU pasang ke GraphHopper hingga siap.
+  /// Return status ready/empty/error (bukan sekadar file tersimpan).
+  Future<RoadPrepareResult> downloadAndPrepareRoads(
+    String companyCode, {
+    void Function(String message)? onProgress,
+  }) async {
+    if (!_isAndroid) {
+      return const RoadPrepareResult(RoadPrepareStatus.error, 'Navigasi hanya tersedia di Android');
+    }
+    try {
+      onProgress?.call('Downloading road data…');
+      final resp = await _api.get(
+        '${ApiConfig.roadsOsmEndpoint}?comp=${Uri.encodeQueryComponent(companyCode)}',
+      );
+
+      if (resp.statusCode == 404) {
+        return const RoadPrepareResult(
+            RoadPrepareStatus.empty, 'Data jalan belum tersedia untuk company ini.');
+      }
+      if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) {
+        return RoadPrepareResult(RoadPrepareStatus.error, 'Gagal mengunduh (HTTP ${resp.statusCode})');
+      }
+
+      // Simpan PBF (ekstensi .pbf → GraphHopper parse sebagai PBF)
+      final dir = await getApplicationDocumentsDirectory();
+      final dest = File('${dir.path}/osm_routing.pbf');
+      await dest.writeAsBytes(resp.bodyBytes, flush: true);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefOsmKey, dest.path);
+      _isInitialized = false;
+
+      onProgress?.call('Building routing engine…');
+      final ok = await initialize(forceRebuild: true);
+      if (!ok) {
+        return const RoadPrepareResult(RoadPrepareStatus.error, 'Gagal membangun routing engine');
+      }
+      return const RoadPrepareResult(RoadPrepareStatus.ready, 'Routing siap digunakan');
+    } catch (e) {
+      debugPrint('❌ RoutingService: downloadAndPrepareRoads — $e');
+      return RoadPrepareResult(RoadPrepareStatus.error, 'Error: $e');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
