@@ -21,6 +21,14 @@ class DownloadableCompany {
   bool get hasData => roadCount > 0;
 }
 
+/// Road data sebuah company yang sudah tersimpan lokal (bisa dipakai offline).
+class DownloadedRoad {
+  final int id;
+  final String name;
+  final String path;
+  const DownloadedRoad({required this.id, required this.name, required this.path});
+}
+
 /// Hasil download+prepare road data.
 enum RoadPrepareStatus { ready, empty, error }
 
@@ -66,6 +74,7 @@ class RoutingService {
 
   static const _channel    = MethodChannel('com.terestria/routing');
   static const _prefOsmKey = 'routing_osm_file_path';
+  static const _prefDownloadedIndex = 'routing_downloaded_roads'; // JSON [{id,name}]
 
   // Constants from APK
   static const double _offRouteDist     = 40.0;  // meters — NavigationHelper
@@ -151,10 +160,95 @@ class RoutingService {
     }
   }
 
-  /// Unduh .osm.pbf sebuah company, simpan, LALU pasang ke GraphHopper hingga siap.
-  /// Return status ready/empty/error (bukan sekadar file tersimpan).
+  Future<String> _roadsDirPath() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final d = Directory('${dir.path}/roads');
+    if (!d.existsSync()) d.createSync(recursive: true);
+    return d.path;
+  }
+
+  Future<String> _roadFilePath(int id) async => '${await _roadsDirPath()}/roads_$id.pbf';
+
+  Future<List<Map<String, dynamic>>> _readIndex() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prefDownloadedIndex);
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List).map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _writeIndex(List<Map<String, dynamic>> idx) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefDownloadedIndex, jsonEncode(idx));
+  }
+
+  /// Apakah road data company sudah tersimpan lokal.
+  Future<bool> isRoadDownloaded(int id) async => File(await _roadFilePath(id)).existsSync();
+
+  /// Daftar road data yang tersimpan lokal (bisa dipilih offline).
+  Future<List<DownloadedRoad>> listDownloadedRoads() async {
+    final idx = await _readIndex();
+    final out = <DownloadedRoad>[];
+    for (final e in idx) {
+      final id = (e['id'] as num?)?.toInt() ?? 0;
+      if (id <= 0) continue;
+      final path = await _roadFilePath(id);
+      if (File(path).existsSync()) {
+        out.add(DownloadedRoad(id: id, name: e['name']?.toString() ?? 'Company #$id', path: path));
+      }
+    }
+    return out;
+  }
+
+  Future<bool> _activate(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefOsmKey, path);
+    _isInitialized = false;
+    return initialize(forceRebuild: true);
+  }
+
+  /// Pakai road data yang sudah tersimpan (offline) → build engine, tanpa unduh.
+  Future<RoadPrepareResult> activateDownloadedRoads(int id, {void Function(String)? onProgress}) async {
+    if (!_isAndroid) {
+      return const RoadPrepareResult(RoadPrepareStatus.error, 'Navigasi hanya tersedia di Android');
+    }
+    final path = await _roadFilePath(id);
+    if (!File(path).existsSync()) {
+      return const RoadPrepareResult(RoadPrepareStatus.empty, 'Data belum diunduh');
+    }
+    onProgress?.call('Building routing engine…');
+    final ok = await _activate(path);
+    return ok
+        ? const RoadPrepareResult(RoadPrepareStatus.ready, 'Routing siap digunakan')
+        : const RoadPrepareResult(RoadPrepareStatus.error, 'Gagal membangun routing engine');
+  }
+
+  /// Hapus road data tersimpan sebuah company.
+  Future<void> deleteDownloadedRoads(int id) async {
+    final path = await _roadFilePath(id);
+    final f = File(path);
+    if (f.existsSync()) {
+      try { f.deleteSync(); } catch (_) {}
+    }
+    final idx = await _readIndex()
+      ..removeWhere((e) => (e['id'] as num?)?.toInt() == id);
+    await _writeIndex(idx);
+
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_prefOsmKey) == path) {
+      await prefs.remove(_prefOsmKey);
+      _isInitialized = false;
+    }
+  }
+
+  /// Unduh .osm.pbf sebuah company, simpan PER-COMPANY (bisa dipakai offline
+  /// lagi tanpa unduh ulang), LALU pasang ke GraphHopper hingga siap.
   Future<RoadPrepareResult> downloadAndPrepareRoads(
     int companyId, {
+    String? name,
     void Function(String message)? onProgress,
   }) async {
     if (!_isAndroid) {
@@ -172,17 +266,18 @@ class RoutingService {
         return RoadPrepareResult(RoadPrepareStatus.error, 'Gagal mengunduh (HTTP ${resp.statusCode})');
       }
 
-      // Simpan PBF (ekstensi .pbf → GraphHopper parse sebagai PBF)
-      final dir = await getApplicationDocumentsDirectory();
-      final dest = File('${dir.path}/osm_routing.pbf');
+      // Simpan per-company: roads/roads_<id>.pbf
+      final dest = File(await _roadFilePath(companyId));
       await dest.writeAsBytes(resp.bodyBytes, flush: true);
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefOsmKey, dest.path);
-      _isInitialized = false;
+      // Catat ke index (untuk daftar offline)
+      final idx = await _readIndex()
+        ..removeWhere((e) => (e['id'] as num?)?.toInt() == companyId)
+        ..add({'id': companyId, 'name': name ?? 'Company #$companyId'});
+      await _writeIndex(idx);
 
       onProgress?.call('Building routing engine…');
-      final ok = await initialize(forceRebuild: true);
+      final ok = await _activate(dest.path);
       if (!ok) {
         return const RoadPrepareResult(RoadPrepareStatus.error, 'Gagal membangun routing engine');
       }

@@ -560,9 +560,9 @@ class _NavigationScreenState extends State<NavigationScreen>
             child: const Text('Later'),
           ),
           TextButton.icon(
-            onPressed: () { Navigator.pop(context); _importOsmFile(); },
-            icon:  const Icon(Icons.file_open_rounded, size: 16),
-            label: const Text('Import .pbf'),
+            onPressed: () { Navigator.pop(context); _showSavedRoadsPicker(); },
+            icon:  const Icon(Icons.folder_open_rounded, size: 16),
+            label: const Text('Tersimpan'),
           ),
           ElevatedButton.icon(
             onPressed: () { Navigator.pop(context); _downloadRoadsFromServer(); },
@@ -687,11 +687,24 @@ class _NavigationScreenState extends State<NavigationScreen>
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
+                  onPressed: () { Navigator.pop(context); _showSavedRoadsPicker(); },
+                  icon:  const Icon(Icons.folder_open_rounded, size: 16),
+                  label: const Text('Road Tersimpan (Offline)'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primaryGreen,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
                   onPressed: () { Navigator.pop(context); _importOsmFile(); },
                   icon:  const Icon(Icons.file_open_rounded, size: 16),
                   label: const Text('Import .pbf File'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.primaryGreen,
+                    foregroundColor: Colors.grey.shade700,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
@@ -727,8 +740,11 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
-    // 2) Picker company
-    final picked = await _showCompanyPicker(companies);
+    // 2) Picker company (tandai yang sudah tersimpan lokal → tombol "Update")
+    final downloaded =
+        (await _routingService.listDownloadedRoads()).map((d) => d.id).toSet();
+    if (!mounted) return;
+    final picked = await _showCompanyPicker(companies, downloaded);
     if (picked == null || !mounted) return;
 
     if (!picked.hasData) {
@@ -757,6 +773,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     final result = await _routingService.downloadAndPrepareRoads(
       picked.id,
+      name: picked.name,
       onProgress: (m) => status.value = m,
     );
     if (mounted) Navigator.pop(context);
@@ -779,7 +796,8 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
   }
 
-  Future<DownloadableCompany?> _showCompanyPicker(List<DownloadableCompany> companies) {
+  Future<DownloadableCompany?> _showCompanyPicker(
+      List<DownloadableCompany> companies, Set<int> downloadedIds) {
     return showModalBottomSheet<DownloadableCompany>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -806,16 +824,23 @@ class _NavigationScreenState extends State<NavigationScreen>
                 separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
                 itemBuilder: (_, i) {
                   final c = companies[i];
+                  final isSaved = downloadedIds.contains(c.id);
                   return ListTile(
                     leading: Icon(Icons.alt_route_rounded,
                         color: c.hasData ? AppTheme.primaryGreen : Colors.grey),
                     title: Text(c.name.isNotEmpty ? c.name : 'Company #${c.id}'),
                     subtitle: Text(c.hasData
-                        ? '${c.roadCount} ruas jalan'
+                        ? '${c.roadCount} ruas jalan${isSaved ? ' • tersimpan' : ''}'
                         : 'Belum tersedia'),
-                    trailing: c.hasData
-                        ? const Icon(Icons.download_rounded, size: 20)
-                        : Text('—', style: TextStyle(color: Colors.grey.shade400)),
+                    trailing: !c.hasData
+                        ? Text('—', style: TextStyle(color: Colors.grey.shade400))
+                        : isSaved
+                            ? const Chip(
+                                label: Text('Update', style: TextStyle(fontSize: 11)),
+                                visualDensity: VisualDensity.compact,
+                                avatar: Icon(Icons.refresh_rounded, size: 14),
+                              )
+                            : const Icon(Icons.download_rounded, size: 20),
                     onTap: () => Navigator.pop(context, c),
                   );
                 },
@@ -846,6 +871,109 @@ class _NavigationScreenState extends State<NavigationScreen>
         ],
       ),
     );
+  }
+
+  /// Pilih road data yang sudah tersimpan lokal (bisa dipakai OFFLINE, tanpa unduh).
+  Future<void> _showSavedRoadsPicker() async {
+    final saved = await _routingService.listDownloadedRoads();
+    if (!mounted) return;
+    if (saved.isEmpty) {
+      _showSnackBar('Belum ada road data tersimpan. Download dulu dari server.');
+      return;
+    }
+
+    final chosen = await showModalBottomSheet<DownloadedRoad>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          return SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Road Tersimpan (Offline)',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const Divider(height: 1),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: saved.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
+                    itemBuilder: (_, i) {
+                      final d = saved[i];
+                      final isActive = _osmFilePath == d.path;
+                      return ListTile(
+                        leading: Icon(Icons.map_rounded,
+                            color: isActive ? AppTheme.primaryGreen : Colors.grey),
+                        title: Text(d.name),
+                        subtitle: isActive ? const Text('Sedang aktif') : null,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                          tooltip: 'Hapus',
+                          onPressed: () async {
+                            await _routingService.deleteDownloadedRoads(d.id);
+                            saved.removeAt(i);
+                            if (isActive && mounted) setState(() => _osmFilePath = null);
+                            setSheet(() {});
+                            if (saved.isEmpty && ctx.mounted) Navigator.pop(ctx);
+                          },
+                        ),
+                        onTap: () => Navigator.pop(ctx, d),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    if (chosen == null || !mounted) return;
+
+    // Aktifkan (build engine dari file lokal — tanpa unduh)
+    final status = ValueNotifier<String>('Building routing engine…');
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(children: [
+          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: status,
+              builder: (_, v, __) => Text(v),
+            ),
+          ),
+        ]),
+      ),
+    );
+    final result = await _routingService.activateDownloadedRoads(
+      chosen.id,
+      onProgress: (m) => status.value = m,
+    );
+    if (mounted) Navigator.pop(context);
+    status.dispose();
+    if (!mounted) return;
+
+    if (result.status == RoadPrepareStatus.ready) {
+      final path = await _routingService.getOsmFilePath();
+      if (mounted) setState(() => _osmFilePath = path);
+      _showSnackBar('✅ ${result.message} (${chosen.name})');
+    } else {
+      _showSnackBar('❌ ${result.message}');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
