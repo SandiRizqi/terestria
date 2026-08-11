@@ -133,6 +133,24 @@ void main() {
     expect(wm!.isAtSameMomentAs(DateTime.utc(2026, 6, 21, 10, 37, 1)), isTrue);
   });
 
+  test('updatedAfter → sends that date and does NOT touch the watermark',
+      () async {
+    await SyncWatermarkService().setLastPull('p1', DateTime.utc(2026, 6, 1));
+    final api = _FakeApi([_page([_rec('g1', '2026-06-21T10:37:01.000Z')], 1)]);
+
+    final result = await _sync(api)
+        .pullGeoDataFromServer('p1', updatedAfter: DateTime.utc(2026, 3, 15));
+
+    expect(result.success, isTrue);
+    // Memakai tanggal pilihan user sebagai filter...
+    expect(api.requested.single,
+        contains('updated_after=2026-03-15T00:00:00.000Z'));
+    // ...tapi watermark otomatis TIDAK berubah (tetap 2026-06-01).
+    final wm = await SyncWatermarkService().getLastPull('p1');
+    expect(wm!.isAtSameMomentAs(DateTime.utc(2026, 6, 1)), isTrue,
+        reason: 'pull-by-tanggal tidak boleh mengubah watermark');
+  });
+
   test('page error does not advance the watermark', () async {
     await SyncWatermarkService().setLastPull('p1', DateTime.utc(2026, 6, 1));
     final api = _FakeApi([

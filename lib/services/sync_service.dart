@@ -485,6 +485,7 @@ class SyncService {
     String projectId, {
     void Function(String message)? onProgress,
     bool forceFull = false,
+    DateTime? updatedAfter,
   }) async {
     try {
       // Get project for photo field identification (once, outside the loop)
@@ -494,10 +495,16 @@ class SyncService {
       // Null → full pull (sync pertama, atau [forceFull] untuk pull-to-refresh
       // manual/pemulihan). Watermark tetap dimajukan setelah seluruh halaman
       // project sukses (lihat akhir metode).
-      final watermark =
-          forceFull ? null : await _watermark.getLastPull(projectId);
-      final deltaParam = watermark != null
-          ? '&updated_after=${watermark.toUtc().toIso8601String()}'
+      // Pull manual "sejak tanggal" (updatedAfter): pakai tanggal itu sebagai
+      // filter TAPI berdiri sendiri — TIDAK membaca/menulis watermark, agar delta
+      // sync otomatis tidak terganggu (mencegah gap record yang lebih lama).
+      final bool manualDate = updatedAfter != null;
+      final watermark = manualDate
+          ? null
+          : (forceFull ? null : await _watermark.getLastPull(projectId));
+      final DateTime? effectiveAfter = manualDate ? updatedAfter : watermark;
+      final deltaParam = effectiveAfter != null
+          ? '&updated_after=${effectiveAfter.toUtc().toIso8601String()}'
           : '';
       DateTime? maxUpdatedAt;
 
@@ -588,13 +595,16 @@ class SyncService {
 
       // Semua halaman sukses → majukan watermark ke updatedAt tertinggi yang
       // terlihat (tak pernah mundur dari nilai sebelumnya).
-      DateTime? newWatermark = watermark;
-      if (maxUpdatedAt != null &&
-          (newWatermark == null || maxUpdatedAt.isAfter(newWatermark))) {
-        newWatermark = maxUpdatedAt;
-      }
-      if (newWatermark != null) {
-        await _watermark.setLastPull(projectId, newWatermark);
+      // Pull manual by-tanggal tidak menyentuh watermark sama sekali.
+      if (!manualDate) {
+        DateTime? newWatermark = watermark;
+        if (maxUpdatedAt != null &&
+            (newWatermark == null || maxUpdatedAt.isAfter(newWatermark))) {
+          newWatermark = maxUpdatedAt;
+        }
+        if (newWatermark != null) {
+          await _watermark.setLastPull(projectId, newWatermark);
+        }
       }
 
       return SyncResult(
