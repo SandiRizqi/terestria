@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
+import '../../widgets/map/compass_button.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geoform_app/config/api_config.dart';
 import 'package:latlong2/latlong.dart' hide Path;
@@ -63,7 +63,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   // ─── Map ───────────────────────────────────────────────────────────────────
   Basemap? _selectedBasemap;
   bool     _hasInitialZoom    = false;
-  double   _mapBearing        = 0.0;  // map rotation → compass widget
   LatLng   _centerCoordinates = const LatLng(-1.0, 113.0);
 
   // ─── Layers ────────────────────────────────────────────────────────────────
@@ -996,10 +995,6 @@ class _NavigationScreenState extends State<NavigationScreen>
             if (mounted) setState(() => _centerCoordinates = c);
           }
           if (hasGesture) {
-            final bearing = _mapController.camera.rotation;
-            if (bearing != _mapBearing && mounted) {
-              setState(() => _mapBearing = bearing);
-            }
             // User is manually panning/zooming — disengage follow mode
             if (_isFollowingUser && mounted) {
               setState(() => _isFollowingUser = false);
@@ -1349,38 +1344,11 @@ class _NavigationScreenState extends State<NavigationScreen>
             ),
           ),
 
-          // 4. Compass — tap to reset north
+          // 4. Compass — tap to reset north (animated); needle tracks map rotation
           Positioned(
             bottom: navBarH + 196,
             right:  16,
-            child: GestureDetector(
-              onTap: () {
-                _mapController.rotate(0);
-                setState(() => _mapBearing = 0);
-              },
-              child: Container(
-                width:  40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color:  Colors.white,
-                  shape:  BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color:     Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 8,
-                      offset:    const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Transform.rotate(
-                  angle: -_mapBearing * (math.pi / 180),
-                  child: CustomPaint(
-                    size:    const Size(40, 40),
-                    painter: _CompassPainter(),
-                  ),
-                ),
-              ),
-            ),
+            child: CompassButton(mapController: _mapController),
           ),
 
           // ── ROUTE CONTROLS (Start / Stop / Clear) ────────────────────────
@@ -2722,57 +2690,3 @@ class _BasemapSelectorSheetState extends State<_BasemapSelectorSheet> {
 // Compass Painter
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _CompassPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width  / 2;
-    final cy = size.height / 2;
-    final r  = size.width  / 2;
-
-    // North arrow (red)
-    final northPaint = Paint()..color = Colors.red..style = PaintingStyle.fill;
-    final northPath  = Path()
-      ..moveTo(cx,          cy - r * 0.68)
-      ..lineTo(cx - r * 0.18, cy)
-      ..lineTo(cx,          cy - r * 0.12)
-      ..lineTo(cx + r * 0.18, cy)
-      ..close();
-    canvas.drawPath(northPath, northPaint);
-
-    // South arrow (grey)
-    final southPaint = Paint()
-      ..color = Colors.grey.shade400
-      ..style  = PaintingStyle.fill;
-    final southPath = Path()
-      ..moveTo(cx,          cy + r * 0.68)
-      ..lineTo(cx - r * 0.18, cy)
-      ..lineTo(cx,          cy + r * 0.12)
-      ..lineTo(cx + r * 0.18, cy)
-      ..close();
-    canvas.drawPath(southPath, southPaint);
-
-    // Center circle
-    canvas.drawCircle(Offset(cx, cy), r * 0.12,
-        Paint()..color = Colors.white);
-    canvas.drawCircle(Offset(cx, cy), r * 0.12,
-        Paint()
-          ..color       = Colors.grey.shade400
-          ..style       = PaintingStyle.stroke
-          ..strokeWidth = 1);
-
-    // 'N' label
-    final tp = TextPainter(
-      text: const TextSpan(
-        text:  'N',
-        style: TextStyle(
-            color: Colors.red, fontSize: 8, fontWeight: FontWeight.bold),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(
-        canvas, Offset(cx - tp.width / 2, cy - r * 0.68 - tp.height - 1));
-  }
-
-  @override
-  bool shouldRepaint(_CompassPainter oldDelegate) => false;
-}
