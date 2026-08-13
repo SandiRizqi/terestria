@@ -55,6 +55,11 @@ class LocationConfig {
   /// Batas waktu getCurrentPosition sebelum fallback ke last known position.
   static const Duration getCurrentTimeout = Duration(seconds: 12);
 
+  /// Umur maksimum (detik) sebuah last-known-position agar boleh dipakai
+  /// sebagai pengganti fix baru. Lebih tua dari ini → ditolak (bisa berjarak
+  /// jam & kilometer dari posisi sebenarnya).
+  static const int maxLastKnownAgeSeconds = 120;
+
   // ─── Tracking stream ────────────────────────────────────────────────────
   /// Interval minimal antar-update lokasi (ms).
   static const int trackingIntervalMs = 1000;

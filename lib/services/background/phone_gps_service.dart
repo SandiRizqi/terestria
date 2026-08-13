@@ -6,6 +6,11 @@ import '../../models/geo_data_model.dart';
 import '../../config/location_config.dart';
 import '../../utils/app_logger.dart';
 
+/// True bila [fixTime] belum lebih tua dari [maxAgeSec] detik terhadap [now].
+/// Timestamp masa depan (clock skew) dianggap fresh.
+bool isLastKnownFresh(DateTime fixTime, DateTime now, int maxAgeSec) =>
+    now.difference(fixTime).inSeconds <= maxAgeSec;
+
 /// Service untuk mendapatkan lokasi dari GPS phone.
 /// Menggunakan geolocator dengan:
 /// - distanceFilter: hanya update jika bergerak minimal
@@ -95,6 +100,17 @@ class PhoneGpsService {
         final last = await Geolocator.getLastKnownPosition();
         if (last == null) {
           logError('❌ PhoneGpsService: Tidak ada last known position');
+          return null;
+        }
+        // Tolak fix basi — bisa berjarak jam & kilometer dari posisi nyata.
+        if (!isLastKnownFresh(
+          last.timestamp,
+          DateTime.now(),
+          LocationConfig.maxLastKnownAgeSeconds,
+        )) {
+          logError('❌ PhoneGpsService: last known position basi '
+              '(${DateTime.now().difference(last.timestamp).inSeconds}s > '
+              '${LocationConfig.maxLastKnownAgeSeconds}s) — ditolak');
           return null;
         }
         position = last;
