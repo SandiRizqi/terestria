@@ -178,6 +178,17 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _s.copyWith(poorAccuracyDropsBeforeRelax: v.round())),
                   ),
                   _sliderTile(
+                    title: 'Cap akurasi mode longgar (×)',
+                    subtitle: 'Batas terima saat memburuk = Filter Akurasi × ini',
+                    value: _s.relaxedAccuracyMultiplier,
+                    min: GpsSettings.relaxedMultMin,
+                    max: GpsSettings.relaxedMultMax,
+                    fractionDigits: 1,
+                    unit: '×',
+                    onChanged: (v) =>
+                        _save(_s.copyWith(relaxedAccuracyMultiplier: v)),
+                  ),
+                  _sliderTile(
                     title: 'Bypass EMA di atas kecepatan',
                     value: _s.emaBypassSpeedKmh,
                     min: GpsSettings.emaBypassMin,

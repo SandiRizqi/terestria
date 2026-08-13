@@ -28,6 +28,12 @@ class LocationConfig {
   /// mencegah marker BEKU permanen saat sinyal memburuk (mis. bawah kanopi).
   static const int poorAccuracyDropsBeforeRelax = 3;
 
+  /// Saat pipeline melonggar (setelah pernah dapat fix bagus lalu memburuk),
+  /// reading tetap dibuang bila akurasinya di atas
+  /// [maxAccuracyMeters] × nilai ini. Menahan fix "sampah" agar marker tak
+  /// meloncat liar di bawah kanopi, tapi masih menerima fix jelek-wajar.
+  static const double relaxedAccuracyMultiplier = 3.0;
+
   /// Bila true: sebelum ada fix bagus pertama, JANGAN buang reading apa pun
   /// (terima akurasi berapa pun) supaya marker langsung muncul & bergerak.
   static const bool acceptAllUntilGoodFix = true;

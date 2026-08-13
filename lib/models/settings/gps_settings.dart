@@ -14,6 +14,7 @@ class GpsSettings {
   static const double maxAccuracyMin = 5, maxAccuracyMax = 200;
   static const double goodFixMin = 3, goodFixMax = 50;
   static const int poorDropsMin = 1, poorDropsMax = 20;
+  static const double relaxedMultMin = 1, relaxedMultMax = 6;
   static const double emaAlphaMin = 0.1, emaAlphaMax = 1.0;
   static const double emaBypassMin = 5, emaBypassMax = 120;
   static const double distanceFilterMin = 0, distanceFilterMax = 50;
@@ -31,6 +32,7 @@ class GpsSettings {
   final double goodFixThresholdMeters;
   final bool acceptAllUntilGoodFix;
   final int poorAccuracyDropsBeforeRelax;
+  final double relaxedAccuracyMultiplier;
   final double emaAlpha;
   final double emaBypassSpeedKmh;
   final double distanceFilterMeters;
@@ -48,6 +50,7 @@ class GpsSettings {
     required this.goodFixThresholdMeters,
     required this.acceptAllUntilGoodFix,
     required this.poorAccuracyDropsBeforeRelax,
+    required this.relaxedAccuracyMultiplier,
     required this.emaAlpha,
     required this.emaBypassSpeedKmh,
     required this.distanceFilterMeters,
@@ -68,6 +71,7 @@ class GpsSettings {
         acceptAllUntilGoodFix: LocationConfig.acceptAllUntilGoodFix,
         poorAccuracyDropsBeforeRelax:
             LocationConfig.poorAccuracyDropsBeforeRelax,
+        relaxedAccuracyMultiplier: LocationConfig.relaxedAccuracyMultiplier,
         emaAlpha: LocationConfig.emaAlpha,
         emaBypassSpeedKmh: LocationConfig.emaBypassSpeedKmh,
         distanceFilterMeters: LocationConfig.distanceFilterMeters,
@@ -86,6 +90,7 @@ class GpsSettings {
     double? goodFixThresholdMeters,
     bool? acceptAllUntilGoodFix,
     int? poorAccuracyDropsBeforeRelax,
+    double? relaxedAccuracyMultiplier,
     double? emaAlpha,
     double? emaBypassSpeedKmh,
     double? distanceFilterMeters,
@@ -106,6 +111,8 @@ class GpsSettings {
             acceptAllUntilGoodFix ?? this.acceptAllUntilGoodFix,
         poorAccuracyDropsBeforeRelax:
             poorAccuracyDropsBeforeRelax ?? this.poorAccuracyDropsBeforeRelax,
+        relaxedAccuracyMultiplier:
+            relaxedAccuracyMultiplier ?? this.relaxedAccuracyMultiplier,
         emaAlpha: emaAlpha ?? this.emaAlpha,
         emaBypassSpeedKmh: emaBypassSpeedKmh ?? this.emaBypassSpeedKmh,
         distanceFilterMeters: distanceFilterMeters ?? this.distanceFilterMeters,
@@ -129,6 +136,7 @@ class GpsSettings {
         'goodFixThresholdMeters': goodFixThresholdMeters,
         'acceptAllUntilGoodFix': acceptAllUntilGoodFix,
         'poorAccuracyDropsBeforeRelax': poorAccuracyDropsBeforeRelax,
+        'relaxedAccuracyMultiplier': relaxedAccuracyMultiplier,
         'emaAlpha': emaAlpha,
         'emaBypassSpeedKmh': emaBypassSpeedKmh,
         'distanceFilterMeters': distanceFilterMeters,
@@ -161,6 +169,9 @@ class GpsSettings {
           integer('poorAccuracyDropsBeforeRelax',
               d.poorAccuracyDropsBeforeRelax),
           poorDropsMin, poorDropsMax),
+      relaxedAccuracyMultiplier: _clampD(
+          dbl('relaxedAccuracyMultiplier', d.relaxedAccuracyMultiplier),
+          relaxedMultMin, relaxedMultMax),
       emaAlpha: _clampD(dbl('emaAlpha', d.emaAlpha), emaAlphaMin, emaAlphaMax),
       emaBypassSpeedKmh: _clampD(
           dbl('emaBypassSpeedKmh', d.emaBypassSpeedKmh),
@@ -201,6 +212,7 @@ class GpsSettings {
         goodFixThresholdMeters: goodFixThresholdMeters,
         acceptAllUntilGoodFix: acceptAllUntilGoodFix,
         poorAccuracyDropsBeforeRelax: poorAccuracyDropsBeforeRelax,
+        relaxedAccuracyMultiplier: relaxedAccuracyMultiplier,
         maxRealisticSpeedKmh: maxRealisticSpeedKmh,
         staticNoiseThresholdMeters: staticNoiseThresholdMeters,
         staticNoiseWindowMs: staticNoiseWindowSeconds * 1000,

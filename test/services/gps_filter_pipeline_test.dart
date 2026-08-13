@@ -122,6 +122,32 @@ void main() {
     expect(out, isNotNull);
   });
 
+  test('mode longgar tetap membuang fix sampah di atas cap (relaxedMultiplier)', () {
+    final p = GpsFilterPipeline(cfg()); // default mult 3, maxAcc 50 → cap 150
+    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    // buat memburuk → melonggar
+    for (var i = 1; i <= 4; i++) {
+      p.process(latitude: 0.01 * i, longitude: 0, accuracy: 70,
+        speed: 0, timestamp: t0.add(Duration(seconds: i)));
+    }
+    // sampah 500m (> cap 150) tetap dibuang meski sedang longgar
+    final garbage = p.process(latitude: 0.2, longitude: 0, accuracy: 500,
+      speed: 0, timestamp: t0.add(const Duration(seconds: 10)));
+    expect(garbage, isNull);
+    // 70m (<= cap) masih diterima → marker tetap bergerak
+    final ok = p.process(latitude: 0.25, longitude: 0, accuracy: 70,
+      speed: 0, timestamp: t0.add(const Duration(seconds: 11)));
+    expect(ok, isNotNull);
+  });
+
+  test('sebelum fix bagus pertama, cap tak berlaku (acceptAllUntilGoodFix)', () {
+    final p = GpsFilterPipeline(cfg());
+    // belum pernah good fix → 500m pun diterima agar marker muncul
+    final out = p.process(latitude: 0, longitude: 0, accuracy: 500,
+      speed: 0, timestamp: t0);
+    expect(out, isNotNull);
+  });
+
   test('reset() menghapus state EMA & fix', () {
     final p = GpsFilterPipeline(cfg());
     p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);

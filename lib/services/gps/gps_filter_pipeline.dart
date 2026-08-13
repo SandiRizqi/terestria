@@ -13,6 +13,7 @@ class GpsFilterConfig {
   final double goodFixThresholdMeters;
   final bool acceptAllUntilGoodFix;
   final int poorAccuracyDropsBeforeRelax;
+  final double relaxedAccuracyMultiplier;
   final double maxRealisticSpeedKmh;
   final double staticNoiseThresholdMeters;
   final int staticNoiseWindowMs;
@@ -25,6 +26,7 @@ class GpsFilterConfig {
     required this.goodFixThresholdMeters,
     required this.acceptAllUntilGoodFix,
     required this.poorAccuracyDropsBeforeRelax,
+    required this.relaxedAccuracyMultiplier,
     required this.maxRealisticSpeedKmh,
     required this.staticNoiseThresholdMeters,
     required this.staticNoiseWindowMs,
@@ -40,6 +42,7 @@ class GpsFilterConfig {
         acceptAllUntilGoodFix: LocationConfig.acceptAllUntilGoodFix,
         poorAccuracyDropsBeforeRelax:
             LocationConfig.poorAccuracyDropsBeforeRelax,
+        relaxedAccuracyMultiplier: LocationConfig.relaxedAccuracyMultiplier,
         maxRealisticSpeedKmh: LocationConfig.maxRealisticSpeedKmh,
         staticNoiseThresholdMeters: LocationConfig.staticNoiseThresholdMeters,
         staticNoiseWindowMs: LocationConfig.staticNoiseWindowMs,
@@ -67,6 +70,7 @@ class GpsFilterPipeline {
   double? _prevLon;
   DateTime? _prevTime;
   bool _hasGoodFix = false;
+  bool _everHadGoodFix = false;
   int _consecutivePoorDrops = 0;
 
   bool get hasGoodFix => _hasGoodFix;
@@ -78,6 +82,7 @@ class GpsFilterPipeline {
     _prevLon = null;
     _prevTime = null;
     _hasGoodFix = false;
+    _everHadGoodFix = false;
     _consecutivePoorDrops = 0;
   }
 
@@ -95,18 +100,30 @@ class GpsFilterPipeline {
     // meng-arm ulang bila sebelumnya melonggar).
     if (accuracy <= config.goodFixThresholdMeters) {
       _hasGoodFix = true;
+      _everHadGoodFix = true;
       _consecutivePoorDrops = 0;
     }
 
-    // Filter 1: Accuracy filter ADAPTIF. Sebelum fix bagus pertama (dan bila
-    // acceptAllUntilGoodFix), jangan buang reading apa pun.
-    final accuracyFilterActive = _hasGoodFix || !config.acceptAllUntilGoodFix;
-    if (accuracyFilterActive && accuracy > config.maxAccuracyMeters) {
-      _consecutivePoorDrops++;
-      // Anti-beku: bila sinyal memburuk terus-menerus, longgarkan filter
-      // (terima reading lagi) sampai ada fix bagus baru yang meng-arm ulang.
-      if (_consecutivePoorDrops >= config.poorAccuracyDropsBeforeRelax) {
-        _hasGoodFix = false;
+    // Filter 1: Accuracy filter ADAPTIF, dengan tiga rezim langit-langit:
+    //  • fix penuh (_hasGoodFix)         → buang di atas maxAccuracy
+    //  • longgar/degradasi (pernah bagus)→ buang di atas maxAccuracy × mult
+    //    (anti-beku TAPI tetap tolak fix sampah agar marker tak meloncat liar)
+    //  • startup (belum pernah bagus)    → terima semua bila acceptAllUntilGoodFix
+    final double? ceiling;
+    if (_hasGoodFix) {
+      ceiling = config.maxAccuracyMeters;
+    } else if (_everHadGoodFix) {
+      ceiling = config.maxAccuracyMeters * config.relaxedAccuracyMultiplier;
+    } else {
+      ceiling = config.acceptAllUntilGoodFix ? null : config.maxAccuracyMeters;
+    }
+    if (ceiling != null && accuracy > ceiling) {
+      // Hitung drop hanya saat filter penuh, untuk memicu pelonggaran.
+      if (_hasGoodFix) {
+        _consecutivePoorDrops++;
+        if (_consecutivePoorDrops >= config.poorAccuracyDropsBeforeRelax) {
+          _hasGoodFix = false; // masuk mode longgar (cap × mult)
+        }
       }
       return null;
     }
