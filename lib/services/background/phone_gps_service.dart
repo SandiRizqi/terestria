@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' show cos, asin, sqrt;
 import 'package:geolocator/geolocator.dart';
 import '../../models/geo_data_model.dart';
 import '../../config/location_config.dart';
+import '../gps/gps_filter_pipeline.dart';
 import '../../utils/app_logger.dart';
 
 /// True bila [fixTime] belum lebih tua dari [maxAgeSec] detik terhadap [now].
@@ -25,20 +25,10 @@ class PhoneGpsService {
   final StreamController<GeoPoint> _locationController =
       StreamController<GeoPoint>.broadcast();
 
-  // EMA state — di-reset saat tracking dimulai atau dihentikan
-  double? _smoothLat;
-  double? _smoothLon;
-
-  // State for static-noise filter
-  double? _prevLat;
-  double? _prevLon;
-  DateTime? _prevTime;
-
-  /// True setelah perangkat mendapat fix dengan akurasi <=
-  /// [LocationConfig.goodFixThresholdMeters]. Sebelum itu, filter akurasi &
-  /// static-noise dilonggarkan agar marker langsung muncul & bergerak di
-  /// area sinyal lemah.
-  bool _hasGoodFix = false;
+  /// Pipeline pengolahan (akurasi/speed/static-noise/EMA/round) bersama dengan
+  /// isolate background. State smoothing/fix ada di dalam pipeline.
+  final GpsFilterPipeline _pipeline =
+      GpsFilterPipeline(GpsFilterConfig.fromDefaults());
 
   Stream<GeoPoint> get locationStream => _locationController.stream;
 
@@ -159,7 +149,7 @@ class PhoneGpsService {
       if (!hasPermission) return false;
 
       // Reset EMA & status fix saat tracking baru dimulai
-      _resetSmoothing();
+      _pipeline.reset();
 
       // Cancel subscription yang ada
       await _locationSubscription?.cancel();
@@ -191,7 +181,7 @@ class PhoneGpsService {
   Future<void> stopTracking() async {
     await _locationSubscription?.cancel();
     _locationSubscription = null;
-    _resetSmoothing();
+    _pipeline.reset();
     logDebug('⏹️ PhoneGpsService: Tracking stopped');
   }
 
@@ -210,121 +200,20 @@ class PhoneGpsService {
 
   // ─── Internal helpers ───────────────────────────────────────────────────────
 
-  /// Proses setiap position update: filter akurasi (adaptif) → speed →
-  /// static-noise → EMA → round → push.
+  /// Proses setiap position update lewat pipeline bersama, lalu push hasilnya.
+  /// [maxAccuracyMeters] dipertahankan untuk kompatibilitas signature; ambang
+  /// akurasi sebenarnya kini dimiliki [GpsFilterPipeline].
   void _handlePosition(Position position, double maxAccuracyMeters) {
-    // Tandai fix bagus begitu akurasi cukup baik (mengaktifkan filter penuh).
-    if (position.accuracy <= LocationConfig.goodFixThresholdMeters) {
-      _hasGoodFix = true;
-    }
-
-    // Filter 1: Accuracy filter ADAPTIF.
-    // Sebelum dapat fix bagus pertama (acceptAllUntilGoodFix), JANGAN buang
-    // reading apa pun supaya marker langsung muncul & bergerak di sinyal lemah.
-    final accuracyFilterActive =
-        _hasGoodFix || !LocationConfig.acceptAllUntilGoodFix;
-    if (accuracyFilterActive && position.accuracy > maxAccuracyMeters) {
-      logDebug(
-        '⚠️ PhoneGpsService: Skip — akurasi buruk '
-        '(${position.accuracy.toStringAsFixed(1)}m > ${maxAccuracyMeters}m)',
-      );
-      return;
-    }
-
-    // Filter 2: Speed filter — buang spike GPS (kecepatan tidak wajar).
-    final speedMs = position.speed;
-    final speedKmh = speedMs >= 0 ? speedMs * 3.6 : -1.0;
-    if (speedKmh > LocationConfig.maxRealisticSpeedKmh) {
-      logDebug('⚠️ PhoneGpsService: Skip — kecepatan tidak wajar '
-          '(${speedKmh.toStringAsFixed(1)} km/h)');
-      return;
-    }
-
-    // Filter 3: Static-noise filter — buang jika hampir tidak bergerak.
-    // Hanya aktif setelah fix bagus, agar tidak menahan update awal.
-    final now = position.timestamp;
-    if (_hasGoodFix &&
-        _prevLat != null &&
-        _prevLon != null &&
-        _prevTime != null) {
-      final dist = _haversineMeters(
-          _prevLat!, _prevLon!, position.latitude, position.longitude);
-      final deltaMs = now.difference(_prevTime!).inMilliseconds;
-      if (dist < LocationConfig.staticNoiseThresholdMeters &&
-          deltaMs < LocationConfig.staticNoiseWindowMs) {
-        logDebug('⚠️ PhoneGpsService: Skip — posisi statis '
-            '(${dist.toStringAsFixed(2)}m dalam ${deltaMs}ms)');
-        return;
-      }
-    }
-    _prevLat = position.latitude;
-    _prevLon = position.longitude;
-    _prevTime = now;
-
-    // Filter 4: EMA smoothing — dilewati saat bergerak cepat agar tidak lag.
-    final double outLat;
-    final double outLon;
-    if (speedKmh > LocationConfig.emaBypassSpeedKmh) {
-      // Gerak cepat: pakai koordinat mentah, tapi tetap simpan sebagai basis EMA.
-      _smoothLat = position.latitude;
-      _smoothLon = position.longitude;
-      outLat = position.latitude;
-      outLon = position.longitude;
-    } else {
-      final (smoothedLat, smoothedLon) =
-          _applyEma(position.latitude, position.longitude);
-      outLat = smoothedLat;
-      outLon = smoothedLon;
-    }
-
-    final speedRounded =
-        speedMs >= 0 ? (speedMs * 3.6 * 10).round() / 10.0 : null;
-
-    final point = GeoPoint(
-      latitude: _roundCoord(outLat),
-      longitude: _roundCoord(outLon),
-      altitude: position.altitude,
+    final point = _pipeline.process(
+      latitude: position.latitude,
+      longitude: position.longitude,
       accuracy: position.accuracy,
-      speed: speedRounded,
+      speed: position.speed,
       timestamp: position.timestamp,
+      altitude: position.altitude,
     );
-
+    if (point == null) return; // dibuang oleh filter
     _locationController.add(point);
-  }
-
-  /// Exponential Moving Average: new = α × reading + (1−α) × previous
-  /// Returns (smoothedLat, smoothedLon).
-  (double, double) _applyEma(double lat, double lon) {
-    if (_smoothLat == null || _smoothLon == null) {
-      // Reading pertama — inisialisasi tanpa smoothing agar langsung responsif
-      _smoothLat = lat;
-      _smoothLon = lon;
-    } else {
-      const alpha = LocationConfig.emaAlpha;
-      _smoothLat = alpha * lat + (1.0 - alpha) * _smoothLat!;
-      _smoothLon = alpha * lon + (1.0 - alpha) * _smoothLon!;
-    }
-    return (_smoothLat!, _smoothLon!);
-  }
-
-  void _resetSmoothing() {
-    _smoothLat = null;
-    _smoothLon = null;
-    _prevLat = null;
-    _prevLon = null;
-    _prevTime = null;
-    _hasGoodFix = false;
-  }
-
-  /// Haversine distance in meters between two lat/lon points.
-  double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
-    const r = 6371000.0;
-    const toRad = 3.141592653589793 / 180;
-    final dLat = (lat2 - lat1) * toRad;
-    final dLon = (lon2 - lon1) * toRad;
-    final a = (dLat / 2) * (dLat / 2) +
-        cos(lat1 * toRad) * cos(lat2 * toRad) * (dLon / 2) * (dLon / 2);
-    return r * 2 * asin(sqrt(a));
   }
 
   /// Buat LocationSettings yang dioptimasi per platform.

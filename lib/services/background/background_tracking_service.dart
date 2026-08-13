@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../../models/geo_data_model.dart';
 import 'notification_service.dart';
 import '../../config/location_config.dart';
+import '../gps/gps_filter_pipeline.dart';
 import '../../utils/app_logger.dart';
 
 /// Service untuk background tracking dengan proper isolate communication
@@ -346,14 +347,9 @@ class BackgroundTrackingService {
     
     bool isPaused = false;
     int locationCount = 0;
-    // Akurasi filter adaptif: sebelum dapat fix bagus pertama, terima semua
-    // reading agar tracking tidak beku di area sinyal lemah. Konsisten dengan
-    // PhoneGpsService (foreground).
-    bool hasGoodFix = false;
-    // EMA smoothing state (konsisten dengan foreground) — diratakan agar
-    // track tetap halus. Dilewati saat bergerak cepat agar tidak lag.
-    double? smoothLat;
-    double? smoothLon;
+    // Pipeline pengolahan bersama dengan foreground (akurasi/speed/static-noise/
+    // EMA/round) — memastikan track background diolah identik dengan foreground.
+    final pipeline = GpsFilterPipeline(GpsFilterConfig.fromDefaults());
     StreamSubscription<Position>? subscription;
     Timer? heartbeatTimer;
     DateTime lastHeartbeat = DateTime.now();
@@ -460,64 +456,30 @@ class BackgroundTrackingService {
             return;
           }
 
-          // Tandai fix bagus begitu akurasi cukup baik.
-          if (position.accuracy <= LocationConfig.goodFixThresholdMeters) {
-            hasGoodFix = true;
-          }
-
-          // Accuracy filter ADAPTIF — sebelum fix bagus, jangan buang reading.
-          final accuracyFilterActive =
-              hasGoodFix || !LocationConfig.acceptAllUntilGoodFix;
-          if (accuracyFilterActive &&
-              position.accuracy > LocationConfig.maxAccuracyMeters) {
-            logDebug('⚠️ BG: Skip — akurasi buruk (${position.accuracy.toStringAsFixed(1)}m)');
-            return;
-          }
-
-          // Speed filter — tolak spike GPS yang tidak wajar.
-          final speedMs = position.speed;
-          if (speedMs >= 0 &&
-              speedMs * 3.6 > LocationConfig.maxRealisticSpeedKmh) {
-            logDebug('⚠️ BG: Skip — kecepatan tidak wajar (${(speedMs * 3.6).toStringAsFixed(1)} km/h)');
+          // Olah lewat pipeline bersama (akurasi/speed/static-noise/EMA/round).
+          final processed = pipeline.process(
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
+            speed: position.speed,
+            timestamp: position.timestamp,
+            altitude: position.altitude,
+          );
+          if (processed == null) {
+            logDebug('⚠️ BG: Skip — dibuang filter '
+                '(±${position.accuracy.toStringAsFixed(1)}m)');
             return;
           }
 
           locationCount++;
-          
+
           logDebug('📍 BG #$locationCount '
-              '${position.latitude},${position.longitude} '
+              '${processed.latitude},${processed.longitude} '
               '±${position.accuracy.toStringAsFixed(1)}m paused=$isPaused');
 
-
-          // EMA smoothing — dilewati saat bergerak cepat agar marker tidak lag.
-          final speedKmhRaw = speedMs >= 0 ? speedMs * 3.6 : -1.0;
-          double outLat;
-          double outLon;
-          if (speedKmhRaw > LocationConfig.emaBypassSpeedKmh) {
-            // Gerak cepat: pakai koordinat mentah, tetap simpan sebagai basis EMA.
-            smoothLat = position.latitude;
-            smoothLon = position.longitude;
-            outLat = position.latitude;
-            outLon = position.longitude;
-          } else if (smoothLat == null || smoothLon == null) {
-            // Reading pertama — tanpa smoothing agar langsung responsif.
-            smoothLat = position.latitude;
-            smoothLon = position.longitude;
-            outLat = position.latitude;
-            outLon = position.longitude;
-          } else {
-            const alpha = LocationConfig.emaAlpha;
-            smoothLat = alpha * position.latitude + (1.0 - alpha) * smoothLat!;
-            smoothLon = alpha * position.longitude + (1.0 - alpha) * smoothLon!;
-            outLat = smoothLat!;
-            outLon = smoothLon!;
-          }
-
-          // Round coords sesuai LocationConfig.coordinateDecimals (~11 cm).
-          const rf = LocationConfig.coordinateRoundFactor;
-          final lat = (outLat * rf).round() / rf;
-          final lon = (outLon * rf).round() / rf;
-          final speedKmh = speedMs >= 0 ? (speedMs * 3.6 * 10).round() / 10.0 : null;
+          final lat = processed.latitude;
+          final lon = processed.longitude;
+          final speedKmh = processed.speed;
 
           // ✅ CRITICAL: Send location to UI via service communication
           final locationMap = {
