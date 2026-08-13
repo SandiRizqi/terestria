@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:geolocator/geolocator.dart';
 import '../../models/geo_data_model.dart';
-import '../../config/location_config.dart';
+import '../../models/settings/gps_settings.dart';
+import '../gps_settings_service.dart';
 import '../gps/gps_filter_pipeline.dart';
 import '../../utils/app_logger.dart';
 
@@ -26,9 +27,13 @@ class PhoneGpsService {
       StreamController<GeoPoint>.broadcast();
 
   /// Pipeline pengolahan (akurasi/speed/static-noise/EMA/round) bersama dengan
-  /// isolate background. State smoothing/fix ada di dalam pipeline.
-  final GpsFilterPipeline _pipeline =
+  /// isolate background. Dibangun ulang dari [GpsSettings] runtime saat tracking
+  /// dimulai. State smoothing/fix ada di dalam pipeline.
+  GpsFilterPipeline _pipeline =
       GpsFilterPipeline(GpsFilterConfig.fromDefaults());
+
+  /// Setelan GPS aktif (dipakai untuk timeout single-shot & pembulatan).
+  GpsSettings _settings = GpsSettings.defaults();
 
   Stream<GeoPoint> get locationStream => _locationController.stream;
 
@@ -77,9 +82,10 @@ class PhoneGpsService {
         // Coba dapatkan fix baru dengan batas waktu agar tidak menggantung
         // di area sinyal lemah / cold start.
         position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
+          locationSettings: LocationSettings(
             accuracy: LocationAccuracy.high,
-            timeLimit: LocationConfig.getCurrentTimeout,
+            timeLimit: Duration(
+                seconds: GpsSettingsService().settings.getCurrentTimeoutSeconds),
           ),
         );
       } catch (e) {
@@ -93,14 +99,11 @@ class PhoneGpsService {
           return null;
         }
         // Tolak fix basi — bisa berjarak jam & kilometer dari posisi nyata.
-        if (!isLastKnownFresh(
-          last.timestamp,
-          DateTime.now(),
-          LocationConfig.maxLastKnownAgeSeconds,
-        )) {
+        final maxAge = GpsSettingsService().settings.maxLastKnownAgeSeconds;
+        if (!isLastKnownFresh(last.timestamp, DateTime.now(), maxAge)) {
           logError('❌ PhoneGpsService: last known position basi '
               '(${DateTime.now().difference(last.timestamp).inSeconds}s > '
-              '${LocationConfig.maxLastKnownAgeSeconds}s) — ditolak');
+              '${maxAge}s) — ditolak');
           return null;
         }
         position = last;
@@ -126,9 +129,10 @@ class PhoneGpsService {
     );
   }
 
-  double _roundCoord(double value) =>
-      (value * LocationConfig.coordinateRoundFactor).round() /
-      LocationConfig.coordinateRoundFactor;
+  double _roundCoord(double value) {
+    final factor = _pipeline.config.coordinateRoundFactor;
+    return (value * factor).round() / factor;
+  }
 
   // ─── Continuous tracking ────────────────────────────────────────────────────
 
@@ -140,27 +144,31 @@ class PhoneGpsService {
   /// [maxAccuracyMeters] — ambang buang reading SETELAH dapat fix bagus.
   Future<bool> startTracking({
     LocationAccuracy accuracy = LocationAccuracy.high,
-    int intervalMs = LocationConfig.trackingIntervalMs,
-    double distanceFilter = LocationConfig.distanceFilterMeters,
-    double maxAccuracyMeters = LocationConfig.maxAccuracyMeters,
+    int? intervalMs,
+    double? distanceFilter,
+    double? maxAccuracyMeters, // dipertahankan utk kompat; pipeline yg menguasai
   }) async {
     try {
       final hasPermission = await checkAndRequestPermission();
       if (!hasPermission) return false;
 
-      // Reset EMA & status fix saat tracking baru dimulai
-      _pipeline.reset();
+      // Ambil setelan runtime & bangun ulang pipeline sesuai nilai user.
+      _settings = GpsSettingsService().settings;
+      final interval = intervalMs ?? _settings.trackingIntervalMs;
+      final distFilter = distanceFilter ?? _settings.distanceFilterMeters;
+      _pipeline = GpsFilterPipeline(_settings.toFilterConfig());
 
       // Cancel subscription yang ada
       await _locationSubscription?.cancel();
 
       // Buat LocationSettings sesuai platform untuk performa optimal
-      final locationSettings = _buildLocationSettings(accuracy, distanceFilter, intervalMs);
+      final locationSettings =
+          _buildLocationSettings(accuracy, distFilter, interval);
 
       _locationSubscription = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen(
-        (position) => _handlePosition(position, maxAccuracyMeters),
+        (position) => _handlePosition(position),
         onError: (error) {
           logError('❌ PhoneGpsService: Location stream error: $error');
         },
@@ -168,8 +176,8 @@ class PhoneGpsService {
 
       logDebug(
         '✅ PhoneGpsService: Tracking started '
-        '(distanceFilter: ${distanceFilter}m, maxAccuracy: ${maxAccuracyMeters}m, '
-        'EMA α=${LocationConfig.emaAlpha})',
+        '(distanceFilter: ${distFilter}m, maxAccuracy: '
+        '${_settings.maxAccuracyMeters}m, EMA α=${_settings.emaAlpha})',
       );
       return true;
     } catch (e) {
@@ -201,9 +209,7 @@ class PhoneGpsService {
   // ─── Internal helpers ───────────────────────────────────────────────────────
 
   /// Proses setiap position update lewat pipeline bersama, lalu push hasilnya.
-  /// [maxAccuracyMeters] dipertahankan untuk kompatibilitas signature; ambang
-  /// akurasi sebenarnya kini dimiliki [GpsFilterPipeline].
-  void _handlePosition(Position position, double maxAccuracyMeters) {
+  void _handlePosition(Position position) {
     final point = _pipeline.process(
       latitude: position.latitude,
       longitude: position.longitude,

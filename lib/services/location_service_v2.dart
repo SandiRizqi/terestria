@@ -9,6 +9,7 @@ import 'background/permission_service.dart';
 import 'background/background_tracking_service.dart';
 import 'background/phone_gps_service.dart';
 import 'gps_logger_service.dart';
+import 'gps_settings_service.dart';
 import 'crashlytics_service.dart';
 import '../utils/app_logger.dart';
 import '../config/location_config.dart';
@@ -108,7 +109,7 @@ class LocationServiceV2 {
   bool get isEmlidStreaming {
     if (!_isEmlidConnected || _lastEmlidDataTime == null) return false;
     return DateTime.now().difference(_lastEmlidDataTime!).inSeconds <
-        LocationConfig.emlidStaleSeconds;
+        GpsSettingsService().settings.emlidStaleSeconds;
   }
 
   /// True bila provider Emlid dipilih TAPI datanya tidak streaming (stale /
@@ -183,8 +184,9 @@ Future<bool> initialize() async {
       // Continue anyway - can still use foreground tracking
     }
     
-    // 6. Load saved settings
+    // 6. Load saved settings (provider + tuning GPS)
     await loadLocationSettings();
+    await GpsSettingsService().initialize();
     logDebug('✅ Settings loaded');
     logDebug('✅ LocationService initialized successfully');
 
