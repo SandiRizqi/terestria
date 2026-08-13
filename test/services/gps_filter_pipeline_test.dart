@@ -92,6 +92,36 @@ void main() {
     expect(out, isNull);
   });
 
+  test('akurasi laporan mencerminkan pergeseran EMA (bukan sekadar raw)', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    final out = p.process(
+      latitude: 0.001, longitude: 0, accuracy: 10, // raw 10m, tapi EMA menggeser ~44m
+      speed: 0, timestamp: t0.add(const Duration(seconds: 1)));
+    expect(out, isNotNull);
+    // titik ter-EMA ~44m dari raw → akurasi dilaporkan tak boleh tetap 10m
+    expect(out!.accuracy, greaterThan(30));
+  });
+
+  test('speed OS tak diketahui: spike diturunkan dari jarak/waktu', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    // lompat ~111 km dalam 1 detik dengan speed=-1 → derived >> 180 km/h → dibuang
+    final out = p.process(
+      latitude: 1.0, longitude: 0, accuracy: 10,
+      speed: -1, timestamp: t0.add(const Duration(seconds: 1)));
+    expect(out, isNull);
+  });
+
+  test('speed=-1 tanpa gerak berlebihan tetap diterima (tak salah drop)', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    final out = p.process(
+      latitude: 0.001, longitude: 0, accuracy: 10, // ~111 m dalam 1s ≈ 400 km/h? tidak
+      speed: -1, timestamp: t0.add(const Duration(seconds: 30))); // 111m/30s ≈ 13 km/h
+    expect(out, isNotNull);
+  });
+
   test('reset() menghapus state EMA & fix', () {
     final p = GpsFilterPipeline(cfg());
     p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);

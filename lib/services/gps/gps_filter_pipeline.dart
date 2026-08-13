@@ -113,9 +113,18 @@ class GpsFilterPipeline {
     // Reading lolos filter akurasi → reset hitungan drop.
     _consecutivePoorDrops = 0;
 
+    // Kecepatan efektif untuk keputusan filter: pakai speed OS bila tersedia
+    // (>=0), jika tidak turunkan dari jarak/waktu terhadap titik sebelumnya.
+    // `position.speed` sering 0/-1 di sebagian device Android.
+    final double effSpeedKmh = _effectiveSpeedKmh(
+      osSpeed: speed,
+      latitude: latitude,
+      longitude: longitude,
+      timestamp: timestamp,
+    );
+
     // Filter 2: Speed filter — buang spike GPS (kecepatan tidak wajar).
-    final speedKmh = speed >= 0 ? speed * 3.6 : -1.0;
-    if (speedKmh > config.maxRealisticSpeedKmh) {
+    if (effSpeedKmh > config.maxRealisticSpeedKmh) {
       return null;
     }
 
@@ -139,7 +148,7 @@ class GpsFilterPipeline {
     // Filter 4: EMA smoothing — dilewati saat bergerak cepat agar tidak lag.
     final double outLat;
     final double outLon;
-    if (speedKmh > config.emaBypassSpeedKmh) {
+    if (effSpeedKmh > config.emaBypassSpeedKmh) {
       _smoothLat = latitude;
       _smoothLon = longitude;
       outLat = latitude;
@@ -150,17 +159,44 @@ class GpsFilterPipeline {
       outLon = sLon;
     }
 
-    final speedRounded =
-        speed >= 0 ? (speed * 3.6 * 10).round() / 10.0 : null;
+    // Akurasi laporan harus mendeskripsikan titik yang DIKELUARKAN. EMA bisa
+    // menggeser koordinat dari reading mentah, jadi tambahkan pergeseran itu
+    // sebagai ketidakpastian: akurasi = max(raw, jarak(raw, ter-EMA)).
+    final displacement = _haversineMeters(latitude, longitude, outLat, outLon);
+    final reportedAccuracy =
+        accuracy > displacement ? accuracy : displacement;
+
+    final speedRounded = (effSpeedKmh * 10).round() / 10.0;
 
     return GeoPoint(
       latitude: _round(outLat),
       longitude: _round(outLon),
       altitude: altitude,
-      accuracy: accuracy,
-      speed: speedRounded,
+      accuracy: reportedAccuracy,
+      speed: effSpeedKmh >= 0 ? speedRounded : null,
       timestamp: timestamp,
     );
+  }
+
+  /// Kecepatan efektif (km/h) untuk keputusan filter. Bila [osSpeed] (m/s)
+  /// `< 0` (tidak diketahui), turunkan dari perpindahan sejak titik sebelumnya;
+  /// bila tetap tak bisa dihitung, kembalikan `-1` (dianggap tak diketahui,
+  /// tidak memicu bypass maupun filter spike).
+  double _effectiveSpeedKmh({
+    required double osSpeed,
+    required double latitude,
+    required double longitude,
+    required DateTime timestamp,
+  }) {
+    if (osSpeed >= 0) return osSpeed * 3.6;
+    if (_prevLat != null && _prevLon != null && _prevTime != null) {
+      final dtSec = timestamp.difference(_prevTime!).inMilliseconds / 1000.0;
+      if (dtSec > 0) {
+        final dist = _haversineMeters(_prevLat!, _prevLon!, latitude, longitude);
+        return dist / dtSec * 3.6;
+      }
+    }
+    return -1.0;
   }
 
   (double, double) _applyEma(double lat, double lon) {
