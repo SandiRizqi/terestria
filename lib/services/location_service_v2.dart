@@ -18,6 +18,23 @@ enum LocationProvider { phone, emlid }
 enum CoordinateFormat { nmea, llh, xyz }
 enum FixQuality { any, autonomous, float, fix }
 
+/// Apakah `getCurrentLocation()` harus mengembalikan titik Emlid LIVE terakhir?
+///
+/// Hanya benar bila provider Emlid dipilih, socket konek, data masih streaming,
+/// DAN sudah ada titik Emlid yang lolos filter. Bila belum ada titik live,
+/// pemanggil harus fallback ke GPS phone — BUKAN membaca prefs `last_lat`
+/// (yang hanya ditulis isolate phone, bukan Emlid).
+bool shouldUseLiveEmlidPoint({
+  required LocationProvider provider,
+  required bool isConnected,
+  required bool isStreaming,
+  required bool hasLastEmlidPoint,
+}) =>
+    provider == LocationProvider.emlid &&
+    isConnected &&
+    isStreaming &&
+    hasLastEmlidPoint;
+
 
 class LocationServiceV2 {
   // Singleton pattern
@@ -55,6 +72,7 @@ class LocationServiceV2 {
   bool _isEmlidConnected = false;
   String _emlidBuffer = '';
   DateTime? _lastEmlidDataTime;
+  GeoPoint? _lastEmlidPoint; // titik Emlid live terakhir yang lolos filter
   
   // Getters
   LocationProvider get currentProvider => _currentProvider;
@@ -230,11 +248,15 @@ Future<bool> initialize() async {
   
   /// Get current location (single shot)
   Future<GeoPoint?> getCurrentLocation() async {
-    if (_currentProvider == LocationProvider.emlid &&
-        _isEmlidConnected &&
-        isEmlidStreaming) {
-      // Return last known Emlid location
-      return await _backgroundTracking.getLastSavedLocation();
+    // Emlid live: kembalikan titik Emlid terakhir yang lolos filter — BUKAN
+    // prefs `last_lat` (yang hanya ditulis isolate phone GPS, sumber salah).
+    if (shouldUseLiveEmlidPoint(
+      provider: _currentProvider,
+      isConnected: _isEmlidConnected,
+      isStreaming: isEmlidStreaming,
+      hasLastEmlidPoint: _lastEmlidPoint != null,
+    )) {
+      return _lastEmlidPoint;
     }
 
     // Provider Emlid tapi stale/terputus → fallback otomatis ke GPS phone.
@@ -570,6 +592,8 @@ Future<bool> initialize() async {
       _emlidSocket = null;
       _isEmlidConnected = false;
       _emlidBuffer = '';
+      _lastEmlidPoint = null;
+      _lastEmlidDataTime = null;
       _addConsoleLog('Disconnected');
     } catch (e) {
       logError('❌ Error disconnecting: $e');
@@ -614,6 +638,7 @@ Future<bool> initialize() async {
           _lastEmlidDataTime = DateTime.now();
           if (_meetsQualityRequirement(point)) {
             _addConsoleLog('✓ Valid position');
+            _lastEmlidPoint = point; // sumber getCurrentLocation utk Emlid live
             _emlidLocationController.add(point);
             _gpsLogger.log(point);
           } else {
