@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_compass/flutter_compass.dart';
+import '../../widgets/map/compass_button.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/basemap_model.dart';
@@ -3678,42 +3679,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         ),
       ),
 
-      // North / Compass Button
+      // North / Compass Button — jarum mengikuti rotasi peta, reset ber-animasi
       Positioned(
         bottom: _isBottomSheetExpanded
             ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 300)
             : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 300),
         right: AppTheme.spacingMedium,
-        child: GestureDetector(
-          onTap: () {
-            // Rotate map back to north (bearing 0)
-            _mapController.rotate(0);
-          },
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Transform.rotate(
-              // Putar icon kompas berlawanan dengan bearing saat ini
-              // agar ujung merah selalu menunjuk north sejati
-              angle: -_currentBearing * (3.141592653589793 / 180),
-              child: CustomPaint(
-                size: const Size(40, 40),
-                painter: _CompassPainter(),
-              ),
-            ),
-          ),
-        ),
+        child: CompassButton(mapController: _mapController),
       ),
 
       // Layers Panel Button
@@ -4153,78 +4125,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       onClearPoints: _clearPoints,
     );
   }
-}
-
-// ═══════════════════════════════════════════════════════════
-// Compass Painter – jarum kompas N (merah) / S (putih)
-// ═══════════════════════════════════════════════════════════
-
-class _CompassPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final r = size.width / 2;
-
-    // ── Jarum utara (merah) ──
-    final northPaint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
-    final northPath = ui.Path()
-      ..moveTo(cx, cy - r * 0.68)
-      ..lineTo(cx - r * 0.18, cy)
-      ..lineTo(cx, cy - r * 0.12)
-      ..lineTo(cx + r * 0.18, cy)
-      ..close();
-    canvas.drawPath(northPath, northPaint);
-
-    // ── Jarum selatan (abu) ──
-    final southPaint = Paint()
-      ..color = Colors.grey.shade400
-      ..style = PaintingStyle.fill;
-    final southPath = ui.Path()
-      ..moveTo(cx, cy + r * 0.68)
-      ..lineTo(cx - r * 0.18, cy)
-      ..lineTo(cx, cy + r * 0.12)
-      ..lineTo(cx + r * 0.18, cy)
-      ..close();
-    canvas.drawPath(southPath, southPaint);
-
-    // ── Lingkaran pusat ──
-    canvas.drawCircle(
-      Offset(cx, cy),
-      r * 0.12,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      Offset(cx, cy),
-      r * 0.12,
-      Paint()
-        ..color = Colors.grey.shade400
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-
-    // ── Huruf N kecil ──
-    final tp = TextPainter(
-      text: const TextSpan(
-        text: 'N',
-        style: TextStyle(
-          color: Colors.red,
-          fontSize: 8,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(
-      canvas,
-      Offset(cx - tp.width / 2, cy - r * 0.68 - tp.height - 1),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_CompassPainter oldDelegate) => false;
 }
 
 // ═══════════════════════════════════════════════════════════
