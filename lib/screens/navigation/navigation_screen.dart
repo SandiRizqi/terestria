@@ -85,6 +85,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   double             _distToNext      = 0;
   bool               _isNavigating    = false;
   bool               _isFollowingUser = false; // auto-center map on GPS updates
+  bool               _headingUp       = false; // peta berputar mengikuti arah jalan
+  double             _lastAutoRotation = 0.0;  // rotasi terakhir yang diterapkan heading-up
   bool               _isOffRoute      = false;
   bool               _isCalculating   = false;
   Timer?             _recalcDebounce;
@@ -236,8 +238,27 @@ class _NavigationScreenState extends State<NavigationScreen>
       _lastCompassUpdate = now;
       if (event.heading != null && mounted) {
         setState(() => _gpsBearing = event.heading!);
+        if (_headingUp) _applyHeadingUp(event.heading!);
       }
     });
+  }
+
+  /// Heading-up: putar peta agar arah jalan (heading) menghadap ke atas.
+  /// Throttle perubahan kecil (<2°) agar tidak jitter; jarum utara (CompassButton)
+  /// otomatis mengikuti karena terikat rotasi peta.
+  void _applyHeadingUp(double heading) {
+    final target = normalizeDegrees(-heading);
+    double cur;
+    try {
+      cur = _mapController.camera.rotation;
+    } catch (_) {
+      return;
+    }
+    if (shortestDelta(cur, target).abs() < 2.0) return;
+    try {
+      _mapController.rotate(target);
+      _lastAutoRotation = target;
+    } catch (_) {}
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -999,6 +1020,13 @@ class _NavigationScreenState extends State<NavigationScreen>
             if (_isFollowingUser && mounted) {
               setState(() => _isFollowingUser = false);
             }
+            // Manual rotate → matikan heading-up agar tidak berkejaran
+            if (_headingUp && mounted) {
+              final r = _mapController.camera.rotation;
+              if (shortestDelta(_lastAutoRotation, r).abs() > 5.0) {
+                setState(() => _headingUp = false);
+              }
+            }
           }
         },
       ),
@@ -1344,11 +1372,48 @@ class _NavigationScreenState extends State<NavigationScreen>
             ),
           ),
 
-          // 4. Compass — tap to reset north (animated); needle tracks map rotation
+          // 4. Compass — tap to reset north (animated); also exits heading-up
           Positioned(
             bottom: navBarH + 196,
             right:  16,
-            child: CompassButton(mapController: _mapController),
+            child: CompassButton(
+              mapController: _mapController,
+              onResetToNorth: () {
+                if (_headingUp) setState(() => _headingUp = false);
+              },
+            ),
+          ),
+
+          // 4b. Heading-up toggle — peta berputar mengikuti arah jalan
+          Positioned(
+            bottom: navBarH + 244,
+            right:  16,
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _headingUp = !_headingUp);
+                if (!_headingUp) _mapController.rotate(0); // kembali north-up
+              },
+              child: Container(
+                width:  40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _headingUp ? AppTheme.primaryGreen : Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color:      Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 8,
+                      offset:     const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.explore,
+                  size: 20,
+                  color: _headingUp ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
           ),
 
           // ── ROUTE CONTROLS (Start / Stop / Clear) ────────────────────────
