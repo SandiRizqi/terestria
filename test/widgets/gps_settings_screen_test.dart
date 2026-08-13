@@ -12,11 +12,11 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: GpsSettingsScreen()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Filter Akurasi'), findsOneWidget);
+    expect(find.text('Accuracy filter'), findsOneWidget);
     expect(find.text('Smoothing (EMA α)'), findsOneWidget);
     expect(find.byType(Slider), findsWidgets);
 
-    // Tombol restart ada di bawah (ListView lazy) — scroll dulu.
+    // Restart button is near the bottom (lazy ListView) — scroll to it first.
     await tester.scrollUntilVisible(find.text('Restart tracking now'), 500);
     expect(find.text('Restart tracking now'), findsOneWidget);
   });

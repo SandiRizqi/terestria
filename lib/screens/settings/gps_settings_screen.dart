@@ -45,16 +45,16 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
   Future<void> _reset() async {
     await _service.resetToDefaults();
     if (mounted) setState(() => _s = _service.settings);
-    _snack('Setelan GPS dikembalikan ke default');
+    _snack('GPS settings reset to defaults');
   }
 
   Future<void> _restartTracking() async {
-    _snack('Menerapkan setelan — restart tracking…');
+    _snack('Applying settings — restarting tracking…');
     try {
       await _location.restartTracking();
-      _snack('Setelan diterapkan ke tracking');
+      _snack('Settings applied to tracking');
     } catch (e) {
-      _snack('Gagal restart tracking: $e', error: true);
+      _snack('Failed to restart tracking: $e', error: true);
     }
   }
 
@@ -71,7 +71,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('GPS & Akurasi Lokasi')),
+        appBar: AppBar(title: const Text('GPS & Location Accuracy')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -80,12 +80,12 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
       backgroundColor: AppTheme.scaffoldBackground,
       appBar: AppBar(
         backgroundColor: AppTheme.primaryGreen,
-        title: const Text('GPS & Akurasi Lokasi',
+        title: const Text('GPS & Location Accuracy',
             style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
             icon: const Icon(Icons.restore_rounded),
-            tooltip: 'Reset ke default',
+            tooltip: 'Reset to defaults',
             onPressed: _reset,
           ),
         ],
@@ -94,11 +94,11 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 24),
           children: [
-            _sectionTitle('Dasar'),
+            _sectionTitle('Basic'),
             _card([
               _sliderTile(
-                title: 'Filter Akurasi',
-                subtitle: 'Buang fix lebih buruk dari nilai ini',
+                title: 'Accuracy filter',
+                subtitle: 'Drop fixes worse than this',
                 value: _s.maxAccuracyMeters,
                 min: GpsSettings.maxAccuracyMin,
                 max: GpsSettings.maxAccuracyMax,
@@ -108,7 +108,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
               _divider(),
               _sliderTile(
                 title: 'Smoothing (EMA α)',
-                subtitle: 'Besar = lebih responsif, kecil = lebih halus',
+                subtitle: 'Higher = more responsive, lower = smoother',
                 value: _s.emaAlpha,
                 min: GpsSettings.emaAlphaMin,
                 max: GpsSettings.emaAlphaMax,
@@ -118,7 +118,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
               _divider(),
               _sliderTile(
                 title: 'Static-noise',
-                subtitle: 'Buang gerak di bawah nilai ini (anti-jitter diam)',
+                subtitle: 'Drop movement below this (anti-jitter when still)',
                 value: _s.staticNoiseThresholdMeters,
                 min: GpsSettings.staticNoiseMin,
                 max: GpsSettings.staticNoiseMax,
@@ -129,8 +129,8 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
               ),
               _divider(),
               _sliderTile(
-                title: 'Kecepatan maks wajar',
-                subtitle: 'Di atas ini dianggap spike GPS & dibuang',
+                title: 'Max realistic speed',
+                subtitle: 'Above this is treated as a GPS spike and dropped',
                 value: _s.maxRealisticSpeedKmh,
                 min: GpsSettings.maxSpeedMin,
                 max: GpsSettings.maxSpeedMax,
@@ -138,28 +138,28 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                 onChanged: (v) => _save(_s.copyWith(maxRealisticSpeedKmh: v)),
               ),
             ]),
-            _sectionTitle('Lanjutan'),
+            _sectionTitle('Advanced'),
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: AppTheme.getCardDecoration,
               child: Material(
                 type: MaterialType.transparency,
                 child: ExpansionTile(
-                title: const Text('Setelan lanjutan',
+                title: const Text('Advanced settings',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 childrenPadding: EdgeInsets.zero,
                 children: [
                   SwitchListTile(
-                    title: const Text('Terima semua sampai fix bagus'),
+                    title: const Text('Accept all until good fix'),
                     subtitle: const Text(
-                        'Jangan buang reading sebelum fix bagus pertama'),
+                        'Don\'t drop readings before the first good fix'),
                     value: _s.acceptAllUntilGoodFix,
                     activeColor: AppTheme.primaryGreen,
                     onChanged: (v) =>
                         _save(_s.copyWith(acceptAllUntilGoodFix: v)),
                   ),
                   _sliderTile(
-                    title: 'Ambang fix bagus',
+                    title: 'Good-fix threshold',
                     value: _s.goodFixThresholdMeters,
                     min: GpsSettings.goodFixMin,
                     max: GpsSettings.goodFixMax,
@@ -168,8 +168,8 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(goodFixThresholdMeters: v)),
                   ),
                   _sliderTile(
-                    title: 'Drop sebelum melonggar',
-                    subtitle: 'Anti-beku saat sinyal memburuk',
+                    title: 'Drops before relaxing',
+                    subtitle: 'Anti-freeze when signal degrades',
                     value: _s.poorAccuracyDropsBeforeRelax.toDouble(),
                     min: GpsSettings.poorDropsMin.toDouble(),
                     max: GpsSettings.poorDropsMax.toDouble(),
@@ -178,8 +178,8 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _s.copyWith(poorAccuracyDropsBeforeRelax: v.round())),
                   ),
                   _sliderTile(
-                    title: 'Cap akurasi mode longgar (×)',
-                    subtitle: 'Batas terima saat memburuk = Filter Akurasi × ini',
+                    title: 'Relaxed-mode accuracy cap (×)',
+                    subtitle: 'Accept limit when degraded = Accuracy filter × this',
                     value: _s.relaxedAccuracyMultiplier,
                     min: GpsSettings.relaxedMultMin,
                     max: GpsSettings.relaxedMultMax,
@@ -189,7 +189,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(relaxedAccuracyMultiplier: v)),
                   ),
                   _sliderTile(
-                    title: 'Bypass EMA di atas kecepatan',
+                    title: 'Bypass EMA above speed',
                     value: _s.emaBypassSpeedKmh,
                     min: GpsSettings.emaBypassMin,
                     max: GpsSettings.emaBypassMax,
@@ -198,7 +198,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                   ),
                   _sliderTile(
                     title: 'Distance filter',
-                    subtitle: 'Jarak minimal sebelum update baru',
+                    subtitle: 'Minimum distance before a new update',
                     value: _s.distanceFilterMeters,
                     min: GpsSettings.distanceFilterMin,
                     max: GpsSettings.distanceFilterMax,
@@ -208,7 +208,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(distanceFilterMeters: v)),
                   ),
                   _sliderTile(
-                    title: 'Jendela static-noise',
+                    title: 'Static-noise window',
                     value: _s.staticNoiseWindowSeconds.toDouble(),
                     min: GpsSettings.staticWindowMin.toDouble(),
                     max: GpsSettings.staticWindowMax.toDouble(),
@@ -218,7 +218,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _s.copyWith(staticNoiseWindowSeconds: v.round())),
                   ),
                   _sliderTile(
-                    title: 'Interval tracking',
+                    title: 'Tracking interval',
                     value: _s.trackingIntervalMs.toDouble(),
                     min: GpsSettings.trackingIntervalMin.toDouble(),
                     max: GpsSettings.trackingIntervalMax.toDouble(),
@@ -228,7 +228,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(trackingIntervalMs: v.round())),
                   ),
                   _sliderTile(
-                    title: 'Timeout single-shot',
+                    title: 'Single-shot timeout',
                     value: _s.getCurrentTimeoutSeconds.toDouble(),
                     min: GpsSettings.getCurrentTimeoutMin.toDouble(),
                     max: GpsSettings.getCurrentTimeoutMax.toDouble(),
@@ -238,7 +238,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _s.copyWith(getCurrentTimeoutSeconds: v.round())),
                   ),
                   _sliderTile(
-                    title: 'Emlid dianggap stale',
+                    title: 'Emlid considered stale',
                     value: _s.emlidStaleSeconds.toDouble(),
                     min: GpsSettings.emlidStaleMin.toDouble(),
                     max: GpsSettings.emlidStaleMax.toDouble(),
@@ -248,7 +248,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(emlidStaleSeconds: v.round())),
                   ),
                   _sliderTile(
-                    title: 'Umur maks last-known',
+                    title: 'Max last-known age',
                     value: _s.maxLastKnownAgeSeconds.toDouble(),
                     min: GpsSettings.lastKnownAgeMin.toDouble(),
                     max: GpsSettings.lastKnownAgeMax.toDouble(),
@@ -258,7 +258,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(maxLastKnownAgeSeconds: v.round())),
                   ),
                   _sliderTile(
-                    title: 'Desimal koordinat',
+                    title: 'Coordinate decimals',
                     subtitle: '6 ≈ 11 cm',
                     value: _s.coordinateDecimals.toDouble(),
                     min: GpsSettings.coordinateDecimalsMin.toDouble(),
@@ -287,8 +287,8 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                'Perubahan berlaku otomatis saat tracking berikutnya dimulai. '
-                'Tekan tombol di atas untuk menerapkan sekarang.',
+                'Changes apply automatically when tracking next starts. '
+                'Tap the button above to apply now.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ),

@@ -292,7 +292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('GPS & Location Accuracy',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: const Text(
-                    'Filter akurasi, smoothing, static-noise, kecepatan',
+                    'Accuracy filter, smoothing, static-noise, speed',
                     style: TextStyle(fontSize: 12)),
                 trailing: const Icon(Icons.arrow_forward_ios_rounded,
                     size: 16, color: Colors.grey),
