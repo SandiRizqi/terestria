@@ -199,7 +199,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           ? await _routingService.reinitialize()
           : await _routingService.initialize();
       if (!mounted) return;
-      if (!ok) _showSnackBar('⚠️ Routing engine failed to load. Re-import OSM file.');
+      if (!ok) _showSnackBar('⚠️ Routing engine failed to load. Re-import routing file.');
     } catch (e) {
       if (mounted) _showSnackBar('❌ Routing init error: $e');
     } finally {
@@ -404,7 +404,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       );
       if (!mounted) return;
       if (result == null) {
-        _showSnackBar('❌ Route calculation failed. Make sure OSM data covers this area.');
+        _showSnackBar('❌ Route calculation failed. Make sure routing data covers this area.');
         return;
       }
       setState(() {
@@ -954,7 +954,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                       children: [
                         CircularProgressIndicator(),
                         SizedBox(height: 16),
-                        Text('Importing OSM data...'),
+                        Text('Importing routing data...'),
                       ],
                     ),
                   ),
@@ -1709,7 +1709,7 @@ class _RouteTargetSheet extends StatelessWidget {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'OSM data not imported. Please import a .pbf file first.',
+                    'Routing data not imported. Please import a .pbf file first.',
                     style: TextStyle(fontSize: 12),
                   ),
                 ),
@@ -1721,7 +1721,7 @@ class _RouteTargetSheet extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onImportOsm,
                 icon:  const Icon(Icons.file_open_rounded, size: 16),
-                label: const Text('Import OSM Data'),
+                label: const Text('Import Routing Data'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryGreen,
                   foregroundColor: Colors.white,

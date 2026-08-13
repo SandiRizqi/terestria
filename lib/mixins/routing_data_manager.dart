@@ -32,7 +32,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
   Future<void> importOsmFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.any,
-      dialogTitle: 'Select OSM file (.pbf / .osm)',
+      dialogTitle: 'Select routing file (.pbf / .osm)',
     );
     if (result == null || result.files.isEmpty) return;
     final path = result.files.first.path;
@@ -53,10 +53,10 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     });
 
     if (imported != null) {
-      showRoutingSnack('✅ OSM data imported. Building routing engine...');
+      showRoutingSnack('✅ Routing data imported. Building routing engine...');
       initRoutingEngine(reinit: true);
     } else {
-      showRoutingSnack('❌ Failed to import OSM file');
+      showRoutingSnack('❌ Failed to import routing file');
     }
   }
 
@@ -64,7 +64,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Delete OSM Data?'),
+        title: const Text('Delete Routing Data?'),
         content: const Text(
             'Routing data will be removed. You will need to re-import to use navigation.'),
         actions: [
@@ -83,7 +83,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     if (confirm != true) return;
     await routingService.deleteOsmFile();
     if (mounted) setState(() => osmFilePath = null);
-    showRoutingSnack('🗑️ OSM data deleted');
+    showRoutingSnack('🗑️ Routing data deleted');
   }
 
   // ─── Dialog / bottom sheet ─────────────────────────────────────────────────
@@ -98,8 +98,8 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
           Text('Routing Data Missing'),
         ]),
         content: const Text(
-          'Navigation membutuhkan data jalan.\n\n'
-          'Unduh langsung dari server (per company), atau import file .pbf manual.',
+          'Navigation needs road data.\n\n'
+          'Download it directly from the server (per company), or import a .pbf file manually.',
         ),
         actions: [
           TextButton(
@@ -112,7 +112,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
               showSavedRoadsPicker();
             },
             icon: const Icon(Icons.folder_open_rounded, size: 16),
-            label: const Text('Tersimpan'),
+            label: const Text('Saved'),
           ),
           ElevatedButton.icon(
             onPressed: () {
@@ -145,11 +145,11 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('OSM Routing Data',
+              const Text('Routing Data',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text(
-                'Offline routing requires a .pbf file from OpenStreetMap.',
+                'Offline routing requires a road data file (.pbf).',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
               const SizedBox(height: 16),
@@ -227,7 +227,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Belum ada data jalan. Unduh dari server atau import .pbf.',
+                        'No road data yet. Download from the server or import a .pbf file.',
                         style: TextStyle(
                             fontSize: 12, color: Colors.orange.shade800),
                       ),
@@ -260,7 +260,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
                       showSavedRoadsPicker();
                     },
                     icon: const Icon(Icons.folder_open_rounded, size: 16),
-                    label: const Text('Road Tersimpan (Offline)'),
+                    label: const Text('Saved Roads (Offline)'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.primaryGreen,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -307,7 +307,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     Navigator.pop(context);
 
     if (companies.isEmpty) {
-      showRoutingSnack('⚠️ Tidak ada company yang tersedia untuk akun ini');
+      showRoutingSnack('⚠️ No company available for this account');
       return;
     }
 
@@ -383,7 +383,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
               padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Pilih Company',
+                child: Text('Select Company',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ),
@@ -403,8 +403,8 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
                     title:
                         Text(c.name.isNotEmpty ? c.name : 'Company #${c.id}'),
                     subtitle: Text(c.hasData
-                        ? '${c.roadCount} ruas jalan${isSaved ? ' • tersimpan' : ''}'
-                        : 'Belum tersedia'),
+                        ? '${c.roadCount} roads${isSaved ? ' • saved' : ''}'
+                        : 'Not available'),
                     trailing: !c.hasData
                         ? Text('—', style: TextStyle(color: Colors.grey.shade400))
                         : isSaved
@@ -434,10 +434,10 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
         title: const Row(children: [
           Icon(Icons.info_outline_rounded, color: Colors.orange),
           SizedBox(width: 8),
-          Text('Belum Tersedia'),
+          Text('Not Available'),
         ]),
         content: const Text(
-            'Data jalan untuk company ini belum tersedia di server.'),
+            'Road data for this company is not available on the server yet.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -454,7 +454,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     if (!mounted) return;
     if (saved.isEmpty) {
       showRoutingSnack(
-          'Belum ada road data tersimpan. Download dulu dari server.');
+          'No saved road data yet. Download it from the server first.');
       return;
     }
 
@@ -474,7 +474,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
                   padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('Road Tersimpan (Offline)',
+                    child: Text('Saved Roads (Offline)',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w700)),
                   ),
@@ -494,11 +494,11 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
                             color:
                                 isActive ? AppTheme.primaryGreen : Colors.grey),
                         title: Text(d.name),
-                        subtitle: isActive ? const Text('Sedang aktif') : null,
+                        subtitle: isActive ? const Text('Currently active') : null,
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline_rounded,
                               color: Colors.red),
-                          tooltip: 'Hapus',
+                          tooltip: 'Delete',
                           onPressed: () async {
                             await routingService.deleteDownloadedRoads(d.id);
                             saved.removeAt(i);

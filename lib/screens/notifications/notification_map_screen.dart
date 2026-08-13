@@ -324,7 +324,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
           : await _routingService.initialize();
       if (!mounted) return;
       if (!ok) {
-        _showSnackBar('⚠️ Routing engine failed to load. Try re-importing the OSM file.');
+        _showSnackBar('⚠️ Routing engine failed to load. Try re-importing the routing file.');
       }
     } catch (e) {
       if (mounted) _showSnackBar('❌ Routing init error: $e');
@@ -369,7 +369,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
       if (!mounted) return;
 
       if (result == null) {
-        _showSnackBar('❌ Route calculation failed. Make sure OSM data covers this area.');
+        _showSnackBar('❌ Route calculation failed. Make sure routing data covers this area.');
         return;
       }
 
@@ -1944,7 +1944,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
                       children: [
                         CircularProgressIndicator(),
                         SizedBox(height: 16),
-                        Text('Importing OSM data...'),
+                        Text('Importing routing data...'),
                       ],
                     ),
                   ),

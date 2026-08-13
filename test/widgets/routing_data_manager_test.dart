@@ -48,7 +48,7 @@ void main() {
     // Fitur "tarik data jalan" dari server kini tersedia lewat mixin bersama —
     // inilah yang sebelumnya hanya ada di navigation.
     expect(find.text('Download from Server'), findsOneWidget);
-    expect(find.text('Road Tersimpan (Offline)'), findsOneWidget);
+    expect(find.text('Saved Roads (Offline)'), findsOneWidget);
     expect(find.text('Import .pbf File'), findsOneWidget);
   });
 }
