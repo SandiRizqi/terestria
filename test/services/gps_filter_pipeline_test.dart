@@ -57,6 +57,41 @@ void main() {
     expect(out!.latitude, closeTo(0.001, 1e-9));
   });
 
+  test('anti-beku: setelah fix bagus lalu sinyal memburuk, marker tetap emit', () {
+    final p = GpsFilterPipeline(cfg());
+    // fix bagus dulu → filter akurasi aktif
+    expect(
+      p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0),
+      isNotNull,
+    );
+    // sinyal memburuk (di atas maxAccuracy) — beberapa reading awal dibuang…
+    var lastOut;
+    for (var i = 1; i <= 6; i++) {
+      lastOut = p.process(
+        latitude: 0.01 * i, longitude: 0, accuracy: 70,
+        speed: 0, timestamp: t0.add(Duration(seconds: i)));
+    }
+    // …tapi setelah beberapa drop beruntun, pipeline melonggar & emit lagi
+    // (marker tidak boleh beku permanen di area sinyal lemah).
+    expect(lastOut, isNotNull);
+  });
+
+  test('good fix baru meng-arm ulang filter akurasi setelah longgar', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    for (var i = 1; i <= 5; i++) {
+      p.process(latitude: 0.01 * i, longitude: 0, accuracy: 70,
+        speed: 0, timestamp: t0.add(Duration(seconds: i)));
+    }
+    // good fix lagi
+    p.process(latitude: 1, longitude: 1, accuracy: 8,
+      speed: 0, timestamp: t0.add(const Duration(seconds: 6)));
+    // sekarang filter aktif lagi → reading buruk berikutnya dibuang
+    final out = p.process(latitude: 1.5, longitude: 1, accuracy: 70,
+      speed: 0, timestamp: t0.add(const Duration(seconds: 7)));
+    expect(out, isNull);
+  });
+
   test('reset() menghapus state EMA & fix', () {
     final p = GpsFilterPipeline(cfg());
     p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);

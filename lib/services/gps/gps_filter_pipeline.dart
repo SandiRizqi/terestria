@@ -12,6 +12,7 @@ class GpsFilterConfig {
   final double maxAccuracyMeters;
   final double goodFixThresholdMeters;
   final bool acceptAllUntilGoodFix;
+  final int poorAccuracyDropsBeforeRelax;
   final double maxRealisticSpeedKmh;
   final double staticNoiseThresholdMeters;
   final int staticNoiseWindowMs;
@@ -23,6 +24,7 @@ class GpsFilterConfig {
     required this.maxAccuracyMeters,
     required this.goodFixThresholdMeters,
     required this.acceptAllUntilGoodFix,
+    required this.poorAccuracyDropsBeforeRelax,
     required this.maxRealisticSpeedKmh,
     required this.staticNoiseThresholdMeters,
     required this.staticNoiseWindowMs,
@@ -36,6 +38,8 @@ class GpsFilterConfig {
         maxAccuracyMeters: LocationConfig.maxAccuracyMeters,
         goodFixThresholdMeters: LocationConfig.goodFixThresholdMeters,
         acceptAllUntilGoodFix: LocationConfig.acceptAllUntilGoodFix,
+        poorAccuracyDropsBeforeRelax:
+            LocationConfig.poorAccuracyDropsBeforeRelax,
         maxRealisticSpeedKmh: LocationConfig.maxRealisticSpeedKmh,
         staticNoiseThresholdMeters: LocationConfig.staticNoiseThresholdMeters,
         staticNoiseWindowMs: LocationConfig.staticNoiseWindowMs,
@@ -63,6 +67,7 @@ class GpsFilterPipeline {
   double? _prevLon;
   DateTime? _prevTime;
   bool _hasGoodFix = false;
+  int _consecutivePoorDrops = 0;
 
   bool get hasGoodFix => _hasGoodFix;
 
@@ -73,6 +78,7 @@ class GpsFilterPipeline {
     _prevLon = null;
     _prevTime = null;
     _hasGoodFix = false;
+    _consecutivePoorDrops = 0;
   }
 
   /// Proses satu reading. Mengembalikan [GeoPoint] terfilter, atau `null` bila
@@ -85,17 +91,27 @@ class GpsFilterPipeline {
     required DateTime timestamp,
     double? altitude,
   }) {
-    // Tandai fix bagus begitu akurasi cukup baik (mengaktifkan filter penuh).
+    // Tandai fix bagus begitu akurasi cukup baik (mengaktifkan filter penuh &
+    // meng-arm ulang bila sebelumnya melonggar).
     if (accuracy <= config.goodFixThresholdMeters) {
       _hasGoodFix = true;
+      _consecutivePoorDrops = 0;
     }
 
     // Filter 1: Accuracy filter ADAPTIF. Sebelum fix bagus pertama (dan bila
     // acceptAllUntilGoodFix), jangan buang reading apa pun.
     final accuracyFilterActive = _hasGoodFix || !config.acceptAllUntilGoodFix;
     if (accuracyFilterActive && accuracy > config.maxAccuracyMeters) {
+      _consecutivePoorDrops++;
+      // Anti-beku: bila sinyal memburuk terus-menerus, longgarkan filter
+      // (terima reading lagi) sampai ada fix bagus baru yang meng-arm ulang.
+      if (_consecutivePoorDrops >= config.poorAccuracyDropsBeforeRelax) {
+        _hasGoodFix = false;
+      }
       return null;
     }
+    // Reading lolos filter akurasi → reset hitungan drop.
+    _consecutivePoorDrops = 0;
 
     // Filter 2: Speed filter — buang spike GPS (kecepatan tidak wajar).
     final speedKmh = speed >= 0 ? speed * 3.6 : -1.0;

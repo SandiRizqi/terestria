@@ -23,6 +23,11 @@ class LocationConfig {
   /// Begitu satu fix bagus diterima, filter [maxAccuracyMeters] mulai aktif.
   static const double goodFixThresholdMeters = 20.0;
 
+  /// Setelah sebanyak ini reading beruntun dibuang karena akurasi buruk,
+  /// pipeline melonggar (terima reading lagi) sampai ada fix bagus baru —
+  /// mencegah marker BEKU permanen saat sinyal memburuk (mis. bawah kanopi).
+  static const int poorAccuracyDropsBeforeRelax = 3;
+
   /// Bila true: sebelum ada fix bagus pertama, JANGAN buang reading apa pun
   /// (terima akurasi berapa pun) supaya marker langsung muncul & bergerak.
   static const bool acceptAllUntilGoodFix = true;
