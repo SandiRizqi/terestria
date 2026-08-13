@@ -347,6 +347,19 @@ Future<bool> initialize() async {
   Future<void> stopForegroundTracking() async {
     await _phoneGps.stopTracking();
   }
+
+  /// Restart tracking aktif agar setelan GPS baru (pipeline & interval) langsung
+  /// dipakai — foreground selalu, background hanya bila sedang berjalan.
+  Future<void> restartTracking() async {
+    if (_currentProvider == LocationProvider.phone) {
+      await _phoneGps.stopTracking();
+      await _phoneGps.startTracking();
+    }
+    if (_backgroundTracking.isRunning) {
+      await stopBackgroundTracking();
+      await startBackgroundTracking();
+    }
+  }
   
   // ============================================================================
   // BACKGROUND TRACKING

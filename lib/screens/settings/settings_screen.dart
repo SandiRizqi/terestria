@@ -4,6 +4,7 @@ import 'dart:io';
 import '../../models/settings/app_settings.dart';
 import '../../services/settings_service.dart';
 import '../../theme/app_theme.dart';
+import 'gps_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -270,7 +271,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: AppTheme.getCardDecoration,
               child: _buildPdfDpiTile(),
             ),
-            
+
+            const SizedBox(height: 24),
+
+            // GPS / Location Section
+            _buildSectionTitle('Location'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.gps_fixed,
+                      color: AppTheme.primaryColor, size: 20),
+                ),
+                title: const Text('GPS & Location Accuracy',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                    'Filter akurasi, smoothing, static-noise, kecepatan',
+                    style: TextStyle(fontSize: 12)),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded,
+                    size: 16, color: Colors.grey),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const GpsSettingsScreen()),
+                ),
+              ),
+            ),
+
             const SizedBox(height: 32),
             
             // Preview Card
