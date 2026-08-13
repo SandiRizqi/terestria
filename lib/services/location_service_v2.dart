@@ -35,6 +35,31 @@ bool shouldUseLiveEmlidPoint({
     isStreaming &&
     hasLastEmlidPoint;
 
+/// Tier kualitas untuk fix GPS phone berdasarkan akurasi (meter).
+/// Phone GPS paling tinggi setara 'autonomous' (bukan RTK float/fix).
+/// Mengembalikan 'autonomous' bila akurasi cukup baik, atau `null` bila belum
+/// layak dianggap fix bermutu.
+String? phoneFixTier(double accuracy, double goodFixThresholdMeters) =>
+    accuracy <= goodFixThresholdMeters ? 'autonomous' : null;
+
+/// Apakah [fixQuality] memenuhi [required]? (versi pure dari
+/// `_meetsQualityRequirement`, dipakai untuk gating capture phone maupun Emlid.)
+bool meetsFixRequirement(FixQuality required, String? fixQuality) {
+  switch (required) {
+    case FixQuality.any:
+      return true;
+    case FixQuality.autonomous:
+      return fixQuality == 'autonomous' ||
+          fixQuality == 'float' ||
+          fixQuality == 'fix' ||
+          fixQuality == 'dgps';
+    case FixQuality.float:
+      return fixQuality == 'float' || fixQuality == 'fix';
+    case FixQuality.fix:
+      return fixQuality == 'fix';
+  }
+}
+
 
 class LocationServiceV2 {
   // Singleton pattern
@@ -264,8 +289,31 @@ Future<bool> initialize() async {
       logDebug('⚠️ Emlid stale/terputus — fallback getCurrentLocation ke phone GPS');
     }
 
-    // Use phone GPS
-    return await _phoneGps.getCurrentLocation();
+    // Use phone GPS — lampirkan tier kualitas berbasis akurasi supaya gating
+    // fix-quality tidak lagi jadi no-op untuk provider phone.
+    final p = await _phoneGps.getCurrentLocation();
+    if (p == null || p.fixQuality != null || p.accuracy == null) return p;
+    return GeoPoint(
+      latitude: p.latitude,
+      longitude: p.longitude,
+      altitude: p.altitude,
+      accuracy: p.accuracy,
+      speed: p.speed,
+      timestamp: p.timestamp,
+      fixQuality: phoneFixTier(p.accuracy!, LocationConfig.goodFixThresholdMeters),
+      satelliteCount: p.satelliteCount,
+    );
+  }
+
+  /// Apakah [point] memenuhi syarat kualitas fix yang sedang aktif?
+  /// Dipakai UI capture untuk memperingatkan (bukan memblok) titik di bawah
+  /// syarat. Titik phone dari stream tak membawa fixQuality → tier diturunkan
+  /// dari akurasi agar syarat tidak jadi no-op untuk phone.
+  bool pointMeetsCurrentRequirement(GeoPoint point) {
+    final tier = point.fixQuality ??
+        phoneFixTier(point.accuracy ?? double.infinity,
+            LocationConfig.goodFixThresholdMeters);
+    return meetsFixRequirement(_requiredFixQuality, tier);
   }
 
   /// Get continuous location stream based on active provider
@@ -802,23 +850,9 @@ Future<bool> initialize() async {
     };
   }
   
-  bool _meetsQualityRequirement(GeoPoint point) {
-    if (point.fixQuality == null) return false;
-    
-    switch (_requiredFixQuality) {
-      case FixQuality.any:
-        return true;
-      case FixQuality.autonomous:
-        return point.fixQuality == 'autonomous' ||
-               point.fixQuality == 'float' ||
-               point.fixQuality == 'fix' ||
-               point.fixQuality == 'dgps';
-      case FixQuality.float:
-        return point.fixQuality == 'float' || point.fixQuality == 'fix';
-      case FixQuality.fix:
-        return point.fixQuality == 'fix';
-    }
-  }
+  bool _meetsQualityRequirement(GeoPoint point) =>
+      point.fixQuality != null &&
+      meetsFixRequirement(_requiredFixQuality, point.fixQuality);
   
   void _addConsoleLog(String message) {
     final timestamp = DateTime.now();

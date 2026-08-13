@@ -1875,6 +1875,25 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       _collectedPoints.add(centerPoint);
     });
 
+    // Peringatkan (tanpa memblok) bila fix GPS saat ini di bawah syarat
+    // kualitas yang dipilih — jangan diam-diam menyimpan titk bermutu rendah.
+    final loc = _currentLocation;
+    if (loc != null &&
+        !_locationService.pointMeetsCurrentRequirement(loc)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '⚠️ Titik ditambahkan, tapi kualitas GPS saat ini di bawah syarat '
+            '"${_locationService.currentFixQuality.name}" '
+            '(±${loc.accuracy?.toStringAsFixed(1) ?? '?'} m).',
+          ),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
           content: Text('Point added at center'),

@@ -51,4 +51,29 @@ void main() {
       );
     });
   });
+
+  group('phoneFixTier', () {
+    test('akurasi <= goodFix → autonomous', () {
+      expect(phoneFixTier(15, 20), 'autonomous');
+      expect(phoneFixTier(20, 20), 'autonomous');
+    });
+    test('akurasi > goodFix → null (tak layak)', () {
+      expect(phoneFixTier(35, 20), isNull);
+    });
+  });
+
+  group('meetsFixRequirement', () {
+    test('any selalu terpenuhi', () {
+      expect(meetsFixRequirement(FixQuality.any, null), isTrue);
+      expect(meetsFixRequirement(FixQuality.any, 'autonomous'), isTrue);
+    });
+    test('autonomous terpenuhi hanya bila tier autonomous+', () {
+      expect(meetsFixRequirement(FixQuality.autonomous, 'autonomous'), isTrue);
+      expect(meetsFixRequirement(FixQuality.autonomous, null), isFalse);
+    });
+    test('float/fix tak pernah terpenuhi oleh phone (autonomous)', () {
+      expect(meetsFixRequirement(FixQuality.float, 'autonomous'), isFalse);
+      expect(meetsFixRequirement(FixQuality.fix, 'autonomous'), isFalse);
+    });
+  });
 }
