@@ -8,7 +8,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../models/geo_data_model.dart';
 import 'notification_service.dart';
-import '../../config/location_config.dart';
+import '../gps_settings_service.dart';
 import '../gps/gps_filter_pipeline.dart';
 import '../../utils/app_logger.dart';
 
@@ -347,9 +347,12 @@ class BackgroundTrackingService {
     
     bool isPaused = false;
     int locationCount = 0;
+    // Snapshot setelan GPS dibaca dari SharedPreferences (isolate tak berbagi
+    // singleton foreground). Perubahan berlaku setelah tracking di-restart.
+    final gpsSettings = await GpsSettingsService.loadFromPrefs();
     // Pipeline pengolahan bersama dengan foreground (akurasi/speed/static-noise/
     // EMA/round) — memastikan track background diolah identik dengan foreground.
-    final pipeline = GpsFilterPipeline(GpsFilterConfig.fromDefaults());
+    final pipeline = GpsFilterPipeline(gpsSettings.toFilterConfig());
     StreamSubscription<Position>? subscription;
     Timer? heartbeatTimer;
     DateTime lastHeartbeat = DateTime.now();
@@ -424,14 +427,14 @@ class BackgroundTrackingService {
       logDebug('🚀 Starting Geolocator location stream...');
       
       // Background location settings dengan distanceFilter untuk hemat baterai
-      // dan kurangi noise — konsisten dengan PhoneGpsService (LocationConfig).
-      final distanceFilterM = LocationConfig.distanceFilterMeters.toInt();
+      // dan kurangi noise — dari snapshot setelan user (konsisten foreground).
+      final distanceFilterM = gpsSettings.distanceFilterMeters.toInt();
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.high,
               distanceFilter: distanceFilterM,
               intervalDuration:
-                  const Duration(milliseconds: LocationConfig.trackingIntervalMs),
+                  Duration(milliseconds: gpsSettings.trackingIntervalMs),
               forceLocationManager: false,
             )
           : Platform.isIOS
