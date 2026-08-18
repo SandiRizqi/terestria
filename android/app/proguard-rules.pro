@@ -30,7 +30,15 @@
 -dontwarn java.awt.**
 -dontwarn javax.**
 -dontwarn org.slf4j.**
--dontwarn com.fasterxml.**
+
+# Jackson — GraphHopper memakainya (refleksi penuh) untuk serialisasi
+# EncodingManager/EncodedValues saat importOrLoad(). TANPA keep ini, R8 meng-
+# obfuscate & menghapus no-arg constructor Jackson → runtime error release-only
+# "Class ... has no default (no arg) constructor" saat build routing engine.
+-keep class com.fasterxml.jackson.** { *; }
+-keepclassmembers class com.fasterxml.jackson.** { *; }
+-keepattributes *Annotation*,Signature,EnclosingMethod,InnerClasses
+-dontwarn com.fasterxml.jackson.**
 
 # ── flutter_local_notifications (pakai Gson + reflection) ────────────────────
 -keep class com.dexterous.** { *; }
