@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../models/settings/app_settings.dart';
 import '../../../services/settings_service.dart';
+import '../../../theme/app_theme.dart';
 import 'map_tools_controller.dart';
 
 /// Panel alat ukur peta: tombol launcher yang membuka daftar mode, kartu hasil
-/// live, serta undo/clear/close. Bind ke [MapToolsController]; sertakan di Stack
-/// layar peta (host yang menempatkan posisinya, mis. Positioned kanan-bawah).
+/// live, serta undo/clear/close. Gaya mengikuti [AppTheme]. Bind ke
+/// [MapToolsController]; sertakan di Stack layar peta (host yang menempatkan
+/// posisinya, mis. Positioned kanan-bawah).
 class MapToolsPanel extends StatefulWidget {
   final MapToolsController controller;
   const MapToolsPanel({super.key, required this.controller});
@@ -21,12 +23,13 @@ class _MapToolsPanelState extends State<MapToolsPanel> {
   static const _entries = <(MapToolMode, String, IconData)>[
     (MapToolMode.distance, 'Distance', Icons.straighten),
     (MapToolMode.area, 'Area', Icons.crop_square),
-    (MapToolMode.bearing, 'Bearing', Icons.explore),
+    (MapToolMode.bearing, 'Bearing', Icons.explore_outlined),
     (MapToolMode.coordinate, 'Coordinate', Icons.my_location),
     (MapToolMode.radius, 'Radius', Icons.radio_button_unchecked),
   ];
 
-  static const Color _accent = Color(0xFFFF6D00);
+  IconData _iconFor(MapToolMode m) =>
+      _entries.firstWhere((e) => e.$1 == m, orElse: () => _entries.first).$3;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +42,7 @@ class _MapToolsPanelState extends State<MapToolsPanel> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (c.isActive) _resultCard(c.resultText(settings)),
+            if (c.isActive) _resultCard(c),
             if (_open) _modeMenu(c),
             _controlsRow(c),
           ],
@@ -48,105 +51,138 @@ class _MapToolsPanelState extends State<MapToolsPanel> {
     );
   }
 
-  Widget _resultCard(String text) => Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 6,
-                offset: const Offset(0, 2)),
-          ],
-        ),
-        child: Text(text,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-      );
+  // ─── Kartu hasil live ─────────────────────────────────────────────────────
+  Widget _resultCard(MapToolsController c) {
+    final settings = SettingsService().settings;
+    return Container(
+      width: 200,
+      margin: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacingMedium, vertical: 10),
+      decoration: AppTheme.getCardDecoration,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_iconFor(c.mode), size: 16, color: AppTheme.primaryGreen),
+          const SizedBox(width: AppTheme.spacingSmall),
+          Expanded(
+            child: Text(
+              c.resultText(settings),
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-  Widget _modeMenu(MapToolsController c) => Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 3)),
-          ],
-        ),
+  // ─── Menu pilih mode ──────────────────────────────────────────────────────
+  Widget _modeMenu(MapToolsController c) {
+    return Container(
+      width: 200,
+      margin: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
+      decoration: AppTheme.getCardDecoration,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final e in _entries)
-              InkWell(
-                onTap: () {
-                  c.setMode(e.$1);
-                  setState(() => _open = false);
-                },
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(e.$3,
-                          size: 18,
-                          color: c.mode == e.$1 ? _accent : Colors.black54),
-                      const SizedBox(width: 10),
-                      Text(e.$2,
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: c.mode == e.$1
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color:
-                                  c.mode == e.$1 ? _accent : Colors.black87)),
-                    ],
+            for (var i = 0; i < _entries.length; i++) ...[
+              if (i > 0)
+                const Divider(height: 1, indent: 52, endIndent: 12),
+              _modeTile(c, _entries[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modeTile(MapToolsController c, (MapToolMode, String, IconData) e) {
+    final active = c.mode == e.$1;
+    final color = active ? AppTheme.primaryGreen : AppTheme.textSecondary;
+    return Material(
+      color: active ? AppTheme.primaryGreen.withValues(alpha: 0.10) : Colors.white,
+      child: InkWell(
+        onTap: () {
+          c.setMode(e.$1);
+          setState(() => _open = false);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.spacingMedium, vertical: 12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                child: Icon(e.$3, size: 20, color: color),
+              ),
+              const SizedBox(width: AppTheme.spacingSmall),
+              Expanded(
+                child: Text(
+                  e.$2,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    color: active ? AppTheme.primaryGreen : AppTheme.textPrimary,
                   ),
                 ),
               ),
-          ],
+              if (active)
+                const Icon(Icons.check_rounded,
+                    size: 18, color: AppTheme.primaryGreen),
+            ],
+          ),
         ),
-      );
+      ),
+    );
+  }
 
+  // ─── Baris kontrol (undo/clear/close + launcher) ─────────────────────────
   Widget _controlsRow(MapToolsController c) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (c.isActive) ...[
             _miniBtn(
                 key: const Key('mapToolsUndo'),
-                icon: Icons.undo,
+                icon: Icons.undo_rounded,
                 tooltip: 'Undo',
                 onTap: c.undo),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppTheme.spacingSmall),
             _miniBtn(
                 key: const Key('mapToolsClear'),
-                icon: Icons.delete_outline,
+                icon: Icons.delete_outline_rounded,
                 tooltip: 'Clear',
                 onTap: c.clear),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppTheme.spacingSmall),
             _miniBtn(
                 key: const Key('mapToolsClose'),
-                icon: Icons.close,
+                icon: Icons.close_rounded,
                 tooltip: 'Close tool',
                 onTap: () {
                   c.setMode(MapToolMode.none);
                   setState(() => _open = false);
                 }),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppTheme.spacingSmall),
           ],
-          FloatingActionButton.small(
-            key: const Key('mapToolsLauncher'),
-            heroTag: 'mapToolsLauncher',
-            backgroundColor: c.isActive ? _accent : Colors.white,
-            foregroundColor: c.isActive ? Colors.white : Colors.black87,
-            onPressed: () => setState(() => _open = !_open),
-            child: const Icon(Icons.straighten),
-          ),
+          _launcher(c),
         ],
+      );
+
+  Widget _launcher(MapToolsController c) => FloatingActionButton.small(
+        key: const Key('mapToolsLauncher'),
+        heroTag: 'mapToolsLauncher',
+        elevation: 3,
+        backgroundColor: c.isActive ? AppTheme.primaryGreen : Colors.white,
+        foregroundColor: c.isActive ? Colors.white : AppTheme.primaryGreen,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium)),
+        onPressed: () => setState(() => _open = !_open),
+        child: Icon(_open ? Icons.close_rounded : Icons.straighten),
       );
 
   Widget _miniBtn({
@@ -164,10 +200,11 @@ class _MapToolsPanelState extends State<MapToolsPanel> {
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(9),
             child: Tooltip(
-                message: tooltip,
-                child: Icon(icon, size: 18, color: Colors.black87)),
+              message: tooltip,
+              child: Icon(icon, size: 18, color: AppTheme.textSecondary),
+            ),
           ),
         ),
       );

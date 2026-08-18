@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../theme/app_theme.dart';
 import 'map_tools_controller.dart';
 import 'measure_math.dart';
 
-// Warna alat ukur — sengaja kontras (oranye) agar terlihat di atas basemap.
-const Color _accent = Color(0xFFFF6D00); // deep orange
-const Color _fill = Color(0x33FF6D00); // 20% oranye
+// Warna alat ukur dari tema (amber/warning) — kontras di atas basemap satelit.
+final Color _accent = AppTheme.warningColor;
+final Color _fill = AppTheme.warningColor.withValues(alpha: 0.20);
 
 /// Bangun daftar layer flutter_map untuk mode + titik saat ini. Fungsi murni
 /// (tanpa state) sehingga mudah dites; konstruksi layer tidak butuh MapCamera.
@@ -59,7 +60,7 @@ List<Widget> buildToolLayers(MapToolMode mode, List<LatLng> pts) {
           point: p,
           width: 14,
           height: 14,
-          child: const DecoratedBox(
+          child: DecoratedBox(
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
