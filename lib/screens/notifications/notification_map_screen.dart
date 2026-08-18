@@ -23,6 +23,7 @@ import '../../services/routing_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../mixins/routing_data_manager.dart';
+import '../../mixins/map_tools_host.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -47,7 +48,8 @@ class NotificationMapScreen extends StatefulWidget {
 }
 
 class _NotificationMapScreenState extends State<NotificationMapScreen>
-    with RoutingDataManager<NotificationMapScreen> {
+    with RoutingDataManager<NotificationMapScreen>,
+        MapToolsHost<NotificationMapScreen> {
   // ─── Services ──────────────────────────────────────────────────────────────
   final MapController      _mapController  = MapController();
   final BasemapService     _basemapService = BasemapService();
@@ -1688,7 +1690,10 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
             options: MapOptions(
               initialCenter: const LatLng(-6.2088, 106.8456),
               initialZoom:   5,
-              onTap:         _onMapTap,
+              onTap: (pos, latlng) {
+                if (handleMapToolsTap(latlng)) return;
+                _onMapTap(pos, latlng);
+              },
               onPositionChanged: (position, hasGesture) {
                 final c = position.center;
                 if (_centerCoordinates.latitude  != c.latitude ||
@@ -1741,6 +1746,9 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
                     ),
                   ],
                 ),
+
+              // Map measure tool overlays (shared, scratch).
+              ...buildMapToolsLayers(),
             ],
           ),
 
@@ -1976,6 +1984,13 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
                 ),
               ),
             ),
+
+          // Map measure tools (shared, scratch) — launcher + live readout.
+          Positioned(
+            right: 16,
+            bottom: 100,
+            child: buildMapToolsPanel(),
+          ),
         ],
       ),
     );
