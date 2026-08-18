@@ -12,6 +12,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_compass/flutter_compass.dart';
 import '../../widgets/map/compass_button.dart';
+import '../../mixins/map_tools_host.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/basemap_model.dart';
@@ -54,7 +55,8 @@ class DataCollectionScreen extends StatefulWidget {
 }
 
 class _DataCollectionScreenState extends State<DataCollectionScreen>
-    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver, TickerProviderStateMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver,
+        TickerProviderStateMixin, MapToolsHost<DataCollectionScreen> {
   @override
   bool get wantKeepAlive => true;
   final LocationServiceV2 _locationService = LocationServiceV2();
@@ -3399,7 +3401,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                             _selectedBasemap!.hasPdfGeoreferencing
                         ? 13 // PDF basemap: zoom level yang reasonable
                         : 15, // Non-PDF: zoom lebih tinggi ke user location
-                    onTap: _onMapTap,
+                    onTap: (pos, latlng) {
+                      // Alat ukur menyita tap saat aktif; jika tidak, perilaku lama.
+                      if (handleMapToolsTap(latlng)) return;
+                      _onMapTap(pos, latlng);
+                    },
                     onPositionChanged: (position, hasGesture) {
                       _currentZoom = position.zoom;
                       setState(() {
@@ -3555,6 +3561,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                           ),
                         ],
                       ),
+
+                    // Map measure tool overlays (shared, scratch) — on top.
+                    ...buildMapToolsLayers(),
                   ],
                 ),
               );
@@ -3794,7 +3803,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               });
             },
           ),
-        )
+        ),
+
+      // Map measure tools (shared, scratch) — launcher + live readout.
+      Positioned(
+        right: AppTheme.spacingMedium,
+        bottom: (_isBottomSheetExpanded
+                ? _getExpandedBottomSheetHeight()
+                : _getCollapsedBottomSheetHeight()) +
+            AppTheme.spacingLarge,
+        child: buildMapToolsPanel(),
+      ),
     ]);
   }
 
