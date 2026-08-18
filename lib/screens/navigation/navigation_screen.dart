@@ -23,6 +23,7 @@ import '../../services/routing_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../mixins/routing_data_manager.dart';
+import '../../mixins/map_tools_host.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -37,7 +38,8 @@ class NavigationScreen extends StatefulWidget {
 }
 
 class _NavigationScreenState extends State<NavigationScreen>
-    with WidgetsBindingObserver, TickerProviderStateMixin, RoutingDataManager<NavigationScreen> {
+    with WidgetsBindingObserver, TickerProviderStateMixin,
+        RoutingDataManager<NavigationScreen>, MapToolsHost<NavigationScreen> {
 
   // ─── Services ──────────────────────────────────────────────────────────────
   final _locationService  = LocationServiceV2();
@@ -529,7 +531,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       options: MapOptions(
         initialCenter: const LatLng(-1.0, 113.0),
         initialZoom:   5.0,
-        onTap:         (_, __) {},
+        onTap:         (pos, latlng) { handleMapToolsTap(latlng); },
         onLongPress:   _onMapLongPress,
         onPositionChanged: (pos, hasGesture) {
           final c = pos.center;
@@ -590,6 +592,9 @@ class _NavigationScreenState extends State<NavigationScreen>
               child:  UserLocationMarker(bearing: _gpsBearing),
             ),
           ]),
+
+        // Map measure tool overlays (shared, scratch).
+        ...buildMapToolsLayers(),
       ],
     );
   }
@@ -1021,6 +1026,13 @@ class _NavigationScreenState extends State<NavigationScreen>
                 ),
               ),
             ),
+
+          // Map measure tools (shared, scratch) — launcher + live readout.
+          Positioned(
+            bottom: navBarH + 292,
+            right:  16,
+            child:  buildMapToolsPanel(),
+          ),
         ],
       ),
     );
