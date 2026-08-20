@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -104,6 +105,8 @@ class _TerestriaAppState extends State<TerestriaApp>
   /// Cek jika ada flexible update yang sudah selesai didownload
   /// dan belum diterapkan — tampilkan snackbar untuk ajak user restart.
   Future<void> _checkFlexibleUpdateInstallStatus() async {
+    // In-app update hanya di Android (Google Play Core). iOS: lewati.
+    if (!Platform.isAndroid) return;
     try {
       final info = await InAppUpdate.checkForUpdate()
           .timeout(const Duration(seconds: 8));

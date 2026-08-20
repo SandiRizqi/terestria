@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  APNs environment untuk FCM.
+	  Nilai "development" dipakai untuk build debug/TestFlight internal.
+	  Xcode otomatis memakai "production" saat archive untuk distribusi
+	  App Store selama capability "Push Notifications" aktif di
+	  Signing & Capabilities. Jangan hapus key ini — tanpa aps-environment
+	  APNs (dan karena itu FCM) tidak akan terkirim di device.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

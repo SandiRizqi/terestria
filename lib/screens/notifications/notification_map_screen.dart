@@ -342,6 +342,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
   // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _calculateRoute(LatLng to, String? label) async {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
     if (_isInitializingRouter) {
       _showSnackBar('⏳ Routing engine is preparing, please wait...');
       return;

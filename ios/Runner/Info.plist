@@ -62,7 +62,15 @@
 		<string>processing</string>
 		<string>remote-notification</string>
 	</array>
-	
+
+	<!-- Identifier BGTaskScheduler untuk flutter_background_service (iOS 13+).
+	     Harus cocok dgn taskIdentifier plugin: dev.flutter.background.refresh.
+	     Tanpa ini, penjadwalan background refresh gagal di iOS. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.flutter.background.refresh</string>
+	</array>
+
 	<!-- UI Configuration -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>

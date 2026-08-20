@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -27,9 +29,50 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
   // ─── State milik mixin ─────────────────────────────────────────────────────
   bool isImportingOsm = false;
 
+  // ─── Ketersediaan routing per-platform ─────────────────────────────────────
+
+  /// Routing/navigasi offline saat ini hanya di Android (mesin GraphHopper 7.0
+  /// native). Di iOS belum ada engine padanan → fitur ini dinonaktifkan dengan
+  /// pesan yang jelas, sementara peta/GPS/kompas/ukur/collect tetap normal.
+  bool get isRoutingAvailable => Platform.isAndroid;
+
+  /// Dialog informatif saat user mencoba fitur routing di platform yang belum
+  /// didukung (iOS). Dipakai bersama oleh semua entry-point routing.
+  void showRoutingUnavailableDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Row(children: [
+          Icon(Icons.directions_off_rounded, color: Colors.orange),
+          SizedBox(width: 8),
+          Expanded(child: Text('Navigasi Belum Tersedia')),
+        ]),
+        content: const Text(
+          'Rute & navigasi offline saat ini hanya tersedia di Android.\n\n'
+          'Fitur lain tetap berfungsi normal di perangkat ini: peta, GPS, '
+          'kompas, alat ukur, dan pengumpulan data.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryGreen,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Mengerti'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── Import / delete file .pbf manual ──────────────────────────────────────
 
   Future<void> importOsmFile() async {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
     final result = await FilePicker.platform.pickFiles(
       type: FileType.any,
       dialogTitle: 'Select routing file (.pbf / .osm)',
@@ -89,6 +132,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
   // ─── Dialog / bottom sheet ─────────────────────────────────────────────────
 
   void showOsmMissingDialog() {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -132,6 +176,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
   }
 
   void showOsmManagementSheet() {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -297,6 +342,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
   /// Alur: pilih company (dari scope) → unduh .osm.pbf → pasang ke GraphHopper
   /// hingga siap route. Company tanpa data → dialog "belum tersedia".
   Future<void> downloadRoadsFromServer() async {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -450,6 +496,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
 
   /// Pilih road data yang sudah tersimpan lokal (OFFLINE, tanpa unduh ulang).
   Future<void> showSavedRoadsPicker() async {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
     final saved = await routingService.listDownloadedRoads();
     if (!mounted) return;
     if (saved.isEmpty) {

@@ -386,6 +386,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     String? profile,                // null → reuse the last chosen profile
     bool fitBounds  = true, // false when recalculating during active navigation
   }) async {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
     if (_isInitializingRouter) {
       _showSnackBar('⏳ Routing engine is preparing, please wait...');
       return;

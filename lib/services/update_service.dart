@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:in_app_update/in_app_update.dart';
 
@@ -22,6 +23,9 @@ class UpdateService {
   /// Panggil ini tanpa `await` dari AppInitializer supaya tidak memblokir
   /// inisialisasi app.
   void startUpdateCheck(BuildContext? context) {
+    // In-app update = Google Play Core → Android saja. Di iOS no-op senyap
+    // supaya tidak melempar PlatformException.
+    if (!Platform.isAndroid) return;
     if (_hasCheckedThisSession) return;
     _hasCheckedThisSession = true;
 
