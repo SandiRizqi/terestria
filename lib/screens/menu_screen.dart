@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/database_service.dart';
 import '../services/notification_event_service.dart';
+import '../services/notification_sync_service.dart';
 import '../services/firebase_messaging_service.dart';
 import '../widgets/connectivity/connectivity_indicator.dart';
 import 'auth/login_screen.dart';
@@ -32,6 +33,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   final ConnectivityService _connectivityService = ConnectivityService();
   final DatabaseService _databaseService = DatabaseService();
   final NotificationEventService _notificationEventService = NotificationEventService();
+  final NotificationSyncService _notificationSyncService = NotificationSyncService();
   final FirebaseMessagingService _firebaseMessagingService = FirebaseMessagingService();
   final AuthService _authService = AuthService();
   bool _isOnline = false;
@@ -46,6 +48,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _initConnectivity();
     _loadUnreadNotificationCount();
+    _syncNotifications();
     _listenToNotificationEvents();
     _setupFirebaseMessagingCallback();
     _loadCurrentUser();
@@ -143,10 +146,18 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     
-    // Reload notification count when app comes to foreground
+    // Reload notification count + tarik inbox server saat app kembali foreground
+    // (menambal push yang tertunda Doze).
     if (state == AppLifecycleState.resumed) {
       _loadUnreadNotificationCount();
+      _syncNotifications();
     }
+  }
+
+  /// Tarik inbox server (best-effort); refresh badge bila ada yang baru.
+  Future<void> _syncNotifications() async {
+    final added = await _notificationSyncService.sync();
+    if (added > 0 && mounted) _loadUnreadNotificationCount();
   }
 
   @override

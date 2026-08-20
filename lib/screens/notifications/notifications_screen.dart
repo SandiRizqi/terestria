@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/database_service.dart';
 import '../../services/notification_event_service.dart';
+import '../../services/notification_sync_service.dart';
 import '../../models/notification_model.dart';
 import '../../theme/app_theme.dart';
 import 'notification_settings_screen.dart';
@@ -18,6 +19,7 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final DatabaseService _databaseService = DatabaseService();
   final NotificationEventService _notificationEventService = NotificationEventService();
+  final NotificationSyncService _syncService = NotificationSyncService();
   List<NotificationModel> _notifications = [];
   bool _isLoading = true;
   int _unreadCount = 0;
@@ -26,6 +28,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void initState() {
     super.initState();
     _loadNotifications();
+    // Tarik inbox server saat layar dibuka (menambal push yang tertunda).
+    _syncService.sync().then((added) {
+      if (added > 0 && mounted) _loadNotifications();
+    });
+  }
+
+  /// Sinkron server lalu muat ulang (dipakai pull-to-refresh).
+  Future<void> _syncAndReload() async {
+    await _syncService.sync();
+    await _loadNotifications();
   }
 
   Future<void> _loadNotifications() async {
@@ -64,7 +76,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       await _databaseService.markNotificationAsRead(notification.id);
       await _loadNotifications();
-      
+      // Rekonsiliasi read ke server (best-effort) agar sinkron antar device.
+      _syncService.markReadOnServer(notification.data?['server_id']?.toString());
+
       // Notify listeners that notification was read
       _notificationEventService.notifyNotificationRead();
     } catch (e) {
@@ -330,7 +344,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 )
               : SafeArea(
                   child: RefreshIndicator(
-                    onRefresh: _loadNotifications,
+                    onRefresh: _syncAndReload,
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: _notifications.length,

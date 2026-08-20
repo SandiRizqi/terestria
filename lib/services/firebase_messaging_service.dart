@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'fcm_token_service.dart';
 import 'database_service.dart';
 import 'notification_event_service.dart';
+import 'notification_sync_service.dart' show stableNotificationId;
 import '../models/notification_model.dart';
 
 // Background message handler - HARUS top-level function
@@ -19,11 +20,14 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Save notification to database
     try {
       final databaseService = DatabaseService();
+      final data = message.data.isNotEmpty ? message.data : null;
       final notification = NotificationModel(
-        id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        // Id stabil dari object_id → cocok dgn hasil sync (anti-dobel).
+        id: stableNotificationId(data) ??
+            message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
         title: message.notification!.title ?? 'Notification',
         body: message.notification!.body ?? '',
-        data: message.data.isNotEmpty ? message.data : null,
+        data: data,
         receivedAt: DateTime.now(),
         isRead: false,
       );
@@ -300,11 +304,13 @@ class FirebaseMessagingService {
   // Save notification to database
   Future<void> _saveNotificationToDatabase(RemoteMessage message) async {
     try {
+      final data = message.data.isNotEmpty ? message.data : null;
       final notification = NotificationModel(
-        id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        id: stableNotificationId(data) ??
+            message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
         title: message.notification?.title ?? 'Notification',
         body: message.notification?.body ?? '',
-        data: message.data.isNotEmpty ? message.data : null,
+        data: data,
         receivedAt: DateTime.now(),
         isRead: false,
       );
