@@ -80,12 +80,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           return;
         }
 
-        // Re-sync FCM topic subscriptions saat app kembali dibuka
+        // Re-sync FCM topic subscriptions saat app kembali dibuka —
+        // fire-and-forget di background agar tidak menahan navigasi ke home.
         try {
           final user = await _authService.getUser();
-          final scopes = user?.scope ?? [];
-          await ScopeTopicService().syncTopics(scopes);
-          print('✅ [Splash] FCM topic sync completed on app resume');
+          ScopeTopicService().syncTopicsInBackground(user?.scope ?? []);
         } catch (e) {
           print('⚠️ [Splash] FCM topic sync failed: $e');
         }

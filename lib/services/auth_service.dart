@@ -114,14 +114,10 @@ class AuthService {
           }
         }
 
-        // Sync FCM topic subscriptions based on scope
-        try {
-          await _scopeTopicService.syncTopics(user.scope ?? []);
-          print('✅ FCM topic sync completed after login');
-        } catch (e) {
-          print('⚠️ Failed to sync FCM topics: $e');
-          // Don't fail login if topic sync fails
-        }
+        // Sync FCM topic subscriptions based on scope — fire-and-forget di
+        // background (antrean serial di service) supaya login tidak menunggu
+        // round-trip FCM per scope. Gagal pun tak menggagalkan login.
+        _scopeTopicService.syncTopicsInBackground(user.scope ?? []);
         
         return AuthResult(
           success: true,
@@ -198,7 +194,9 @@ class AuthService {
   void _cleanupFCMAsync(String? token) {
     Future(() async {
       try {
-        await _scopeTopicService.unsubscribeAll();
+        // Lewat antrean serial service — tak balapan dengan syncTopics milik
+        // login berikutnya bila user logout lalu login cepat.
+        await _scopeTopicService.unsubscribeAllInBackground();
         print('✅ FCM scope topics unsubscribed on logout');
       } catch (e) {
         print('⚠️ Failed to unsubscribe FCM topics: $e');

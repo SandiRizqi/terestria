@@ -12,6 +12,28 @@ class ScopeTopicService {
   factory ScopeTopicService() => _instance;
   ScopeTopicService._internal();
 
+  /// Antrean SERIAL untuk operasi topic yang dipanggil fire-and-forget.
+  /// Login/splash/logout tidak perlu menunggu jaringan FCM, tapi urutan
+  /// subscribe/unsubscribe tetap terjaga (logout cepat → login tak balapan).
+  Future<void> _serial = Future.value();
+
+  Future<void> _enqueue(String label, Future<void> Function() op) {
+    _serial = _serial.then((_) => op()).catchError((e) {
+      // Telan error agar antrean tidak mati; operasi berikutnya tetap jalan.
+      print('⚠️ [FCM] $label gagal di background: $e');
+    });
+    return _serial;
+  }
+
+  /// Versi NON-BLOCKING dari [syncTopics] — jalankan di background berurutan.
+  /// Pemanggil boleh mengabaikan future-nya (fire-and-forget).
+  Future<void> syncTopicsInBackground(List<int> newScopes) =>
+      _enqueue('syncTopics', () => syncTopics(newScopes));
+
+  /// Versi NON-BLOCKING dari [unsubscribeAll] (dipakai saat logout).
+  Future<void> unsubscribeAllInBackground() =>
+      _enqueue('unsubscribeAll', unsubscribeAll);
+
   Future<void> syncTopics(List<int> newScopes) async {
     final oldScopes = await _getSubscribedScopes();
 
