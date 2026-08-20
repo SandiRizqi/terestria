@@ -24,6 +24,7 @@ import '../../services/settings_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../mixins/routing_data_manager.dart';
 import '../../mixins/map_tools_host.dart';
+import '../../widgets/map/map_controls_column.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -1840,97 +1841,88 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
             ),
           ),
 
-          // ── RIGHT FABs (bottom-right column) ──────────────────────────────
-
-          // 1. Fit notification bounds
-          Positioned(
+          // ── RIGHT CONTROLS — satu kolom responsif (tak saling menumpuk) ──────
+          MapControlsColumn(
             bottom: navBarH + 16,
-            right:  16,
-            child: FloatingActionButton(
-              heroTag:         'nmapFitBounds',
-              mini:            true,
-              backgroundColor: Colors.white,
-              elevation:       6,
-              onPressed:       _fitToNotificationBounds,
-              child: Icon(Icons.center_focus_strong, color: AppTheme.primaryGreen),
-            ),
-          ),
+            children: [
+              // Map measure tools — paling atas.
+              buildMapToolsPanel(),
 
-          // 2. Basemap selector
-          Positioned(
-            bottom: navBarH + 76,
-            right:  16,
-            child: FloatingActionButton(
-              heroTag:         'nmapBasemap',
-              mini:            true,
-              backgroundColor: Colors.white,
-              elevation:       6,
-              onPressed:       _showBasemapSelector,
-              child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
-            ),
-          ),
-
-          // 3. Layers panel
-          Positioned(
-            bottom: navBarH + 136,
-            right:  16,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                FloatingActionButton(
-                  heroTag:         'nmapLayers',
-                  mini:            true,
-                  backgroundColor: _layers.any((l) => l.isActive) ? Colors.teal : Colors.white,
-                  elevation:       6,
-                  tooltip:         'GeoJSON Layers',
-                  onPressed:       _showLayersPanel,
-                  child: Icon(
-                    Icons.layers_outlined,
-                    color: _layers.any((l) => l.isActive) ? Colors.white : Colors.teal,
+              // Compass / reset north
+              GestureDetector(
+                onTap: () {
+                  _mapController.rotate(0);
+                  setState(() => _currentBearing = 0);
+                },
+                child: Container(
+                  width:  40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color:  Colors.white,
+                    shape:  BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 8, offset: const Offset(0, 3))],
+                  ),
+                  child: Transform.rotate(
+                    angle: -_currentBearing * (math.pi / 180),
+                    child: CustomPaint(size: const Size(40, 40), painter: _CompassPainter()),
                   ),
                 ),
-                if (_layers.any((l) => l.isActive))
-                  Positioned(
-                    top: -2, right: -2,
-                    child: Container(
-                      width:  14,
-                      height: 14,
-                      decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
-                      child: Center(
-                        child: Text(
-                          '${_layers.where((l) => l.isActive).length}',
-                          style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+              ),
+
+              // Layers panel
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  FloatingActionButton(
+                    heroTag:         'nmapLayers',
+                    mini:            true,
+                    backgroundColor: _layers.any((l) => l.isActive) ? Colors.teal : Colors.white,
+                    elevation:       6,
+                    tooltip:         'GeoJSON Layers',
+                    onPressed:       _showLayersPanel,
+                    child: Icon(
+                      Icons.layers_outlined,
+                      color: _layers.any((l) => l.isActive) ? Colors.white : Colors.teal,
+                    ),
+                  ),
+                  if (_layers.any((l) => l.isActive))
+                    Positioned(
+                      top: -2, right: -2,
+                      child: Container(
+                        width:  14,
+                        height: 14,
+                        decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
+                        child: Center(
+                          child: Text(
+                            '${_layers.where((l) => l.isActive).length}',
+                            style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-
-          // 4. Compass / reset north
-          Positioned(
-            bottom: navBarH + 196,
-            right:  16,
-            child: GestureDetector(
-              onTap: () {
-                _mapController.rotate(0);
-                setState(() => _currentBearing = 0);
-              },
-              child: Container(
-                width:  40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color:  Colors.white,
-                  shape:  BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 8, offset: const Offset(0, 3))],
-                ),
-                child: Transform.rotate(
-                  angle: -_currentBearing * (math.pi / 180),
-                  child: CustomPaint(size: const Size(40, 40), painter: _CompassPainter()),
-                ),
+                ],
               ),
-            ),
+
+              // Basemap selector
+              FloatingActionButton(
+                heroTag:         'nmapBasemap',
+                mini:            true,
+                backgroundColor: Colors.white,
+                elevation:       6,
+                onPressed:       _showBasemapSelector,
+                child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
+              ),
+
+              // Fit notification bounds
+              FloatingActionButton(
+                heroTag:         'nmapFitBounds',
+                mini:            true,
+                backgroundColor: Colors.white,
+                elevation:       6,
+                onPressed:       _fitToNotificationBounds,
+                child: Icon(Icons.center_focus_strong, color: AppTheme.primaryGreen),
+              ),
+            ],
           ),
 
           // ── ROUTE CONTROLS (Start / Stop / Clear) ─────────────────────────
@@ -1985,12 +1977,6 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
               ),
             ),
 
-          // Map measure tools (shared, scratch) — launcher + live readout.
-          Positioned(
-            right: 16,
-            bottom: 100,
-            child: buildMapToolsPanel(),
-          ),
         ],
       ),
     );

@@ -24,6 +24,7 @@ import '../../services/settings_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../mixins/routing_data_manager.dart';
 import '../../mixins/map_tools_host.dart';
+import '../../widgets/map/map_controls_column.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -821,126 +822,113 @@ class _NavigationScreenState extends State<NavigationScreen>
             ),
           ),
 
-          // ── RIGHT FABs ────────────────────────────────────────────────────
-
-          // 1. Fit bounds
-          Positioned(
+          // ── RIGHT CONTROLS — satu kolom responsif (tak saling menumpuk) ──────
+          MapControlsColumn(
             bottom: navBarH + 16,
-            right:  16,
-            child: FloatingActionButton(
-              heroTag:         'navFitBounds',
-              mini:            true,
-              backgroundColor: Colors.white,
-              elevation:       6,
-              tooltip:         'Fit Bounds',
-              onPressed:       _fitAllBounds,
-              child: Icon(Icons.center_focus_strong, color: AppTheme.primaryGreen),
-            ),
-          ),
+            children: [
+              // Map measure tools (launcher + live readout) — paling atas.
+              buildMapToolsPanel(),
 
-          // 2. Basemap selector
-          Positioned(
-            bottom: navBarH + 76,
-            right:  16,
-            child: FloatingActionButton(
-              heroTag:         'navBasemap',
-              mini:            true,
-              backgroundColor: Colors.white,
-              elevation:       6,
-              tooltip:         'Change Basemap',
-              onPressed:       _showBasemapSelector,
-              child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
-            ),
-          ),
-
-          // 3. Layers with active-count badge
-          Positioned(
-            bottom: navBarH + 136,
-            right:  16,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                FloatingActionButton(
-                  heroTag:         'navLayers',
-                  mini:            true,
-                  backgroundColor: _layers.any((l) => l.isActive)
-                      ? Colors.teal
-                      : Colors.white,
-                  elevation:       6,
-                  tooltip:         'GeoJSON Layers',
-                  onPressed:       _showLayersPanel,
+              // Heading-up toggle — peta berputar mengikuti arah jalan
+              GestureDetector(
+                onTap: () {
+                  setState(() => _headingUp = !_headingUp);
+                  if (!_headingUp) _mapController.rotate(0); // kembali north-up
+                },
+                child: Container(
+                  width:  40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _headingUp ? AppTheme.primaryGreen : Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color:      Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 8,
+                        offset:     const Offset(0, 3),
+                      ),
+                    ],
+                  ),
                   child: Icon(
-                    Icons.layers_outlined,
-                    color: _layers.any((l) => l.isActive)
-                        ? Colors.white
-                        : Colors.teal,
+                    Icons.explore,
+                    size: 20,
+                    color: _headingUp ? Colors.white : Colors.black87,
                   ),
                 ),
-                if (_layers.any((l) => l.isActive))
-                  Positioned(
-                    top: -2, right: -2,
-                    child: Container(
-                      width:  14,
-                      height: 14,
-                      decoration: const BoxDecoration(
-                          color: Colors.orange, shape: BoxShape.circle),
-                      child: Center(
-                        child: Text(
-                          '${_layers.where((l) => l.isActive).length}',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold),
+              ),
+
+              // Compass — tap to reset north (animated); also exits heading-up
+              CompassButton(
+                mapController: _mapController,
+                onResetToNorth: () {
+                  if (_headingUp) setState(() => _headingUp = false);
+                },
+              ),
+
+              // Layers with active-count badge
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  FloatingActionButton(
+                    heroTag:         'navLayers',
+                    mini:            true,
+                    backgroundColor: _layers.any((l) => l.isActive)
+                        ? Colors.teal
+                        : Colors.white,
+                    elevation:       6,
+                    tooltip:         'GeoJSON Layers',
+                    onPressed:       _showLayersPanel,
+                    child: Icon(
+                      Icons.layers_outlined,
+                      color: _layers.any((l) => l.isActive)
+                          ? Colors.white
+                          : Colors.teal,
+                    ),
+                  ),
+                  if (_layers.any((l) => l.isActive))
+                    Positioned(
+                      top: -2, right: -2,
+                      child: Container(
+                        width:  14,
+                        height: 14,
+                        decoration: const BoxDecoration(
+                            color: Colors.orange, shape: BoxShape.circle),
+                        child: Center(
+                          child: Text(
+                            '${_layers.where((l) => l.isActive).length}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-
-          // 4. Compass — tap to reset north (animated); also exits heading-up
-          Positioned(
-            bottom: navBarH + 196,
-            right:  16,
-            child: CompassButton(
-              mapController: _mapController,
-              onResetToNorth: () {
-                if (_headingUp) setState(() => _headingUp = false);
-              },
-            ),
-          ),
-
-          // 4b. Heading-up toggle — peta berputar mengikuti arah jalan
-          Positioned(
-            bottom: navBarH + 244,
-            right:  16,
-            child: GestureDetector(
-              onTap: () {
-                setState(() => _headingUp = !_headingUp);
-                if (!_headingUp) _mapController.rotate(0); // kembali north-up
-              },
-              child: Container(
-                width:  40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _headingUp ? AppTheme.primaryGreen : Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color:      Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 8,
-                      offset:     const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.explore,
-                  size: 20,
-                  color: _headingUp ? Colors.white : Colors.black87,
-                ),
+                ],
               ),
-            ),
+
+              // Basemap selector
+              FloatingActionButton(
+                heroTag:         'navBasemap',
+                mini:            true,
+                backgroundColor: Colors.white,
+                elevation:       6,
+                tooltip:         'Change Basemap',
+                onPressed:       _showBasemapSelector,
+                child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
+              ),
+
+              // Fit bounds
+              FloatingActionButton(
+                heroTag:         'navFitBounds',
+                mini:            true,
+                backgroundColor: Colors.white,
+                elevation:       6,
+                tooltip:         'Fit Bounds',
+                onPressed:       _fitAllBounds,
+                child: Icon(Icons.center_focus_strong, color: AppTheme.primaryGreen),
+              ),
+            ],
           ),
 
           // ── ROUTE CONTROLS (Start / Stop / Clear) ────────────────────────
@@ -1027,12 +1015,6 @@ class _NavigationScreenState extends State<NavigationScreen>
               ),
             ),
 
-          // Map measure tools (shared, scratch) — launcher + live readout.
-          Positioned(
-            bottom: navBarH + 292,
-            right:  16,
-            child:  buildMapToolsPanel(),
-          ),
         ],
       ),
     );

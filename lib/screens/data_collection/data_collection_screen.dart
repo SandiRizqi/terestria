@@ -12,6 +12,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_compass/flutter_compass.dart';
 import '../../widgets/map/compass_button.dart';
+import '../../widgets/map/map_controls_column.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
@@ -3641,178 +3642,145 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         ),
       ),
 
-      // Zoom to User Location Button
-      Positioned(
-        bottom: _isBottomSheetExpanded
-            ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge) // Dynamic based on content
-            : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge), // Collapsed height with safe area
-        right: AppTheme.spacingMedium,
-        child: FloatingActionButton(
-          heroTag: 'userLocation',
-          mini: true,
-          backgroundColor: Colors.white,
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: const Icon(Icons.my_location, color: AppTheme.primaryColor),
-          onPressed: () {
-            if (_currentLocation != null) {
-              _mapController.move(
-                LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
-                _mapController.camera.zoom, // preserve current zoom, never zoom out
-              );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Location not available'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
-          },
-        ),
-      ),
-
-      // Basemap Selector Button
-      Positioned(
-        bottom: _isBottomSheetExpanded
-            ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 60) // Dynamic + offset
-            : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 60), // Collapsed + offset with safe area
-        right: AppTheme.spacingMedium,
-        child: FloatingActionButton(
-          heroTag: 'basemap',
-          mini: true,
-          backgroundColor: Colors.white,
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: const Icon(Icons.layers, color: AppTheme.primaryColor),
-          onPressed: _showBasemapSelector,
-        ),
-      ),
-
-      // Offline Download Button
-      Positioned(
-        bottom: _isBottomSheetExpanded
-            ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 120)
-            : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 120),
-        right: AppTheme.spacingMedium,
-        child: FloatingActionButton(
-          heroTag: 'offline_download',
-          mini: true,
-          backgroundColor: Colors.white,
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: const Icon(Icons.download, color: Colors.green),
-          tooltip: 'Download for Offline',
-          onPressed: _showOfflineDownloadDialog,
-        ),
-      ),
-
-      // North / Compass Button — jarum mengikuti rotasi peta, reset ber-animasi
-      Positioned(
-        bottom: _isBottomSheetExpanded
-            ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 300)
-            : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 300),
-        right: AppTheme.spacingMedium,
-        child: CompassButton(mapController: _mapController),
-      ),
-
-      // Layers Panel Button
-      Positioned(
-        bottom: _isBottomSheetExpanded
-            ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 180)
-            : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 180),
-        right: AppTheme.spacingMedium,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            FloatingActionButton(
-              heroTag: 'geojson_layers',
-              mini: true,
-              backgroundColor: _layers.any((l) => l.isActive)
-                  ? Colors.teal
-                  : Colors.white,
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              tooltip: 'GeoJSON Layers',
-              onPressed: _showLayersPanel,
-              child: Icon(
-                Icons.layers_outlined,
-                color: _layers.any((l) => l.isActive)
-                    ? Colors.white
-                    : Colors.teal,
-              ),
-            ),
-            if (_layers.any((l) => l.isActive))
-              Positioned(
-                top: -2,
-                right: -2,
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: const BoxDecoration(
-                    color: Colors.orange,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${_layers.where((l) => l.isActive).length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-
-      // Mode Toggle Button (only for line/polygon)
-      if (widget.project.geometryType != GeometryType.point)
-        Positioned(
-          bottom: _isBottomSheetExpanded
-              ? (_getExpandedBottomSheetHeight() + AppTheme.spacingLarge + 240)
-              : (_getCollapsedBottomSheetHeight() + AppTheme.spacingLarge + 240),
-          right: AppTheme.spacingMedium,
-          child: FloatingActionButton(
-            heroTag: 'mode',
-            mini: true,
-            backgroundColor: _collectionMode == CollectionMode.drawing
-                ? AppTheme.primaryColor
-                : Colors.white,
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Icon(
-              _collectionMode == CollectionMode.drawing
-                  ? Icons.touch_app
-                  : Icons.edit,
-              color: _collectionMode == CollectionMode.drawing
-                  ? Colors.white
-                  : AppTheme.primaryColor,
-            ),
-            onPressed: () {
-              setState(() {
-                if (_collectionMode == CollectionMode.tracking) {
-                  _collectionMode = CollectionMode.drawing;
-                  if (_isTracking) _finishTracking();
-                } else {
-                  _collectionMode = CollectionMode.tracking;
-                }
-              });
-            },
-          ),
-        ),
-
-      // Map measure tools (shared, scratch) — launcher + live readout.
-      Positioned(
+      // ── RIGHT CONTROLS — satu kolom responsif (tak saling menumpuk) ──────
+      MapControlsColumn(
         right: AppTheme.spacingMedium,
         bottom: (_isBottomSheetExpanded
                 ? _getExpandedBottomSheetHeight()
                 : _getCollapsedBottomSheetHeight()) +
             AppTheme.spacingLarge,
-        child: buildMapToolsPanel(),
+        children: [
+          // Map measure tools — paling atas.
+          buildMapToolsPanel(),
+
+          // Compass — jarum mengikuti rotasi peta, reset ber-animasi
+          CompassButton(mapController: _mapController),
+
+          // Mode Toggle (hanya line/polygon)
+          if (widget.project.geometryType != GeometryType.point)
+            FloatingActionButton(
+              heroTag: 'mode',
+              mini: true,
+              backgroundColor: _collectionMode == CollectionMode.drawing
+                  ? AppTheme.primaryColor
+                  : Colors.white,
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Icon(
+                _collectionMode == CollectionMode.drawing
+                    ? Icons.touch_app
+                    : Icons.edit,
+                color: _collectionMode == CollectionMode.drawing
+                    ? Colors.white
+                    : AppTheme.primaryColor,
+              ),
+              onPressed: () {
+                setState(() {
+                  if (_collectionMode == CollectionMode.tracking) {
+                    _collectionMode = CollectionMode.drawing;
+                    if (_isTracking) _finishTracking();
+                  } else {
+                    _collectionMode = CollectionMode.tracking;
+                  }
+                });
+              },
+            ),
+
+          // Layers Panel
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              FloatingActionButton(
+                heroTag: 'geojson_layers',
+                mini: true,
+                backgroundColor: _layers.any((l) => l.isActive)
+                    ? Colors.teal
+                    : Colors.white,
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                tooltip: 'GeoJSON Layers',
+                onPressed: _showLayersPanel,
+                child: Icon(
+                  Icons.layers_outlined,
+                  color: _layers.any((l) => l.isActive)
+                      ? Colors.white
+                      : Colors.teal,
+                ),
+              ),
+              if (_layers.any((l) => l.isActive))
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: const BoxDecoration(
+                      color: Colors.orange,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${_layers.where((l) => l.isActive).length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          // Offline Download
+          FloatingActionButton(
+            heroTag: 'offline_download',
+            mini: true,
+            backgroundColor: Colors.white,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: const Icon(Icons.download, color: Colors.green),
+            tooltip: 'Download for Offline',
+            onPressed: _showOfflineDownloadDialog,
+          ),
+
+          // Basemap Selector
+          FloatingActionButton(
+            heroTag: 'basemap',
+            mini: true,
+            backgroundColor: Colors.white,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: const Icon(Icons.layers, color: AppTheme.primaryColor),
+            onPressed: _showBasemapSelector,
+          ),
+
+          // Zoom to User Location
+          FloatingActionButton(
+            heroTag: 'userLocation',
+            mini: true,
+            backgroundColor: Colors.white,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: const Icon(Icons.my_location, color: AppTheme.primaryColor),
+            onPressed: () {
+              if (_currentLocation != null) {
+                _mapController.move(
+                  LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
+                  _mapController.camera.zoom, // preserve current zoom, never zoom out
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Location not available'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
       ),
     ]);
   }
