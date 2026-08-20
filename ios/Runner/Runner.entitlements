@@ -4,11 +4,23 @@
 <dict>
 	<!--
 	  APNs environment untuk FCM.
-	  Nilai "development" dipakai untuk build debug/TestFlight internal.
-	  Xcode otomatis memakai "production" saat archive untuk distribusi
-	  App Store selama capability "Push Notifications" aktif di
-	  Signing & Capabilities. Jangan hapus key ini — tanpa aps-environment
-	  APNs (dan karena itu FCM) tidak akan terkirim di device.
+
+	  ⚠️ CATATAN: File ini SENGAJA belum direferensikan dari project.pbxproj
+	  (CODE_SIGN_ENTITLEMENTS dilepas) karena akun Apple gratis/Personal Team
+	  TIDAK mendukung capability Push Notifications → build gagal bikin
+	  provisioning profile.
+
+	  UNTUK MENGAKTIFKAN FCM (butuh akun Apple Developer BERBAYAR):
+	  1) Tambahkan lagi baris berikut ke 3 config Runner (Debug/Release/Profile)
+	     di ios/Runner.xcodeproj/project.pbxproj, tepat di atas
+	     PRODUCT_BUNDLE_IDENTIFIER:
+	        CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
+	  2) Di Xcode → Signing & Capabilities: pilih team berbayar, tambah
+	     capability "Push Notifications" + "Background Modes".
+	  3) Upload APNs Auth Key (.p8) ke Firebase Console.
+
+	  Nilai "development" untuk build debug/TestFlight internal; Xcode memakai
+	  "production" otomatis saat archive distribusi bila capability aktif.
 	-->
 	<key>aps-environment</key>
 	<string>development</string>
