@@ -62,11 +62,36 @@ List<NotificationModel> newServerItems(
   return result;
 }
 
+/// Baris lokal yang perlu DI-ENRICH `map`-nya dari server: id sudah ada lokal,
+/// lokal belum punya `map`, server kini menyediakan `map`. Dibutuhkan karena
+/// [newServerItems] melewati id yang sudah ada — notifikasi lama yang ter-sync
+/// sebelum fitur ini takkan pernah dapat geometri tanpa enrich. isRead &
+/// receivedAt LOKAL dipertahankan (read lokal bukan wewenang enrich ini).
+List<NotificationModel> enrichableFromServer(
+    List<dynamic> items, Map<String, NotificationModel> localById) {
+  final out = <NotificationModel>[];
+  for (final raw in items) {
+    final server = notificationFromServerItem(Map<String, dynamic>.from(raw));
+    final local = localById[server.id];
+    if (local == null) continue;
+    final localHasMap = local.data?.containsKey('map') ?? false;
+    final serverHasMap = server.data?.containsKey('map') ?? false;
+    if (!localHasMap && serverHasMap) {
+      out.add(local.copyWith(
+          data: {...?local.data, 'map': server.data!['map']}));
+    }
+  }
+  return out;
+}
+
 /// Menarik inbox notifikasi dari server dan meng-upsert ke DB lokal —
 /// menambal notifikasi yang push-nya tertunda/hilang (Doze). Push tetap jalan;
 /// ini hanya jaring pengaman/rekonsiliasi.
 class NotificationSyncService {
   static const String _lastSyncKey = 'notif_last_sync';
+  // Sekali saja setelah update: abaikan `since` agar notifikasi lama ikut
+  // tertarik & di-enrich map-nya (baris tanpa geometri dari sebelum fitur ini).
+  static const String _mapBackfillKey = 'notif_map_backfill_v1';
   static const String endpoint = '/mobile/notifications/';
 
   final ApiService _api;
@@ -86,7 +111,10 @@ class NotificationSyncService {
   Future<int> sync() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final since = prefs.getString(_lastSyncKey);
+      // Backfill sekali: abaikan `since` supaya notifikasi lama (tanpa map)
+      // ikut tertarik dan bisa di-enrich.
+      final backfillDone = prefs.getBool(_mapBackfillKey) ?? false;
+      final since = backfillDone ? prefs.getString(_lastSyncKey) : null;
       var path = endpoint;
       if (since != null && since.isNotEmpty) {
         path = '$endpoint?since=${Uri.encodeComponent(since)}';
@@ -99,14 +127,24 @@ class NotificationSyncService {
       final List<dynamic> results =
           (body is Map && body['results'] is List) ? body['results'] : const [];
 
-      final existing = {for (final n in await _db.loadNotifications()) n.id};
+      final localList = await _db.loadNotifications();
+      final existing = {for (final n in localList) n.id};
       final fresh = newServerItems(results, existing);
       for (final n in fresh) {
         await _db.saveNotification(n);
       }
 
+      // Enrich baris lama yang sudah ada tapi belum punya `map` (dedup melewati
+      // mereka). isRead lokal dipertahankan oleh enrichableFromServer.
+      final localById = {for (final n in localList) n.id: n};
+      final enriched = enrichableFromServer(results, localById);
+      for (final n in enriched) {
+        await _db.saveNotification(n);
+      }
+
       await prefs.setString(
           _lastSyncKey, DateTime.now().toUtc().toIso8601String());
+      await prefs.setBool(_mapBackfillKey, true);
       if (fresh.isNotEmpty) _events.notifyNewNotification();
       return fresh.length;
     } catch (e) {

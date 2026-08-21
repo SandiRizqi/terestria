@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geoform_app/models/notification_model.dart';
 import 'package:geoform_app/services/notification_sync_service.dart';
 
 void main() {
@@ -65,6 +66,42 @@ void main() {
       ];
       final fresh = newServerItems(items, {'fire_alerts_1'});
       expect(fresh.map((n) => n.id), ['fire_alerts_2']);
+    });
+  });
+
+  group('enrichableFromServer (backfill map baris lama)', () {
+    NotificationModel local({Map<String, dynamic>? data, bool isRead = true}) =>
+        NotificationModel(
+          id: 'fire_alerts_1', title: 't', body: 'm',
+          data: data ?? {'type': 'fire_alerts', 'object_id': '1'},
+          receivedAt: DateTime.utc(2026, 1, 1), isRead: isRead,
+        );
+    final serverWithMap = {
+      'model_name': 'fire_alerts', 'object_id': '1', 'title': 't',
+      'message': 'm', 'is_read': false, 'map': '{"type":"FeatureCollection"}',
+    };
+
+    test('lokal tanpa map + server punya map → enrich, isRead lokal dipertahankan', () {
+      final l = local(isRead: true);
+      final out = enrichableFromServer([serverWithMap], {l.id: l});
+      expect(out.length, 1);
+      expect(out.first.data!['map'], '{"type":"FeatureCollection"}');
+      expect(out.first.isRead, isTrue); // TIDAK direset oleh server is_read:false
+    });
+
+    test('lokal sudah punya map → tidak di-enrich (idempoten)', () {
+      final l = local(data: {'type': 'fire_alerts', 'object_id': '1', 'map': 'x'});
+      expect(enrichableFromServer([serverWithMap], {l.id: l}), isEmpty);
+    });
+
+    test('id tak ada lokal → dilewati', () {
+      expect(enrichableFromServer([serverWithMap], {}), isEmpty);
+    });
+
+    test('server tanpa map → tak ada yang di-enrich', () {
+      final l = local();
+      final noMap = {...serverWithMap}..remove('map');
+      expect(enrichableFromServer([noMap], {l.id: l}), isEmpty);
     });
   });
 }
