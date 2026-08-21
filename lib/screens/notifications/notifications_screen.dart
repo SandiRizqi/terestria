@@ -712,8 +712,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                // Map button
-                if (notification.data!.containsKey('map')) ...[
+                // Map button — hanya bila ada geometri (GeoJSON) non-kosong,
+                // supaya tak membuka peta tanpa data (defensif).
+                if ((notification.data!['map']?.toString().isNotEmpty ?? false)) ...[
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
