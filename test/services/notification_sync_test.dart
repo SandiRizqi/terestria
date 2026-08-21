@@ -45,6 +45,16 @@ void main() {
       expect(n.data!['object_id'], '123');
       expect(n.data!['type'], 'fire_alerts');
     });
+    test('map (GeoJSON) diteruskan ke data → tombol peta muncul', () {
+      final withMap = {...item, 'map': '{"type":"FeatureCollection"}'};
+      final n = notificationFromServerItem(withMap);
+      expect(n.data!['map'], '{"type":"FeatureCollection"}');
+    });
+    test('tanpa map / map null → data tak punya key "map"', () {
+      expect(notificationFromServerItem(item).data!.containsKey('map'), isFalse);
+      final nullMap = {...item, 'map': null};
+      expect(notificationFromServerItem(nullMap).data!.containsKey('map'), isFalse);
+    });
   });
 
   group('newServerItems (dedup)', () {

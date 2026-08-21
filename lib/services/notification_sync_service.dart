@@ -29,6 +29,10 @@ NotificationModel notificationFromServerItem(Map<String, dynamic> item) {
     'object_id': objectId,
     if (item['id'] != null) 'server_id': '${item['id']}',
     if (item['company_name'] != null) 'company_name': '${item['company_name']}',
+    // Geometri hotspot (GeoJSON string) dari server → tombol "Lihat di Peta"
+    // muncul & routing punya titik tujuan, sama seperti notifikasi push.
+    if (item['map'] != null && '${item['map']}'.isNotEmpty)
+      'map': '${item['map']}',
   };
   DateTime received;
   try {
