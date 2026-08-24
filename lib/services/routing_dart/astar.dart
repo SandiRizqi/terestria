@@ -130,7 +130,6 @@ double roadClassPriority(String highway) {
     case 'tertiary':
     case 'tertiary_link':
       return 0.8;
-    case 'unclassified':
     case 'road':
       return 0.7;
     case 'residential':
@@ -143,6 +142,7 @@ double roadClassPriority(String highway) {
     case 'path':
     case 'footway':
     case 'pedestrian':
+    case 'unclassified':
       return 0.3;
     default:
       return 0.6;
