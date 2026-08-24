@@ -66,6 +66,36 @@ List<int>? aStar(RoadGraph g, int start, int goal, RouteProfile profile) {
   return null;
 }
 
+/// Edge yang dipakai antara node [u]→[v] untuk [profile]: panjang, speed, nama.
+/// Bila ada beberapa edge paralel (jarang) ambil yang termurah waktunya.
+/// Fallback haversine + speed 30 bila tak ada edge (seharusnya tak terjadi pada
+/// path A* yang valid). Dipakai bersama route_builder & instructions.
+({double length, double speed, String name}) segmentBetween(
+    RoadGraph g, int u, int v, RouteProfile profile) {
+  double? bestLen;
+  var bestSpeed = 30.0;
+  var bestName = '';
+  var bestTime = double.infinity;
+  for (final e in g.edgesFrom(u)) {
+    if (e.to != v) continue;
+    if (profile != RouteProfile.foot && !e.car) continue;
+    final spd = profile == RouteProfile.foot ? footSpeedKmh : e.speed;
+    final t = e.length * 3.6 / spd;
+    if (t < bestTime) {
+      bestTime = t;
+      bestLen = e.length;
+      bestSpeed = e.speed;
+      bestName = e.name;
+    }
+  }
+  return (
+    length: bestLen ??
+        haversineMeters(g.latOf(u), g.lonOf(u), g.latOf(v), g.lonOf(v)),
+    speed: bestSpeed,
+    name: bestName,
+  );
+}
+
 /// Biaya edge (detik) sesuai profil.
 double _edgeCost(RouteProfile profile, double lengthM, double speedKmh) {
   switch (profile) {

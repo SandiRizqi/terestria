@@ -33,7 +33,7 @@ List<RouteInstruction> buildInstructions(
   for (var j = 0; j < segCount; j++) {
     final u = path[j], v = path[j + 1];
     bearing[j] = _bearing(g.latOf(u), g.lonOf(u), g.latOf(v), g.lonOf(v));
-    final seg = _segment(g, u, v, profile);
+    final seg = segmentBetween(g, u, v, profile);
     segLen[j] = seg.length;
     segName[j] = seg.name;
     final spd = profile == RouteProfile.foot ? footSpeedKmh : seg.speed;
@@ -79,33 +79,6 @@ List<RouteInstruction> buildInstructions(
     interval: lastPt,
   ));
   return out;
-}
-
-/// Edge yang dilewati u→v (nama/speed/panjang). Sejalan dgn route_builder.
-({double length, double speed, String name}) _segment(
-    RoadGraph g, int u, int v, RouteProfile profile) {
-  double? bestLen;
-  double bestSpeed = 30;
-  String bestName = '';
-  double bestTime = double.infinity;
-  for (final e in g.edgesFrom(u)) {
-    if (e.to != v) continue;
-    if (profile != RouteProfile.foot && !e.car) continue;
-    final spd = profile == RouteProfile.foot ? footSpeedKmh : e.speed;
-    final t = e.length * 3.6 / spd;
-    if (t < bestTime) {
-      bestTime = t;
-      bestLen = e.length;
-      bestSpeed = e.speed;
-      bestName = e.name;
-    }
-  }
-  return (
-    length: bestLen ??
-        haversineMeters(g.latOf(u), g.lonOf(u), g.latOf(v), g.lonOf(v)),
-    speed: bestSpeed,
-    name: bestName,
-  );
 }
 
 /// Klasifikasi belokan dari selisih bearing (derajat, +kanan / -kiri).
