@@ -106,7 +106,7 @@ RoadGraph buildGraph(OsmData data) {
       final ui = idToIndex[w.refs[k]];
       final vi = idToIndex[w.refs[k + 1]];
       if (ui == null || vi == null || ui == vi) continue;
-      final len = _haversine(lat[ui], lon[ui], lat[vi], lon[vi]);
+      final len = haversineMeters(lat[ui], lon[ui], lat[vi], lon[vi]);
       adj[ui].add(_DirEdge(vi, len, speed, true, nameId)); // maju
       adj[vi].add(_DirEdge(ui, len, speed, !oneway, nameId)); // balik
     }
@@ -188,7 +188,8 @@ const Map<String, double> _defaultSpeed = {
   'pedestrian': 5,
 };
 
-double _haversine(double lat1, double lon1, double lat2, double lon2) {
+/// Jarak great-circle (meter) — dipakai bersama graph & snapper.
+double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
   const r = 6371000.0; // meter
   final dLat = _rad(lat2 - lat1);
   final dLon = _rad(lon2 - lon1);
