@@ -1913,16 +1913,6 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
                 onPressed:       _showBasemapSelector,
                 child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
               ),
-
-              // Fit notification bounds
-              FloatingActionButton(
-                heroTag:         'nmapFitBounds',
-                mini:            true,
-                backgroundColor: Colors.white,
-                elevation:       6,
-                onPressed:       _fitToNotificationBounds,
-                child: Icon(Icons.center_focus_strong, color: AppTheme.primaryGreen),
-              ),
             ],
           ),
 

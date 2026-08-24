@@ -36,14 +36,24 @@ class MapControlsColumn extends StatelessWidget {
     final maxHeight =
         MediaQuery.of(context).size.height - bottom - topInset;
 
+    // PENTING: JANGAN bungkus dengan SingleChildScrollView. Scrollable menyerap
+    // sentuhan di SELURUH persegi viewport-nya (termasuk celah antar-tombol dan
+    // ruang kosong di kiri tombol yang right-aligned), sehingga tap ke PETA di
+    // belakang kolom ini tak sampai — terasa "terhalang komponen lain",
+    // terutama saat toolbar measure melebarkan kolom.
+    //
+    // Column biasa TIDAK hit-test ruang kosong (hanya tombol asli yang
+    // memblokir), jadi tap di sela-sela tembus ke peta. Batasi tinggi dengan
+    // ConstrainedBox + FittedBox(scaleDown) supaya di layar sangat pendek kolom
+    // mengecil proporsional alih-alih overflow — tanpa perlu scroll.
     return Positioned(
       right: right,
       bottom: bottom,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight > 0 ? maxHeight : 0),
-        child: SingleChildScrollView(
-          reverse: true, // anchor & scroll dari bawah
-          physics: const ClampingScrollPhysics(),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.bottomRight,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,

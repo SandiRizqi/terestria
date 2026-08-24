@@ -2692,6 +2692,91 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     );
   }
 
+  /// Dialog konfirmasi WAJIB sebelum form atribut muncul: menampilkan akurasi
+  /// spasial yang terbaca saat ini agar user sadar mutu data yang akan disimpan.
+  /// Return true bila user menekan "Ya, Simpan".
+  Future<bool> _confirmSpatialAccuracy() async {
+    final loc = _currentLocation;
+    final acc = loc?.accuracy;
+    final accText = acc != null ? '±${acc.toStringAsFixed(1)} m' : 'unknown';
+    final meetsReq = loc != null && _locationService.pointMeetsCurrentRequirement(loc);
+    final reqName = _locationService.currentFixQuality.name;
+    final accentColor = meetsReq ? AppTheme.primaryColor : Colors.orange.shade800;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          Icon(Icons.gps_fixed, color: accentColor),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Save this data?')),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('This data will be saved with the current spatial accuracy:'),
+            const SizedBox(height: 12),
+            Center(
+              child: Text(
+                accText,
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  color: accentColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (!meetsReq)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(children: [
+                  Icon(Icons.warning_amber_rounded,
+                      color: Colors.orange.shade800, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Accuracy is below the "$reqName" requirement. Make sure '
+                      'this is intended before saving.',
+                      style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+                    ),
+                  ),
+                ]),
+              )
+            else
+              Text(
+                'Meets the "$reqName" quality requirement.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Yes, Save'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   void _showFormBottomSheet() {
     // Initialize form validity based on whether there are required fields
     final hasRequiredFields =
@@ -3324,7 +3409,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                 ),
                 padding: EdgeInsets.zero,
                 onPressed: _canSaveData()
-                    ? () {
+                    ? () async {
+                        // Wajib konfirmasi akurasi spasial dulu sebelum form.
+                        final ok = await _confirmSpatialAccuracy();
+                        if (!ok || !mounted) return;
                         setState(() => _showForm = true);
                         _showFormBottomSheet();
                       }
@@ -3752,7 +3840,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             backgroundColor: Colors.white,
             elevation: 4,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: const Icon(Icons.layers, color: AppTheme.primaryColor),
+            child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
             onPressed: _showBasemapSelector,
           ),
 

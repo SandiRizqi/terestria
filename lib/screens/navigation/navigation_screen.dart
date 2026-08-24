@@ -621,28 +621,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     } catch (_) {}
   }
 
-  /// Fit to route → project data → GPS location (in priority order).
-  void _fitAllBounds() {
-    if (_routeResult != null) {
-      _fitRouteBounds(_routeResult!.latLngs);
-      return;
-    }
-    if (_projectData.isNotEmpty) {
-      final pts = _projectData.expand(
-          (d) => d.points.map((p) => LatLng(p.latitude, p.longitude))).toList();
-      if (pts.isNotEmpty) { _fitRouteBounds(pts); return; }
-    }
-    final gps = _currentGps;
-    if (gps != null) {
-      _mapController.move(
-        LatLng(gps.latitude, gps.longitude),
-        _mapController.camera.zoom, // preserve current zoom, never zoom out
-      );
-    } else {
-      _showSnackBar('Nothing to fit');
-    }
-  }
-
   void _recenterOnGps() {
     final gps = _currentGps;
     if (gps == null) { _showSnackBar('Location not available'); return; }
@@ -917,17 +895,6 @@ class _NavigationScreenState extends State<NavigationScreen>
                 tooltip:         'Change Basemap',
                 onPressed:       _showBasemapSelector,
                 child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
-              ),
-
-              // Fit bounds
-              FloatingActionButton(
-                heroTag:         'navFitBounds',
-                mini:            true,
-                backgroundColor: Colors.white,
-                elevation:       6,
-                tooltip:         'Fit Bounds',
-                onPressed:       _fitAllBounds,
-                child: Icon(Icons.center_focus_strong, color: AppTheme.primaryGreen),
               ),
             ],
           ),
