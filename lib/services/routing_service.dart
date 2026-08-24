@@ -108,6 +108,13 @@ class RoutingService {
 
   bool get _isAndroid => Platform.isAndroid;
 
+  /// Routing didukung di perangkat ini? Android selalu; iOS bila mesin Dart aktif.
+  bool get _routingSupported => routingAvailable(
+        isAndroid: Platform.isAndroid,
+        isIos: Platform.isIOS,
+        iosEngineEnabled: iosEngineEnabled,
+      );
+
   // ─────────────────────────────────────────────────────────────────────────
   // OSM DATA MANAGEMENT
   // ─────────────────────────────────────────────────────────────────────────
@@ -230,8 +237,8 @@ class RoutingService {
 
   /// Pakai road data yang sudah tersimpan (offline) → build engine, tanpa unduh.
   Future<RoadPrepareResult> activateDownloadedRoads(int id, {void Function(String)? onProgress}) async {
-    if (!_isAndroid) {
-      return const RoadPrepareResult(RoadPrepareStatus.error, 'Navigasi hanya tersedia di Android');
+    if (!_routingSupported) {
+      return const RoadPrepareResult(RoadPrepareStatus.error, 'Routing tidak tersedia di perangkat ini');
     }
     final path = await _roadFilePath(id);
     if (!File(path).existsSync()) {
@@ -269,8 +276,8 @@ class RoutingService {
     String? name,
     void Function(String message)? onProgress,
   }) async {
-    if (!_isAndroid) {
-      return const RoadPrepareResult(RoadPrepareStatus.error, 'Navigasi hanya tersedia di Android');
+    if (!_routingSupported) {
+      return const RoadPrepareResult(RoadPrepareStatus.error, 'Routing tidak tersedia di perangkat ini');
     }
     try {
       onProgress?.call('Downloading road data…');
