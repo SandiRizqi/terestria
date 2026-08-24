@@ -636,10 +636,13 @@ class RoutingService {
     if (window.length < 10) return false;
     final w = window.length < 20 ? window : window.sublist(window.length - 10);
 
-    final bearingChange = _bearingChangeDeg(
-      _bearing(w.first.position, w.last.position),
-      _bearing(w.last.position, w.first.position),
-    );
+    // Arah gerak paruh-AWAL vs paruh-AKHIR window. U-turn = arah berbalik
+    // ~180°. (Bug lama membandingkan A→B dengan B→A yang SELALU 180°, sehingga
+    // U-turn palsu muncul tiap kali bergerak pelan dalam radius kecil.)
+    final mid = w.length ~/ 2;
+    final entryBearing = _bearing(w.first.position, w[mid].position);
+    final exitBearing = _bearing(w[mid].position, w.last.position);
+    final bearingChange = _bearingChangeDeg(entryBearing, exitBearing);
 
     final span = _haversine(w.first.position, w.last.position);
 
