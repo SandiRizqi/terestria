@@ -10,6 +10,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../models/route_result.dart';
 import 'api_service.dart';
+import 'routing_dart/engine.dart';
+
+/// Gate ketersediaan routing lintas-platform: Android selalu (GraphHopper); iOS
+/// bila mesin Dart offline diaktifkan. Dipakai RoutingService & RoutingDataManager.
+bool routingAvailable({
+  required bool isAndroid,
+  required bool isIos,
+  required bool iosEngineEnabled,
+}) =>
+    isAndroid || (isIos && iosEngineEnabled);
 
 /// Company yang bisa diunduh data jalannya (dari /mobile/roads/companies/).
 class DownloadableCompany {
@@ -58,8 +68,8 @@ List<DownloadableCompany> parseCompanies(String body) {
   }
 }
 
-/// Routing service backed by GraphHopper on Android via MethodChannel.
-/// On iOS the routing methods return null — handle gracefully.
+/// Routing service: GraphHopper on Android (MethodChannel), pure-Dart engine
+/// ([DartRoutingEngine]) on iOS. Kontrak I/O sama di kedua platform.
 ///
 /// Also provides pure-Dart navigation algorithms ported from the analyzed APK:
 ///   - snapToRoute()     ← RouteSnapper.java
@@ -75,6 +85,14 @@ class RoutingService {
   static const _channel    = MethodChannel('com.terestria/routing');
   static const _prefOsmKey = 'routing_osm_file_path';
   static const _prefDownloadedIndex = 'routing_downloaded_roads'; // JSON [{id,name}]
+
+  /// Aktifkan mesin routing Dart di iOS. Set false → iOS kembali graceful
+  /// (dialog "belum tersedia"), tanpa menyentuh jalur Android.
+  static const bool iosEngineEnabled = true;
+
+  /// Mesin routing offline pure-Dart — HANYA dipakai di iOS. Android tetap
+  /// lewat MethodChannel/GraphHopper (tak tersentuh).
+  final DartRoutingEngine _iosEngine = DartRoutingEngine();
 
   // Constants from APK
   static const double _offRouteDist     = 40.0;  // meters — NavigationHelper
@@ -296,8 +314,8 @@ class RoutingService {
   /// Returns false if no OSM file exists or platform is iOS.
   Future<bool> initialize({bool forceRebuild = false}) async {
     if (!_isAndroid) {
-      debugPrint('ℹ️ RoutingService: GraphHopper not available on iOS');
-      return false;
+      // iOS: pakai mesin Dart offline (bukan GraphHopper).
+      return _initializeIos(forceRebuild: forceRebuild);
     }
 
     if (_isInitialized && !forceRebuild) return true;
@@ -341,7 +359,50 @@ class RoutingService {
   /// Deletes the stale graph cache so GraphHopper rebuilds from the new PBF.
   Future<bool> reinitialize() async {
     _isInitialized = false;
+    if (!_isAndroid) _iosEngine.dispose();
     return initialize(forceRebuild: true);
+  }
+
+  // ─── iOS: mesin Dart offline (terpisah dari jalur Android) ──────────────────
+
+  /// Init mesin Dart dari `.pbf` tersimpan (dibangun di isolate). Bila flag
+  /// [iosEngineEnabled] false → tetap graceful (false), tanpa efek ke Android.
+  Future<bool> _initializeIos({bool forceRebuild = false}) async {
+    if (!iosEngineEnabled) {
+      debugPrint('ℹ️ RoutingService: iOS Dart engine disabled');
+      return false;
+    }
+    if (_isInitialized && !forceRebuild) return true;
+
+    final osmPath = await getOsmFilePath();
+    if (osmPath == null) {
+      debugPrint('⚠️ RoutingService(iOS): No OSM data — import a .pbf first');
+      return false;
+    }
+    _isInitialized = await _iosEngine.initialize(osmPath, forceRebuild: forceRebuild);
+    debugPrint(_isInitialized
+        ? '✅ RoutingService(iOS): Dart engine ready'
+        : '❌ RoutingService(iOS): Dart engine init failed');
+    return _isInitialized;
+  }
+
+  Future<RouteResult?> _calculateRouteIos({
+    required LatLng from,
+    required LatLng to,
+    required String profile,
+  }) async {
+    if (!iosEngineEnabled) return null;
+    if (!_isInitialized) {
+      final ok = await _initializeIos();
+      if (!ok) return null;
+    }
+    return _iosEngine.calculateRoute(
+      fromLat: from.latitude,
+      fromLon: from.longitude,
+      toLat: to.latitude,
+      toLon: to.longitude,
+      profile: profile,
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -356,7 +417,10 @@ class RoutingService {
     required LatLng to,
     String profile = 'car',
   }) async {
-    if (!_isAndroid) return null;
+    if (!_isAndroid) {
+      // iOS: hitung lewat mesin Dart offline.
+      return _calculateRouteIos(from: from, to: to, profile: profile);
+    }
 
     if (!_isInitialized) {
       final ok = await initialize();

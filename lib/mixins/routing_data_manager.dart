@@ -31,10 +31,14 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
 
   // ─── Ketersediaan routing per-platform ─────────────────────────────────────
 
-  /// Routing/navigasi offline saat ini hanya di Android (mesin GraphHopper 7.0
-  /// native). Di iOS belum ada engine padanan → fitur ini dinonaktifkan dengan
-  /// pesan yang jelas, sementara peta/GPS/kompas/ukur/collect tetap normal.
-  bool get isRoutingAvailable => Platform.isAndroid;
+  /// Android = GraphHopper native; iOS = mesin routing Dart offline (bila
+  /// [RoutingService.iosEngineEnabled]). Bila iOS engine dimatikan → fitur
+  /// dinonaktifkan dgn dialog jelas, peta/GPS/kompas/ukur/collect tetap normal.
+  bool get isRoutingAvailable => routingAvailable(
+        isAndroid: Platform.isAndroid,
+        isIos: Platform.isIOS,
+        iosEngineEnabled: RoutingService.iosEngineEnabled,
+      );
 
   /// Dialog informatif saat user mencoba fitur routing di platform yang belum
   /// didukung (iOS). Dipakai bersama oleh semua entry-point routing.
