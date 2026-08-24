@@ -1,11 +1,22 @@
 import 'package:permission_handler/permission_handler.dart' as ph;
 import 'package:permission_handler/permission_handler.dart' show Permission;
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
 import '../../utils/app_logger.dart';
 
 class PermissionService {
-  
+
+  static const String _alwaysAskedKey = 'location_always_requested';
+
+  /// Apakah perlu meminta izin "Always"? Hanya bila BELUM pernah ditanya DAN
+  /// statusnya masih denied → cegah re-prompt tiap masuk layar (pure, teruji).
+  static bool shouldRequestAlways({
+    required bool alreadyAsked,
+    required bool alwaysDenied,
+  }) =>
+      !alreadyAsked && alwaysDenied;
+
   /// Request ALL required permissions
   static Future<bool> requestAllPermissions() async {
     try {
@@ -75,21 +86,22 @@ class PermissionService {
         currentPermission == LocationPermission.always) {
       logDebug('✅ Location permission granted: $currentPermission');
       
-      // 6. Try to request "Always" permission (optional, may not show immediately)
+      // 6. Minta "Always" HANYA SEKALI. Kalau user sudah memilih When-In-Use,
+      //    jangan prompt "Always" lagi tiap masuk data collection (bug: dialog
+      //    izin muncul terus di iOS). Foreground collection cukup When-In-Use.
       try {
-        logDebug('📍 Attempting to request "Always" permission...');
-        
-        // Use permission_handler for "Always" request
+        final prefs = await SharedPreferences.getInstance();
+        final alreadyAsked = prefs.getBool(_alwaysAskedKey) ?? false;
         final alwaysStatus = await Permission.locationAlways.status;
-        logDebug('📍 Current "Always" status: $alwaysStatus');
-        
-        if (alwaysStatus.isDenied) {
+        if (shouldRequestAlways(
+            alreadyAsked: alreadyAsked, alwaysDenied: alwaysStatus.isDenied)) {
+          logDebug('📍 Requesting "Always" (one-time)…');
           final alwaysResult = await Permission.locationAlways.request();
+          await prefs.setBool(_alwaysAskedKey, true);
           logDebug('📍 "Always" request result: $alwaysResult');
         }
       } catch (e) {
         logDebug('⚠️ Could not request "Always" permission: $e');
-        logDebug('💡 This is OK - iOS may show it later automatically');
       }
       
       // 7. Check precision (iOS 14+)
