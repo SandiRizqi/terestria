@@ -19,7 +19,9 @@ class RoadGraph {
   final Float64List edgeSpeed; // M (km/jam, mobil)
   final Uint8List edgeCar; // M (1 = mobil boleh arah ini)
   final Int32List edgeNameId; // M (indeks ke names, -1 = tanpa nama)
+  final Uint8List edgeHighway; // M (indeks ke highwayNames — jenis jalan)
   final List<String> names;
+  final List<String> highwayNames;
   final Map<int, int> _osmIdToIndex;
 
   RoadGraph._({
@@ -31,7 +33,9 @@ class RoadGraph {
     required this.edgeSpeed,
     required this.edgeCar,
     required this.edgeNameId,
+    required this.edgeHighway,
     required this.names,
+    required this.highwayNames,
     required Map<int, int> osmIdToIndex,
   }) : _osmIdToIndex = osmIdToIndex;
 
@@ -43,10 +47,14 @@ class RoadGraph {
   double lonOf(int node) => nodeLon[node];
   String nameOf(int nameId) => nameId >= 0 ? names[nameId] : '';
 
+  /// Jenis highway edge (mis. 'residential', 'track') — untuk prioritas rute.
+  String highwayOf(int edgeIndex) => highwayNames[edgeHighway[edgeIndex]];
+
   /// Edge keluar dari [node] (untuk A*/uji).
-  List<({int to, double length, double speed, bool car, String name})>
+  List<({int to, double length, double speed, bool car, String name, String highway})>
       edgesFrom(int node) {
-    final out = <({int to, double length, double speed, bool car, String name})>[];
+    final out =
+        <({int to, double length, double speed, bool car, String name, String highway})>[];
     for (var e = csrOffset[node]; e < csrOffset[node + 1]; e++) {
       out.add((
         to: edgeTarget[e],
@@ -54,6 +62,7 @@ class RoadGraph {
         speed: edgeSpeed[e],
         car: edgeCar[e] == 1,
         name: nameOf(edgeNameId[e]),
+        highway: highwayOf(e),
       ));
     }
     return out;
@@ -66,7 +75,9 @@ class _DirEdge {
   final double speed;
   final bool car;
   final int nameId;
-  _DirEdge(this.to, this.length, this.speed, this.car, this.nameId);
+  final int highwayId;
+  _DirEdge(this.to, this.length, this.speed, this.car, this.nameId,
+      this.highwayId);
 }
 
 /// Bangun [RoadGraph] dari hasil [readOsmPbf].
@@ -93,6 +104,14 @@ RoadGraph buildGraph(OsmData data) {
     });
   }
 
+  // 2b. highway class dedup (jenis jalan → id kecil)
+  final highwayNames = <String>[];
+  final highwayIndex = <String, int>{};
+  int highwayIdOf(String h) => highwayIndex.putIfAbsent(h, () {
+        highwayNames.add(h);
+        return highwayNames.length - 1;
+      });
+
   // 3. edge terarah per node
   final adj = List<List<_DirEdge>>.generate(data.nodes.length, (_) => []);
   for (final w in data.ways) {
@@ -101,14 +120,15 @@ RoadGraph buildGraph(OsmData data) {
     final speed = _speedFor(highway, w.tags['maxspeed']);
     final oneway = w.tags['oneway'] == 'yes';
     final nameId = nameIdOf(w.tags['name']);
+    final hwId = highwayIdOf(highway);
 
     for (var k = 0; k + 1 < w.refs.length; k++) {
       final ui = idToIndex[w.refs[k]];
       final vi = idToIndex[w.refs[k + 1]];
       if (ui == null || vi == null || ui == vi) continue;
       final len = haversineMeters(lat[ui], lon[ui], lat[vi], lon[vi]);
-      adj[ui].add(_DirEdge(vi, len, speed, true, nameId)); // maju
-      adj[vi].add(_DirEdge(ui, len, speed, !oneway, nameId)); // balik
+      adj[ui].add(_DirEdge(vi, len, speed, true, nameId, hwId)); // maju
+      adj[vi].add(_DirEdge(ui, len, speed, !oneway, nameId, hwId)); // balik
     }
   }
 
@@ -127,6 +147,7 @@ RoadGraph buildGraph(OsmData data) {
   final edgeSpeed = Float64List(m);
   final edgeCar = Uint8List(m);
   final edgeNameId = Int32List(m);
+  final edgeHighway = Uint8List(m);
   var e = 0;
   for (var i = 0; i < n; i++) {
     for (final d in adj[i]) {
@@ -135,6 +156,7 @@ RoadGraph buildGraph(OsmData data) {
       edgeSpeed[e] = d.speed;
       edgeCar[e] = d.car ? 1 : 0;
       edgeNameId[e] = d.nameId;
+      edgeHighway[e] = d.highwayId;
       e++;
     }
   }
@@ -148,7 +170,9 @@ RoadGraph buildGraph(OsmData data) {
     edgeSpeed: edgeSpeed,
     edgeCar: edgeCar,
     edgeNameId: edgeNameId,
+    edgeHighway: edgeHighway,
     names: names,
+    highwayNames: highwayNames,
     osmIdToIndex: idToIndex,
   );
 }

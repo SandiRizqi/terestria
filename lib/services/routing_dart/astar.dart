@@ -55,7 +55,8 @@ List<int>? aStar(RoadGraph g, int start, int goal, RouteProfile profile) {
       if (profile != RouteProfile.foot && g.edgeCar[e] == 0) continue; // oneway
       final v = g.edgeTarget[e];
       if (closed[v]) continue;
-      final tentative = gScore[u] + _edgeCost(profile, g.edgeLength[e], g.edgeSpeed[e]);
+      final tentative = gScore[u] +
+          _edgeCost(profile, g.edgeLength[e], g.edgeSpeed[e], g.highwayOf(e));
       if (tentative < gScore[v]) {
         gScore[v] = tentative;
         cameFrom[v] = u;
@@ -97,24 +98,55 @@ List<int>? aStar(RoadGraph g, int start, int goal, RouteProfile profile) {
 }
 
 /// Biaya edge (detik) sesuai profil.
-double _edgeCost(RouteProfile profile, double lengthM, double speedKmh) {
+double _edgeCost(
+    RouteProfile profile, double lengthM, double speedKmh, String highway) {
   switch (profile) {
     case RouteProfile.foot:
       return lengthM * 3.6 / footSpeedKmh;
     case RouteProfile.car:
       return lengthM * 3.6 / speedKmh;
     case RouteProfile.carRecommended:
-      // recommended: waktu dibagi prioritas (jalan kelas rendah → biaya naik).
-      return (lengthM * 3.6 / speedKmh) / _priority(speedKmh);
+      // recommended: waktu dibagi prioritas KELAS JALAN (bukan speed) → jalan
+      // kelas rendah (track/service) biayanya naik walau speed-nya mirip.
+      return (lengthM * 3.6 / speedKmh) / roadClassPriority(highway);
   }
 }
 
-/// Proxy prioritas road_class dari kecepatan (1.0 = paling disukai).
-double _priority(double speedKmh) {
-  if (speedKmh >= 80) return 1.0;
-  if (speedKmh >= 50) return 0.9;
-  if (speedKmh >= 30) return 0.8;
-  return 0.6;
+/// Prioritas berdasarkan JENIS highway (1.0 = paling disukai; makin kecil makin
+/// dihindari). Dipakai profil recommended; nanti juga fondasi weight/obstacle.
+double roadClassPriority(String highway) {
+  switch (highway) {
+    case 'motorway':
+    case 'motorway_link':
+    case 'trunk':
+    case 'trunk_link':
+      return 1.0;
+    case 'primary':
+    case 'primary_link':
+      return 0.95;
+    case 'secondary':
+    case 'secondary_link':
+      return 0.9;
+    case 'tertiary':
+    case 'tertiary_link':
+      return 0.8;
+    case 'unclassified':
+    case 'road':
+      return 0.7;
+    case 'residential':
+      return 0.6;
+    case 'living_street':
+    case 'service':
+      return 0.5;
+    case 'track':
+      return 0.35;
+    case 'path':
+    case 'footway':
+    case 'pedestrian':
+      return 0.3;
+    default:
+      return 0.6;
+  }
 }
 
 List<int> _reconstruct(List<int> cameFrom, int goal) {
