@@ -19,7 +19,8 @@ RouteProfile profileFromString(String? s) {
   }
 }
 
-const double _footSpeedKmh = 5.0;
+/// Kecepatan jalan kaki (km/jam) — dipakai bersama route_builder.
+const double footSpeedKmh = 5.0;
 const double _hMaxCarKmh = 140.0; // heuristik admissible (tak ada jalan lebih cepat)
 
 /// A* dari [start] ke [goal] (indeks node) untuk [profile].
@@ -33,7 +34,7 @@ List<int>? aStar(RoadGraph g, int start, int goal, RouteProfile profile) {
   final cameFrom = List<int>.filled(n, -1);
   final closed = List<bool>.filled(n, false);
   final goalLat = g.latOf(goal), goalLon = g.lonOf(goal);
-  final hMax = profile == RouteProfile.foot ? _footSpeedKmh : _hMaxCarKmh;
+  final hMax = profile == RouteProfile.foot ? footSpeedKmh : _hMaxCarKmh;
 
   double heuristic(int node) =>
       haversineMeters(g.latOf(node), g.lonOf(node), goalLat, goalLon) *
@@ -69,7 +70,7 @@ List<int>? aStar(RoadGraph g, int start, int goal, RouteProfile profile) {
 double _edgeCost(RouteProfile profile, double lengthM, double speedKmh) {
   switch (profile) {
     case RouteProfile.foot:
-      return lengthM * 3.6 / _footSpeedKmh;
+      return lengthM * 3.6 / footSpeedKmh;
     case RouteProfile.car:
       return lengthM * 3.6 / speedKmh;
     case RouteProfile.carRecommended:
