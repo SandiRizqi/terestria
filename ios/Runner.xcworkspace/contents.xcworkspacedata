@@ -2,6 +2,12 @@
 <Workspace
    version = "1.0">
    <FileRef
+      location = "group:../../../../Downloads/npn_wp.gpx">
+   </FileRef>
+   <FileRef
+      location = "group:../../../../Downloads/NPN.gpx">
+   </FileRef>
+   <FileRef
       location = "group:Runner.xcodeproj">
    </FileRef>
    <FileRef

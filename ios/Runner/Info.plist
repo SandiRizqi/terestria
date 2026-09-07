@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.flutter.background.refresh</string>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -26,22 +30,27 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	
-	<!-- Camera & Photo Library -->
+	<key>NSAllowsArbitraryLoadsInWebContent</key>
+	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dartobservatory._tcp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Terestria needs camera access to capture field survey photos</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Terestria needs photo library access to attach images to survey data</string>
-	
-	<!-- Location Permissions -->
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Terestria needs location access to collect geospatial survey data</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Terestria needs location access for accurate agricultural and environmental mapping</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>App needs access to local network devices for RTK GPS connection.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Terestria needs continuous location access to track your survey path even when the app is in the background</string>
-	
-	<!-- ✅ TAMBAHAN PENTING: iOS 14+ Precise Location -->
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Terestria needs location access for accurate agricultural and environmental mapping</string>
+	<key>NSLocationDefaultAccuracyReduced</key>
+	<false/>
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
 	<dict>
 		<key>PreciseLocationUsage</key>
@@ -49,12 +58,12 @@
 		<key>TrackingUsage</key>
 		<string>We need precise location to track your survey path with high accuracy GPS tracking</string>
 	</dict>
-	
-	<!-- ✅ TAMBAHAN: Default to Precise Location -->
-	<key>NSLocationDefaultAccuracyReduced</key>
-	<false/>
-	
-	<!-- Background Modes -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Terestria needs location access to collect geospatial survey data</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Terestria needs photo library access to attach images to survey data</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
@@ -62,18 +71,6 @@
 		<string>processing</string>
 		<string>remote-notification</string>
 	</array>
-
-	<!-- Identifier BGTaskScheduler untuk flutter_background_service (iOS 13+).
-	     Harus cocok dgn taskIdentifier plugin: dev.flutter.background.refresh.
-	     Tanpa ini, penjadwalan background refresh gagal di iOS. -->
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>dev.flutter.background.refresh</string>
-	</array>
-
-	<!-- UI Configuration -->
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -91,21 +88,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-
-	<!-- Network Configuration -->
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_dartobservatory._tcp</string>
-	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>App needs access to local network devices for RTK GPS connection.</string>
-	<key>NSAllowsArbitraryLoadsInWebContent</key>
-	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
-
 </dict>
 </plist>
