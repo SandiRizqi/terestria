@@ -7,7 +7,10 @@ class AppTheme {
   static const Color lightGreen = Color.fromARGB(255, 89, 236, 131); // Light Green
   static const Color darkGreen = Color(0xFF047857); // Dark Green
   static const Color accentGreen = Color.fromARGB(255, 2, 158, 62); // Emerald Green
-  
+
+  // Accent color used by the Analysis Report screens.
+  static const Color primaryBlue = Color(0xFF2494D4);
+
   static const Color primaryColor = primaryGreen;
   static const Color secondaryColor = lightGreen;
   static const Color errorColor = Color(0xFFEF4444);
