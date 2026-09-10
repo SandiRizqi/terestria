@@ -57,6 +57,10 @@ class AppSettings {
   final double polygonOpacity;
   final bool darkMode;
 
+  /// Tambahkan watermark (logo + metadata GPS/waktu) pada foto yang diambil.
+  /// Default nonaktif — foto disimpan apa adanya.
+  final bool photoWatermark;
+
   AppSettings({
     this.areaUnit = AreaUnit.squareMeters,
     this.lengthUnit = LengthUnit.meters,
@@ -68,6 +72,7 @@ class AppSettings {
     this.lineWidth = 3.0,
     this.polygonOpacity = 0.3,
     this.darkMode = false,
+    this.photoWatermark = false,
   });
 
   // Default settings
@@ -85,6 +90,7 @@ class AppSettings {
     double? lineWidth,
     double? polygonOpacity,
     bool? darkMode,
+    bool? photoWatermark,
   }) {
     return AppSettings(
       areaUnit: areaUnit ?? this.areaUnit,
@@ -97,6 +103,7 @@ class AppSettings {
       lineWidth: lineWidth ?? this.lineWidth,
       polygonOpacity: polygonOpacity ?? this.polygonOpacity,
       darkMode: darkMode ?? this.darkMode,
+      photoWatermark: photoWatermark ?? this.photoWatermark,
     );
   }
 
@@ -113,6 +120,7 @@ class AppSettings {
       'lineWidth': lineWidth,
       'polygonOpacity': polygonOpacity,
       'darkMode': darkMode,
+      'photoWatermark': photoWatermark,
     };
   }
 
@@ -135,6 +143,7 @@ class AppSettings {
       lineWidth: (json['lineWidth'] ?? 3.0).toDouble(),
       polygonOpacity: (json['polygonOpacity'] ?? 0.3).toDouble(),
       darkMode: json['darkMode'] ?? false,
+      photoWatermark: json['photoWatermark'] ?? false,
     );
   }
 
