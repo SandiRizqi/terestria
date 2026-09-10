@@ -481,11 +481,42 @@ class SyncService {
   }
 
   /// Pull geo data for a specific project from server (with pagination support)
+  /// Bangun rangkaian query `&f=key:value` untuk filter dinamis form_data
+  /// (JSONB) di backend. Key & value di-encode; separator `:` tetap literal
+  /// agar backend bisa `split(':', 1)`. Map kosong/null → string kosong.
+  String _buildFormDataFilterParam(Map<String, String>? filters) {
+    if (filters == null || filters.isEmpty) return '';
+    final sb = StringBuffer();
+    filters.forEach((k, v) {
+      sb.write('&f=${Uri.encodeQueryComponent(k)}:${Uri.encodeQueryComponent(v)}');
+    });
+    return sb.toString();
+  }
+
+  /// Preflight: tanya server berapa record yang akan di-pull untuk project +
+  /// filter ini (mode `count_only=true`, tanpa serialisasi record). Melempar
+  /// [Exception] bila server tidak membalas 200.
+  Future<int> countGeoDataOnServer(
+    String projectId, {
+    Map<String, String>? formDataFilters,
+  }) async {
+    final filterParam = _buildFormDataFilterParam(formDataFilters);
+    final response = await _apiService.get(
+      '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&count_only=true$filterParam',
+    );
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return (body['total_count'] as num?)?.toInt() ?? 0;
+    }
+    throw Exception('Count failed: HTTP ${response.statusCode}');
+  }
+
   Future<SyncResult> pullGeoDataFromServer(
     String projectId, {
     void Function(String message)? onProgress,
     bool forceFull = false,
     DateTime? updatedAfter,
+    Map<String, String>? formDataFilters,
   }) async {
     try {
       // Get project for photo field identification (once, outside the loop)
@@ -506,6 +537,7 @@ class SyncService {
       final deltaParam = effectiveAfter != null
           ? '&updated_after=${effectiveAfter.toUtc().toIso8601String()}'
           : '';
+      final filterParam = _buildFormDataFilterParam(formDataFilters);
       DateTime? maxUpdatedAt;
 
       int savedCount = 0;
@@ -519,7 +551,7 @@ class SyncService {
         );
 
         final response = await _apiService.get(
-          '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&page=$currentPage$deltaParam',
+          '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&page=$currentPage$deltaParam$filterParam',
         );
 
         if (response.statusCode == 200) {
