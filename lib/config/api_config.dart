@@ -12,6 +12,15 @@ class ApiConfig {
   static const String syncProjectEndpoint = '/mobile/projects/';
   static const String userSearchEndpoint = '/mobile/users/search/';
 
+  // PalmAnalisis (Analysis Report) endpoints — same host as baseUrl
+  static const String analysisTypesEndpoint = '/api/palmanalisis/types/';
+  static String analysisCompaniesEndpoint(String typeCode) =>
+      '/api/palmanalisis/types/$typeCode/companies/';
+  static String analysisFilesEndpoint(String typeCode, int companyId) =>
+      '/api/palmanalisis/types/$typeCode/companies/$companyId/files/';
+  static String analysisFileDetailEndpoint(int fileId) =>
+      '/api/palmanalisis/files/$fileId/';
+
   // Road data (navigation) endpoints
   static const String roadsCompaniesEndpoint = '/mobile/roads/companies/';
   static const String roadsOsmEndpoint = '/mobile/roads/osm/';
