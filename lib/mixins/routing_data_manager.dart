@@ -179,8 +179,24 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     );
   }
 
-  void showOsmManagementSheet() {
+  Future<void> showOsmManagementSheet() async {
     if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
+
+    // Tentukan sumber data aktif SEBELUM membangun sheet: cocokkan file aktif
+    // dengan daftar road cloud tersimpan. Cocok → cloud (punya company id+name
+    // untuk Update); tidak cocok tapi ada file → file lokal (Replace/Delete).
+    DownloadedRoad? activeCloud;
+    if (osmFilePath != null) {
+      final saved = await routingService.listDownloadedRoads();
+      for (final d in saved) {
+        if (d.path == osmFilePath) {
+          activeCloud = d;
+          break;
+        }
+      }
+    }
+    if (!mounted) return;
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -198,147 +214,258 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text(
-                'Offline routing requires a road data file (.pbf).',
+                'Offline routing membutuhkan data jalan (.pbf).',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
               const SizedBox(height: 16),
-              if (osmFilePath != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.green.shade200),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.check_circle_rounded,
-                        color: Colors.green, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('File loaded',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.green)),
-                          Text(
-                            osmFilePath!.split('/').last,
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey.shade600),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ]),
-                ),
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        importOsmFile();
-                      },
-                      icon: const Icon(Icons.file_open_rounded, size: 16),
-                      label: const Text('Replace File'),
-                      style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.primaryGreen),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        deleteOsmFile();
-                      },
-                      icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                      label: const Text('Delete'),
-                      style:
-                          OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                    ),
-                  ),
-                ]),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Row(children: [
-                    Icon(Icons.warning_rounded,
-                        color: Colors.orange.shade700, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'No road data yet. Download from the server or import a .pbf file.',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.orange.shade800),
-                      ),
-                    ),
-                  ]),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      downloadRoadsFromServer();
-                    },
-                    icon: const Icon(Icons.cloud_download_rounded, size: 16),
-                    label: const Text('Download from Server'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryGreen,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      showSavedRoadsPicker();
-                    },
-                    icon: const Icon(Icons.folder_open_rounded, size: 16),
-                    label: const Text('Saved Roads (Offline)'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primaryGreen,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      importOsmFile();
-                    },
-                    icon: const Icon(Icons.file_open_rounded, size: 16),
-                    label: const Text('Import .pbf File'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey.shade700,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-              ],
+              if (osmFilePath == null)
+                ..._buildNoDataActions()
+              else if (activeCloud != null)
+                ..._buildCloudActiveActions(activeCloud)
+              else
+                ..._buildLocalActiveActions(),
               const SizedBox(height: 8),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// Kartu status data aktif (dipakai oleh state cloud & lokal).
+  Widget _activeCard({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String detail,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      child: Row(children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+              Text(
+                detail,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+
+  /// State A — belum ada data: Download / Saved / Import.
+  List<Widget> _buildNoDataActions() {
+    return [
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(children: [
+          Icon(Icons.warning_rounded, color: Colors.orange.shade700, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Belum ada data jalan. Download dari server atau import file .pbf.',
+              style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+            ),
+          ),
+        ]),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            downloadRoadsFromServer();
+          },
+          icon: const Icon(Icons.cloud_download_rounded, size: 16),
+          label: const Text('Download from Server'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryGreen,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            showSavedRoadsPicker();
+          },
+          icon: const Icon(Icons.folder_open_rounded, size: 16),
+          label: const Text('Saved Roads (Offline)'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppTheme.primaryGreen,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            importOsmFile();
+          },
+          icon: const Icon(Icons.file_open_rounded, size: 16),
+          label: const Text('Import .pbf File'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.grey.shade700,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// State B — aktif dari CLOUD: Update / Ganti / Hapus / Download PT lain.
+  List<Widget> _buildCloudActiveActions(DownloadedRoad road) {
+    return [
+      _activeCard(
+        icon: Icons.cloud_done_rounded,
+        color: AppTheme.primaryGreen,
+        label: 'Aktif dari server',
+        detail: road.name,
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            updateActiveCloudRoad(road);
+          },
+          icon: const Icon(Icons.refresh_rounded, size: 16),
+          label: const Text('Update data'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryGreen,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              showSavedRoadsPicker();
+            },
+            icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+            label: const Text('Ganti'),
+            style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primaryGreen),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteCloudRoad(road);
+            },
+            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+            label: const Text('Hapus'),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            downloadRoadsFromServer();
+          },
+          icon: const Icon(Icons.cloud_download_rounded, size: 16),
+          label: const Text('Download PT lain'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.grey.shade700,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// State C — aktif dari FILE LOKAL: Replace / Delete / beralih ke server.
+  List<Widget> _buildLocalActiveActions() {
+    return [
+      _activeCard(
+        icon: Icons.insert_drive_file_rounded,
+        color: Colors.blueGrey,
+        label: 'File lokal',
+        detail: osmFilePath!.split('/').last,
+      ),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              importOsmFile();
+            },
+            icon: const Icon(Icons.file_open_rounded, size: 16),
+            label: const Text('Replace File'),
+            style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primaryGreen),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              deleteOsmFile();
+            },
+            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+            label: const Text('Delete'),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            downloadRoadsFromServer();
+          },
+          icon: const Icon(Icons.cloud_download_rounded, size: 16),
+          label: const Text('Beralih ke data server'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.grey.shade700,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+    ];
   }
 
   // ─── Tarik data jalan dari server (TR_ROAD per company) ────────────────────
@@ -372,7 +499,14 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
       return;
     }
 
-    final status = ValueNotifier<String>('Downloading road data…');
+    await _downloadAndActivate(picked.id, picked.name);
+  }
+
+  /// Unduh + siapkan data jalan satu company lalu jadikan aktif. Dipakai oleh
+  /// alur download (pilih company) maupun Update (company yang sudah aktif).
+  Future<void> _downloadAndActivate(int companyId, String name,
+      {String progressLabel = 'Downloading road data…'}) async {
+    final status = ValueNotifier<String>(progressLabel);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -394,8 +528,8 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     );
 
     final result = await routingService.downloadAndPrepareRoads(
-      picked.id,
-      name: picked.name,
+      companyId,
+      name: name,
       onProgress: (m) => status.value = m,
     );
     if (mounted) Navigator.pop(context);
@@ -406,7 +540,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
       case RoadPrepareStatus.ready:
         final path = await routingService.getOsmFilePath();
         if (mounted) setState(() => osmFilePath = path);
-        showRoutingSnack('✅ ${result.message} (${picked.name})');
+        showRoutingSnack('✅ ${result.message} ($name)');
         break;
       case RoadPrepareStatus.empty:
         _showRoadsUnavailableDialog();
@@ -415,6 +549,44 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
         showRoutingSnack('❌ ${result.message}');
         break;
     }
+  }
+
+  /// Update data jalan yang sedang aktif (bersumber cloud): tarik ulang versi
+  /// terbaru untuk company yang sama, tanpa memilih company lagi.
+  Future<void> updateActiveCloudRoad(DownloadedRoad road) async {
+    if (!isRoutingAvailable) { showRoutingUnavailableDialog(); return; }
+    await _downloadAndActivate(road.id, road.name,
+        progressLabel: 'Updating road data…');
+  }
+
+  /// Hapus satu data jalan cloud tersimpan; bila sedang aktif, kosongkan engine.
+  Future<void> _deleteCloudRoad(DownloadedRoad road) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Road Data?'),
+        content: Text(
+            'Data jalan "${road.name}" akan dihapus dari perangkat. Anda bisa '
+            'mengunduhnya lagi dari server kapan saja.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await routingService.deleteDownloadedRoads(road.id);
+    if (mounted && osmFilePath == road.path) {
+      setState(() => osmFilePath = null);
+    }
+    showRoutingSnack('🗑️ Road data deleted');
   }
 
   Future<DownloadableCompany?> _showCompanyPicker(
