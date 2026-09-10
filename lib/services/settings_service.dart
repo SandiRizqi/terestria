@@ -64,6 +64,11 @@ class SettingsService extends ChangeNotifier {
     await saveSettings(_settings.copyWith(darkMode: isDark));
   }
 
+  // Update watermark foto
+  Future<void> updatePhotoWatermark(bool enabled) async {
+    await saveSettings(_settings.copyWith(photoWatermark: enabled));
+  }
+
   // Update specific setting
   Future<void> updateAreaUnit(AreaUnit unit) async {
     await saveSettings(_settings.copyWith(areaUnit: unit));

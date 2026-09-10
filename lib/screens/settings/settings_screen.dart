@@ -143,6 +143,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 24),
 
+            // Photo Section
+            _buildSectionTitle('Photo'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: _buildPhotoWatermarkTile(),
+            ),
+
+            const SizedBox(height: 24),
+
             // Measurement Units Section
             _buildSectionTitle('Measurement Units'),
             Container(
@@ -379,6 +389,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
       activeColor: AppTheme.primaryColor,
       onChanged: (value) async {
         await _settingsService.updateDarkMode(value);
+        setState(() => _settings = _settingsService.settings);
+      },
+    );
+  }
+
+  Widget _buildPhotoWatermarkTile() {
+    return SwitchListTile(
+      secondary: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.teal.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.branding_watermark_rounded,
+            color: Colors.teal, size: 20),
+      ),
+      title: const Text('Watermark Foto',
+          style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(_settings.photoWatermark
+          ? 'Foto distempel logo + info GPS/waktu'
+          : 'Foto disimpan tanpa watermark'),
+      value: _settings.photoWatermark,
+      activeColor: AppTheme.primaryColor,
+      onChanged: (value) async {
+        await _settingsService.updatePhotoWatermark(value);
         setState(() => _settings = _settingsService.settings);
       },
     );
