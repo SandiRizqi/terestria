@@ -11,6 +11,7 @@ import 'photo_sync_service.dart';
 import 'crashlytics_service.dart';
 import 'connectivity_service.dart';
 import 'sync_watermark_service.dart';
+import 'pull_preflight.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -491,6 +492,45 @@ class SyncService {
       sb.write('&f=${Uri.encodeQueryComponent(k)}:${Uri.encodeQueryComponent(v)}');
     });
     return sb.toString();
+  }
+
+  /// Ambang jumlah record yang memicu peringatan ekstra di dialog konfirmasi.
+  static const int pullWarnThreshold = 1000;
+
+  /// Preflight sebelum pull: (1) pastikan server reachable (online), (2) tanya
+  /// berapa record yang akan dikirim untuk [projectId] + [formDataFilters].
+  /// Tidak menampilkan UI — mengembalikan keputusan; caller (UI) yang
+  /// menampilkan pesan/konfirmasi lalu memanggil [pullGeoDataFromServer].
+  Future<PullPreflightResult> preflightPull(
+    String projectId, {
+    Map<String, String>? formDataFilters,
+  }) async {
+    final reachable = await _connectivity.checkServerReachable();
+    if (!reachable) {
+      return const PullPreflightResult(
+        PullPreflightStatus.offline,
+        message: 'Tidak dapat terhubung ke server. Pastikan Anda online lalu coba lagi.',
+      );
+    }
+    try {
+      final count = await countGeoDataOnServer(
+        projectId,
+        formDataFilters: formDataFilters,
+      );
+      if (count <= 0) {
+        return const PullPreflightResult(PullPreflightStatus.empty, count: 0);
+      }
+      return PullPreflightResult(
+        PullPreflightStatus.ready,
+        count: count,
+        warnLarge: count > pullWarnThreshold,
+      );
+    } catch (e) {
+      return PullPreflightResult(
+        PullPreflightStatus.error,
+        message: 'Gagal memeriksa jumlah data di server: $e',
+      );
+    }
   }
 
   /// Preflight: tanya server berapa record yang akan di-pull untuk project +
