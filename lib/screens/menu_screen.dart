@@ -12,6 +12,7 @@ import '../services/firebase_messaging_service.dart';
 import '../widgets/connectivity/connectivity_indicator.dart';
 import 'auth/login_screen.dart';
 import 'project/projects_screen.dart';
+import 'analysis/analysis_types_screen.dart';
 import 'basemap/basemap_management_screen.dart';
 import 'settings/settings_screen.dart';
 import 'profile/profile_screen.dart';
@@ -390,6 +391,21 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
               crossAxisSpacing: 16,
               childAspectRatio: 0.9,
               children: [
+                _buildMenuCard(
+                  context,
+                  icon: Icons.analytics_rounded,
+                  title: 'Analysis Report',
+                  description: 'Hasil analisis',
+                  color: AppTheme.primaryBlue,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      SmoothPageRoute(
+                        builder: (context) => const AnalysisTypesScreen(),
+                      ),
+                    );
+                  },
+                ),
                 _buildMenuCard(
                   context,
                   icon: Icons.folder_rounded,

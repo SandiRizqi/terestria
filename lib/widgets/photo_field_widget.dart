@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:geoform_app/config/api_config.dart';
 import 'package:geoform_app/services/crashlytics_service.dart';
+import 'package:geoform_app/services/settings_service.dart';
 
 /// Photo metadata for form data
 class PhotoData {
@@ -322,6 +323,10 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       // Draw original image
       canvas.drawImage(original, Offset.zero, Paint());
 
+      // Watermark opsional — hanya distempel bila diaktifkan di Settings
+      // (default nonaktif). Bila nonaktif, foto tetap di-encode ulang ke PNG
+      // di jalur yang sama tanpa kartu watermark.
+      if (SettingsService().settings.photoWatermark) {
       // ─────────────────────────────────────────────────────────
       // Premium watermark card (bottom-left) with Terestria logo
       // ─────────────────────────────────────────────────────────
@@ -484,6 +489,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
             weight: FontWeight.w600, maxWidth: cardW - pad * 2 - labelW);
         cy += lineH;
       }
+      } // end if(photoWatermark)
 
       // ── Render & export ──
       final picture = recorder.endRecording();
@@ -497,7 +503,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
             await finalImage.toByteData(format: ui.ImageByteFormat.png);
         await File(newPath)
             .writeAsBytes(byteData!.buffer.asUint8List());
-        print('✅ Photo with watermark saved: $newPath');
+        print('✅ Photo saved'
+            '${SettingsService().settings.photoWatermark ? ' with watermark' : ''}'
+            ': $newPath');
         return newPath;
       } finally {
         finalImage.dispose();

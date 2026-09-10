@@ -5,6 +5,7 @@ import 'dart:async';
 import '../../models/basemap_model.dart';
 import '../../services/basemap_service.dart';
 import '../../services/pdf/pdf_basemap_service.dart';
+import '../../services/pdf/pdf_basemap_importer.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../widgets/basemap/basemap_list_item.dart';
@@ -12,7 +13,6 @@ import '../../widgets/basemap/add_basemap_type_dialog.dart';
 import '../../widgets/basemap/tms_basemap_dialog.dart';
 import 'cache_management_screen.dart';
 import '../../services/geopdf_service.dart';
-import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../../services/settings_service.dart';
@@ -30,6 +30,7 @@ class BasemapManagementScreen extends StatefulWidget {
 class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
   final BasemapService _basemapService = BasemapService();
   final PdfBasemapService _pdfService = PdfBasemapService();
+  final PdfBasemapImporter _importer = PdfBasemapImporter();
   final SettingsService _settingsService = SettingsService();
   final ConnectivityService _connectivityService = ConnectivityService();
   final _uuid = const Uuid();
@@ -261,23 +262,6 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
     }
   }
 
-  // FIX: iOS-compatible path handling
-  Future<String> _getBasemapOutputDir(String basemapId) async {
-    final appDir = await getApplicationDocumentsDirectory();
-    
-    // iOS: Langsung di Documents directory (sandbox-safe)
-    // Android: Tetap bisa gunakan Documents
-    final outputDir = Directory('${appDir.path}/basemaps/$basemapId');
-    
-    // Ensure directory exists
-    if (!await outputDir.exists()) {
-      await outputDir.create(recursive: true);
-    }
-    
-    debugPrint('📂 Basemap output dir: ${outputDir.path}');
-    return outputDir.path;
-  }
-
   Future<bool?> _showIosWarning() async {
     return showDialog<bool>(
       context: context,
@@ -309,73 +293,45 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
   }
 
   // GeoPDF processing with OVERLAY mode using ORIGINAL quality (FAST!)
+  // Delegasi ke PdfBasemapImporter agar logika inti dipakai bersama dengan
+  // alur Analysis Report. Layar ini tetap mengatur record status & reload list.
   Future<void> _processPdfBasemapWithOverlay(
     String basemapId,
     String pdfPath,
   ) async {
     Basemap? basemap;
-    
+
+    // Lookup record status-processing (deletion guard).
     try {
-      // Use iOS-compatible path
-      final outputDir = await _getBasemapOutputDir(basemapId);
-      
-      // Update status awal
-      try {
-        basemap = (await _basemapService.getBasemaps())
-            .firstWhere((b) => b.id == basemapId);
-      } catch (e) {
-        debugPrint('⚠️ Basemap not found: $basemapId');
-        return; // Basemap was deleted, stop processing
-      }
-      
-      if (mounted) {
-        await _basemapService.saveBasemap(
-          basemap.copyWith(
-            processingProgress: 0.1,
-            processingMessage: 'Extracting geographic coordinates...',
-          ),
-        );
-      }
+      basemap = (await _basemapService.getBasemaps())
+          .firstWhere((b) => b.id == basemapId);
+    } catch (e) {
+      debugPrint('⚠️ Basemap not found: $basemapId');
+      return; // Basemap was deleted, stop processing
+    }
 
-      // iOS-optimized DPI settings with user preference
-      await _settingsService.initialize();
-      final userDpi = _settingsService.settings.pdfDpi;
-      final dpi = Platform.isIOS 
-          ? (userDpi > 200 ? 200 : userDpi) // iOS: cap at 200 DPI
-          : userDpi; // Android: use user setting
-      
-      debugPrint('🔧 Processing with DPI: $dpi (iOS: ${Platform.isIOS})');
+    if (mounted) {
+      await _basemapService.saveBasemap(
+        basemap.copyWith(
+          processingProgress: 0.1,
+          processingMessage: 'Extracting geographic coordinates...',
+        ),
+      );
+    }
 
-      // FIX: Panggil processGeoPdfAsOverlay SEKALI — dia sudah handle:
-      //   1. extractCoordinates() secara internal
-      //   2. Expand bounds neatline → full-page (_expandBoundsToFullPage)
-      //   3. Render overlay.png
-      // Sebelumnya extractCoordinates() dipanggil terpisah lalu bounds NEATLINE
-      // (lebih kecil) disimpan ke Basemap, padahal overlay.png adalah render
-      // FULL-PAGE — akibatnya gambar bergeser ~963m dari posisi seharusnya.
-      final result = await GeoPdfService.processGeoPdfAsOverlay(
+    try {
+      final completed = await _importer.process(
+        base: basemap,
         pdfPath: pdfPath,
-        outputDir: outputDir,
-        dpi: dpi,
-        onProgress: (status) async {
-          if (!mounted) return;
-          
-          // Map pesan progress ke nilai 0.1–0.9
-          double progress = 0.2;
-          if (status.contains('metadata'))         progress = 0.3;
-          else if (status.contains('coordinates')) progress = 0.5;
-          else if (status.contains('overlay'))     progress = 0.7;
-          else if (status.contains('complete'))    progress = 0.9;
-
+        onProgress: (progress, message) async {
           try {
             final currentBasemap = (await _basemapService.getBasemaps())
                 .firstWhere((b) => b.id == basemapId);
-            
             if (mounted) {
               await _basemapService.saveBasemap(
                 currentBasemap.copyWith(
                   processingProgress: progress,
-                  processingMessage: status,
+                  processingMessage: message,
                 ),
               );
             }
@@ -384,131 +340,53 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
             // Don't throw, just log - basemap might have been deleted
           }
         },
-      ).timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {
-          throw TimeoutException('PDF processing timed out. Try a smaller file or lower DPI.');
-        },
       );
 
-      if (result['success'] != true) {
-        throw Exception('Overlay generation failed: ${result['message']}');
+      // Completion deletion guard: hanya simpan bila record masih ada.
+      try {
+        (await _basemapService.getBasemaps())
+            .firstWhere((b) => b.id == basemapId);
+      } catch (e) {
+        debugPrint('⚠️ Basemap not found at completion: $basemapId');
+        return; // Basemap was deleted, stop processing
       }
 
-      // Validate overlay image
-      final overlayPath = result['overlay_image'] as String?;
-      if (overlayPath == null || !await File(overlayPath).exists()) {
-        throw Exception('Overlay image not found at: $overlayPath');
-      }
-
-      // FIX: Gunakan expanded bounds dari result['coordinates'] —
-      // ini bounds FULL-PAGE yang sudah di-expand oleh _expandBoundsToFullPage,
-      // sehingga match persis dengan area yang digambar di overlay.png.
-      // Sebelumnya bounds neatline (lebih kecil) disimpan → geser ~963m.
-      final expandedBounds = result['coordinates'] as Map<String, dynamic>?;
-      if (expandedBounds == null) {
-        throw Exception('No coordinate data returned from overlay processor.');
-      }
-
-      final minLat = (expandedBounds['min_lat'] as num).toDouble();
-      final minLon = (expandedBounds['min_lon'] as num).toDouble();
-      final maxLat = (expandedBounds['max_lat'] as num).toDouble();
-      final maxLon = (expandedBounds['max_lon'] as num).toDouble();
-
-      debugPrint('🗺️ Full-page expanded bounds (untuk overlay positioning):');
-      debugPrint('   minLat: $minLat, minLon: $minLon');
-      debugPrint('   maxLat: $maxLat, maxLon: $maxLon');
-      debugPrint('   centerLat: ${(minLat + maxLat) / 2}, centerLon: ${(minLon + maxLon) / 2}');
-      debugPrint('✅ Overlay image created: $overlayPath');
-      
-      // Mark as completed — simpan expanded bounds agar overlay.png terpetakan tepat
       if (mounted) {
-        try {
-          basemap = (await _basemapService.getBasemaps())
-              .firstWhere((b) => b.id == basemapId);
-        } catch (e) {
-          debugPrint('⚠️ Basemap not found at completion: $basemapId');
-          return; // Basemap was deleted, stop processing
-        }
-        
-        final imageSizeMB = result['image_size_mb']?.toStringAsFixed(2) ?? '0';
-        final imageWidth  = result['image_width']  ?? 0;
-        final imageHeight = result['image_height'] ?? 0;
-        final dpiUsed     = dpi.toString();
-        
-        final completed = basemap.copyWith(
-          urlTemplate:         'overlay://$basemapId',
-          pdfOverlayImagePath: overlayPath,
-          useOverlayMode:      true,
-          minZoom:             10,
-          maxZoom:             22,
-          // Simpan expanded bounds (full-page) — match dengan overlay.png
-          pdfMinLat:           minLat,
-          pdfMinLon:           minLon,
-          pdfMaxLat:           maxLat,
-          pdfMaxLon:           maxLon,
-          pdfCenterLat:        (minLat + maxLat) / 2,
-          pdfCenterLon:        (minLon + maxLon) / 2,
-          pdfStatus:           PdfProcessingStatus.completed,
-          processingProgress:  1.0,
-          processingMessage:   '✅ Ready! (${imageWidth}x${imageHeight}, ${imageSizeMB} MB @ $dpiUsed DPI)',
-        );
-
         await _basemapService.saveBasemap(completed);
-        
-        // Reload to show updated status
-        if (mounted) {
-          _loadBasemaps();
-        }
+        _loadBasemaps();
       }
-
     } on TimeoutException catch (e) {
       debugPrint('❌ Processing timeout: $e');
-      
-      // Mark as failed
-      try {
-        if (basemap == null) {
-          basemap = (await _basemapService.getBasemaps())
-              .firstWhere((b) => b.id == basemapId);
-        }
-        
-        if (mounted) {
-          final failed = basemap.copyWith(
-            pdfStatus: PdfProcessingStatus.failed,
-            processingProgress: -1.0,
-            processingMessage: '❌ Timeout: ${e.message}',
-          );
-          
-          await _basemapService.saveBasemap(failed);
-          _loadBasemaps();
-        }
-      } catch (saveError) {
-        debugPrint('❌ Failed to save timeout state: $saveError');
-      }
+      await _markPdfFailed(basemapId, basemap, '❌ Timeout: ${e.message}');
     } catch (e, stackTrace) {
       debugPrint('❌ Processing error: $e');
       debugPrint('Stack trace: $stackTrace');
-      
-      // Mark as failed
-      try {
-        if (basemap == null) {
-          basemap = (await _basemapService.getBasemaps())
-              .firstWhere((b) => b.id == basemapId);
-        }
-        
-        if (mounted) {
-          final failed = basemap.copyWith(
+      await _markPdfFailed(basemapId, basemap, '❌ Error: ${e.toString()}');
+    }
+  }
+
+  /// Tandai basemap gagal proses dan reload list.
+  Future<void> _markPdfFailed(
+    String basemapId,
+    Basemap? basemap,
+    String message,
+  ) async {
+    try {
+      basemap ??= (await _basemapService.getBasemaps())
+          .firstWhere((b) => b.id == basemapId);
+
+      if (mounted) {
+        await _basemapService.saveBasemap(
+          basemap.copyWith(
             pdfStatus: PdfProcessingStatus.failed,
             processingProgress: -1.0,
-            processingMessage: '❌ Error: ${e.toString()}',
-          );
-          
-          await _basemapService.saveBasemap(failed);
-          _loadBasemaps();
-        }
-      } catch (saveError) {
-        debugPrint('❌ Failed to save error state: $saveError');
+            processingMessage: message,
+          ),
+        );
+        _loadBasemaps();
       }
+    } catch (saveError) {
+      debugPrint('❌ Failed to save failure state: $saveError');
     }
   }
 
