@@ -285,7 +285,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<void> _openPullFilterSheet() async {
     if (_isSyncing || !_isOnline) return;
 
+    // Kecualikan field foto: nilainya daftar file, tak bisa difilter teks.
     final keys = _currentProject.formFields
+        .where((f) => f.type != FieldType.photo)
         .map((f) => f.label)
         .where((l) => l.trim().isNotEmpty)
         .toList();
