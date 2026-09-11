@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_compass/flutter_compass.dart';
 import '../../widgets/map/compass_button.dart';
 import '../../widgets/map/map_controls_column.dart';
+import '../../widgets/map/map_tool_button.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
@@ -3742,26 +3743,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           buildMapToolsPanel(),
 
           // Compass — jarum mengikuti rotasi peta, reset ber-animasi
-          CompassButton(mapController: _mapController),
+          CompassButton(mapController: _mapController, size: 44),
 
           // Mode Toggle (hanya line/polygon)
           if (widget.project.geometryType != GeometryType.point)
-            FloatingActionButton(
-              heroTag: 'mode',
-              mini: true,
-              backgroundColor: _collectionMode == CollectionMode.drawing
-                  ? AppTheme.primaryColor
-                  : Colors.white,
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Icon(
-                _collectionMode == CollectionMode.drawing
-                    ? Icons.touch_app
-                    : Icons.edit,
-                color: _collectionMode == CollectionMode.drawing
-                    ? Colors.white
-                    : AppTheme.primaryColor,
-              ),
+            MapToolButton(
+              tooltip: 'Mode',
+              active: _collectionMode == CollectionMode.drawing,
+              icon: _collectionMode == CollectionMode.drawing
+                  ? Icons.touch_app
+                  : Icons.edit,
               onPressed: () {
                 setState(() {
                   if (_collectionMode == CollectionMode.tracking) {
@@ -3774,32 +3765,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               },
             ),
 
-          // Layers Panel
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              FloatingActionButton(
-                heroTag: 'geojson_layers',
-                mini: true,
-                backgroundColor: _layers.any((l) => l.isActive)
-                    ? Colors.teal
-                    : Colors.white,
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                tooltip: 'GeoJSON Layers',
-                onPressed: _showLayersPanel,
-                child: Icon(
-                  Icons.layers_outlined,
-                  color: _layers.any((l) => l.isActive)
-                      ? Colors.white
-                      : Colors.teal,
-                ),
-              ),
-              if (_layers.any((l) => l.isActive))
-                Positioned(
-                  top: -2,
-                  right: -2,
-                  child: Container(
+          // Layers Panel (badge = jumlah layer aktif)
+          MapToolButton(
+            tooltip: 'GeoJSON Layers',
+            icon: Icons.layers_outlined,
+            active: _layers.any((l) => l.isActive),
+            activeColor: Colors.teal,
+            iconColor: Colors.teal,
+            onPressed: _showLayersPanel,
+            badge: _layers.any((l) => l.isActive)
+                ? Container(
                     width: 14,
                     height: 14,
                     decoration: const BoxDecoration(
@@ -3816,42 +3791,29 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                         ),
                       ),
                     ),
-                  ),
-                ),
-            ],
+                  )
+                : null,
           ),
 
           // Offline Download
-          FloatingActionButton(
-            heroTag: 'offline_download',
-            mini: true,
-            backgroundColor: Colors.white,
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: const Icon(Icons.download, color: Colors.green),
+          MapToolButton(
             tooltip: 'Download for Offline',
+            icon: Icons.download,
+            iconColor: Colors.green,
             onPressed: _showOfflineDownloadDialog,
           ),
 
           // Basemap Selector
-          FloatingActionButton(
-            heroTag: 'basemap',
-            mini: true,
-            backgroundColor: Colors.white,
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
+          MapToolButton(
+            tooltip: 'Basemap',
+            icon: Icons.map_outlined,
             onPressed: _showBasemapSelector,
           ),
 
           // Zoom to User Location
-          FloatingActionButton(
-            heroTag: 'userLocation',
-            mini: true,
-            backgroundColor: Colors.white,
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: const Icon(Icons.my_location, color: AppTheme.primaryColor),
+          MapToolButton(
+            tooltip: 'My Location',
+            icon: Icons.my_location,
             onPressed: () {
               if (_currentLocation != null) {
                 _mapController.move(
