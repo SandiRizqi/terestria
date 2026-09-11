@@ -1555,7 +1555,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Pull from Server',
+                            'Pull with Filter',
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
@@ -1563,7 +1563,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           ),
                           SizedBox(height: 2),
                           Text(
-                            'Download geodata from cloud',
+                            'Filter fields, check count, then download',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey,
