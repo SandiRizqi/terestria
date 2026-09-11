@@ -10,6 +10,8 @@ import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/sync_service.dart';
+import '../../services/pull_preflight.dart';
+import 'widgets/pull_filter_sheet.dart';
 import '../data_collection/data_collection_screen.dart';
 import 'edit_geo_data_screen.dart';
 import 'create_project_screen.dart';
@@ -277,6 +279,96 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  /// Buka sheet filter dinamis (key dari form_fields project) lalu jalankan
+  /// preflight + pull. Menggantikan "pull all langsung": tiap pull kini wajib
+  /// lewat cek koneksi → cek jumlah record → konfirmasi.
+  Future<void> _openPullFilterSheet() async {
+    if (_isSyncing || !_isOnline) return;
+
+    final keys = _currentProject.formFields
+        .map((f) => f.label)
+        .where((l) => l.trim().isNotEmpty)
+        .toList();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => PullFilterSheet(
+        fieldKeys: keys,
+        onSubmit: (filters) {
+          Navigator.of(ctx).pop();
+          _pullWithFilters(filters);
+        },
+      ),
+    );
+  }
+
+  /// Preflight: pastikan online → tanya jumlah record → konfirmasi (peringatan
+  /// bila > ambang) → baru pull. Tidak ada jalur pull-all tanpa langkah ini.
+  Future<void> _pullWithFilters(Map<String, String> filters) async {
+    if (_isSyncing || !_isOnline) return;
+
+    setState(() {
+      _isSyncing = true;
+      _syncProgress = 'Checking server...';
+    });
+
+    PullPreflightResult pre;
+    try {
+      pre = await _syncService.preflightPull(
+        _currentProject.id,
+        formDataFilters: filters,
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+    if (!mounted) return;
+
+    switch (pre.status) {
+      case PullPreflightStatus.offline:
+      case PullPreflightStatus.error:
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(pre.message ?? 'Preflight gagal.'),
+          backgroundColor: Colors.red,
+        ));
+        return;
+      case PullPreflightStatus.empty:
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Tidak ada data yang cocok dengan filter ini.'),
+        ));
+        return;
+      case PullPreflightStatus.ready:
+        break;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Download data?'),
+        content: Text(
+          pre.warnLarge
+              ? '${pre.count} record akan diunduh (>1000). Ini bisa memakan '
+                  'waktu & kuota. Lanjutkan?'
+              : '${pre.count} record akan diunduh. Lanjutkan?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _syncGeoDataFromServer(formDataFilters: filters);
+    }
+  }
+
   /// Pull manual: user memilih tanggal, hanya tarik record yang di-update setelah
   /// tanggal itu. TIDAK mengubah watermark delta (lihat pullGeoDataFromServer).
   Future<void> _pullSinceDate() async {
@@ -305,6 +397,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<void> _syncGeoDataFromServer({
     bool forceFull = false,
     DateTime? updatedAfter,
+    Map<String, String>? formDataFilters,
   }) async {
     if (_isSyncing || !_isOnline) return;
 
@@ -318,6 +411,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         _currentProject.id,
         forceFull: forceFull,
         updatedAfter: updatedAfter,
+        formDataFilters: formDataFilters,
         onProgress: (message) {
           if (mounted) {
             setState(() => _syncProgress = message);
@@ -1610,7 +1704,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ],
             onSelected: (value) {
               if (value == 'pull_from_server') {
-                _syncGeoDataFromServer();
+                _openPullFilterSheet();
               } else if (value == 'pull_since_date') {
                 _pullSinceDate();
               } else if (value == 'sync_to_server') {
@@ -1675,13 +1769,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         ? _buildNoResultsState()
                         : RefreshIndicator(
                             onRefresh: () async {
-                              // Pull-to-refresh manual = full refresh (abaikan
-                              // watermark delta) sebagai jalur pemulihan.
-                              if (_isOnline) {
-                                await _syncGeoDataFromServer(forceFull: true);
-                              } else {
-                                await _loadGeoData();
-                              }
+                              // Pull-to-refresh = muat ulang data LOKAL saja.
+                              // Pull dari server kini hanya lewat "Pull from
+                              // Server" (filter + preflight); tidak ada lagi
+                              // full pull-all langsung dari gesture refresh.
+                              await _loadGeoData();
                             },
                             child: GridView.builder(
                               controller: _scrollController,
