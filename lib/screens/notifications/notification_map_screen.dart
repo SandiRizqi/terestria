@@ -25,6 +25,7 @@ import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../mixins/routing_data_manager.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../widgets/map/map_controls_column.dart';
+import '../../widgets/map/map_tool_button.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -1849,48 +1850,38 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
               // Map measure tools — paling atas.
               buildMapToolsPanel(),
 
-              // Compass / reset north
+              // Compass / reset north (needle kustom; disamakan 44px kotak-membulat)
               GestureDetector(
                 onTap: () {
                   _mapController.rotate(0);
                   setState(() => _currentBearing = 0);
                 },
                 child: Container(
-                  width:  40,
-                  height: 40,
+                  width:  44,
+                  height: 44,
                   decoration: BoxDecoration(
                     color:  Colors.white,
-                    shape:  BoxShape.circle,
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 8, offset: const Offset(0, 3))],
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 6, offset: const Offset(0, 3))],
                   ),
                   child: Transform.rotate(
                     angle: -_currentBearing * (math.pi / 180),
-                    child: CustomPaint(size: const Size(40, 40), painter: _CompassPainter()),
+                    child: CustomPaint(size: const Size(44, 44), painter: _CompassPainter()),
                   ),
                 ),
               ),
 
-              // Layers panel
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  FloatingActionButton(
-                    heroTag:         'nmapLayers',
-                    mini:            true,
-                    backgroundColor: _layers.any((l) => l.isActive) ? Colors.teal : Colors.white,
-                    elevation:       6,
-                    tooltip:         'GeoJSON Layers',
-                    onPressed:       _showLayersPanel,
-                    child: Icon(
-                      Icons.layers_outlined,
-                      color: _layers.any((l) => l.isActive) ? Colors.white : Colors.teal,
-                    ),
-                  ),
-                  if (_layers.any((l) => l.isActive))
-                    Positioned(
-                      top: -2, right: -2,
-                      child: Container(
-                        width:  14,
+              // Layers panel (badge = jumlah layer aktif)
+              MapToolButton(
+                tooltip: 'GeoJSON Layers',
+                icon: Icons.layers_outlined,
+                active: _layers.any((l) => l.isActive),
+                activeColor: Colors.teal,
+                iconColor: Colors.teal,
+                onPressed: _showLayersPanel,
+                badge: _layers.any((l) => l.isActive)
+                    ? Container(
+                        width: 14,
                         height: 14,
                         decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
                         child: Center(
@@ -1899,19 +1890,15 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
                             style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
                           ),
                         ),
-                      ),
-                    ),
-                ],
+                      )
+                    : null,
               ),
 
               // Basemap selector
-              FloatingActionButton(
-                heroTag:         'nmapBasemap',
-                mini:            true,
-                backgroundColor: Colors.white,
-                elevation:       6,
-                onPressed:       _showBasemapSelector,
-                child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
+              MapToolButton(
+                tooltip: 'Change Basemap',
+                icon: Icons.map_outlined,
+                onPressed: _showBasemapSelector,
               ),
             ],
           ),

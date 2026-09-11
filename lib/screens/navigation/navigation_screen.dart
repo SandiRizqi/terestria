@@ -25,6 +25,7 @@ import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../mixins/routing_data_manager.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../widgets/map/map_controls_column.dart';
+import '../../widgets/map/map_tool_button.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -809,66 +810,36 @@ class _NavigationScreenState extends State<NavigationScreen>
               buildMapToolsPanel(),
 
               // Heading-up toggle — peta berputar mengikuti arah jalan
-              GestureDetector(
-                onTap: () {
+              MapToolButton(
+                tooltip: 'Heading up',
+                icon: Icons.explore,
+                active: _headingUp,
+                onPressed: () {
                   setState(() => _headingUp = !_headingUp);
                   if (!_headingUp) _mapController.rotate(0); // kembali north-up
                 },
-                child: Container(
-                  width:  40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: _headingUp ? AppTheme.primaryGreen : Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color:      Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 8,
-                        offset:     const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.explore,
-                    size: 20,
-                    color: _headingUp ? Colors.white : Colors.black87,
-                  ),
-                ),
               ),
 
               // Compass — tap to reset north (animated); also exits heading-up
               CompassButton(
                 mapController: _mapController,
+                size: 44,
                 onResetToNorth: () {
                   if (_headingUp) setState(() => _headingUp = false);
                 },
               ),
 
               // Layers with active-count badge
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  FloatingActionButton(
-                    heroTag:         'navLayers',
-                    mini:            true,
-                    backgroundColor: _layers.any((l) => l.isActive)
-                        ? Colors.teal
-                        : Colors.white,
-                    elevation:       6,
-                    tooltip:         'GeoJSON Layers',
-                    onPressed:       _showLayersPanel,
-                    child: Icon(
-                      Icons.layers_outlined,
-                      color: _layers.any((l) => l.isActive)
-                          ? Colors.white
-                          : Colors.teal,
-                    ),
-                  ),
-                  if (_layers.any((l) => l.isActive))
-                    Positioned(
-                      top: -2, right: -2,
-                      child: Container(
-                        width:  14,
+              MapToolButton(
+                tooltip: 'GeoJSON Layers',
+                icon: Icons.layers_outlined,
+                active: _layers.any((l) => l.isActive),
+                activeColor: Colors.teal,
+                iconColor: Colors.teal,
+                onPressed: _showLayersPanel,
+                badge: _layers.any((l) => l.isActive)
+                    ? Container(
+                        width: 14,
                         height: 14,
                         decoration: const BoxDecoration(
                             color: Colors.orange, shape: BoxShape.circle),
@@ -881,20 +852,15 @@ class _NavigationScreenState extends State<NavigationScreen>
                                 fontWeight: FontWeight.bold),
                           ),
                         ),
-                      ),
-                    ),
-                ],
+                      )
+                    : null,
               ),
 
               // Basemap selector
-              FloatingActionButton(
-                heroTag:         'navBasemap',
-                mini:            true,
-                backgroundColor: Colors.white,
-                elevation:       6,
-                tooltip:         'Change Basemap',
-                onPressed:       _showBasemapSelector,
-                child: const Icon(Icons.map_outlined, color: AppTheme.primaryColor),
+              MapToolButton(
+                tooltip: 'Change Basemap',
+                icon: Icons.map_outlined,
+                onPressed: _showBasemapSelector,
               ),
             ],
           ),
