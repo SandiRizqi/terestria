@@ -111,10 +111,15 @@ class NotificationSyncService {
   Future<int> sync() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Backfill sekali: abaikan `since` supaya notifikasi lama (tanpa map)
-      // ikut tertarik dan bisa di-enrich.
+      // Sinkron pertama dibatasi 3 hari terakhir (bukan tarik-semua) agar query
+      // ringan & tidak timeout; sesudahnya delta dari `_lastSyncKey`.
       final backfillDone = prefs.getBool(_mapBackfillKey) ?? false;
-      final since = backfillDone ? prefs.getString(_lastSyncKey) : null;
+      final since = backfillDone
+          ? prefs.getString(_lastSyncKey)
+          : DateTime.now()
+              .toUtc()
+              .subtract(const Duration(days: 3))
+              .toIso8601String();
       var path = endpoint;
       if (since != null && since.isNotEmpty) {
         path = '$endpoint?since=${Uri.encodeComponent(since)}';
