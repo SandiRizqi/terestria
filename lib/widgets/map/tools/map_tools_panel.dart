@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../models/settings/app_settings.dart';
 import '../../../services/settings_service.dart';
 import '../../../theme/app_theme.dart';
+import '../map_tool_button.dart';
 import 'map_tools_controller.dart';
 
 /// Panel alat ukur peta: tombol launcher yang membuka daftar mode, kartu hasil
@@ -173,16 +174,12 @@ class _MapToolsPanelState extends State<MapToolsPanel> {
         ],
       );
 
-  Widget _launcher(MapToolsController c) => FloatingActionButton.small(
+  Widget _launcher(MapToolsController c) => MapToolButton(
         key: const Key('mapToolsLauncher'),
-        heroTag: 'mapToolsLauncher',
-        elevation: 3,
-        backgroundColor: c.isActive ? AppTheme.primaryGreen : Colors.white,
-        foregroundColor: c.isActive ? Colors.white : AppTheme.primaryGreen,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium)),
+        tooltip: 'Measure',
+        icon: _open ? Icons.close_rounded : Icons.straighten,
+        active: c.isActive,
         onPressed: () => setState(() => _open = !_open),
-        child: Icon(_open ? Icons.close_rounded : Icons.straighten),
       );
 
   Widget _miniBtn({

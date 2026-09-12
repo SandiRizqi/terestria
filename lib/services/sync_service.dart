@@ -11,6 +11,7 @@ import 'photo_sync_service.dart';
 import 'crashlytics_service.dart';
 import 'connectivity_service.dart';
 import 'sync_watermark_service.dart';
+import 'pull_preflight.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -481,11 +482,81 @@ class SyncService {
   }
 
   /// Pull geo data for a specific project from server (with pagination support)
+  /// Bangun rangkaian query `&f=key:value` untuk filter dinamis form_data
+  /// (JSONB) di backend. Key & value di-encode; separator `:` tetap literal
+  /// agar backend bisa `split(':', 1)`. Map kosong/null → string kosong.
+  String _buildFormDataFilterParam(Map<String, String>? filters) {
+    if (filters == null || filters.isEmpty) return '';
+    final sb = StringBuffer();
+    filters.forEach((k, v) {
+      sb.write('&f=${Uri.encodeQueryComponent(k)}:${Uri.encodeQueryComponent(v)}');
+    });
+    return sb.toString();
+  }
+
+  /// Ambang jumlah record yang memicu peringatan ekstra di dialog konfirmasi.
+  static const int pullWarnThreshold = 1000;
+
+  /// Preflight sebelum pull: (1) pastikan server reachable (online), (2) tanya
+  /// berapa record yang akan dikirim untuk [projectId] + [formDataFilters].
+  /// Tidak menampilkan UI — mengembalikan keputusan; caller (UI) yang
+  /// menampilkan pesan/konfirmasi lalu memanggil [pullGeoDataFromServer].
+  Future<PullPreflightResult> preflightPull(
+    String projectId, {
+    Map<String, String>? formDataFilters,
+  }) async {
+    final reachable = await _connectivity.checkServerReachable();
+    if (!reachable) {
+      return const PullPreflightResult(
+        PullPreflightStatus.offline,
+        message: 'Tidak dapat terhubung ke server. Pastikan Anda online lalu coba lagi.',
+      );
+    }
+    try {
+      final count = await countGeoDataOnServer(
+        projectId,
+        formDataFilters: formDataFilters,
+      );
+      if (count <= 0) {
+        return const PullPreflightResult(PullPreflightStatus.empty, count: 0);
+      }
+      return PullPreflightResult(
+        PullPreflightStatus.ready,
+        count: count,
+        warnLarge: count > pullWarnThreshold,
+      );
+    } catch (e) {
+      return PullPreflightResult(
+        PullPreflightStatus.error,
+        message: 'Gagal memeriksa jumlah data di server: $e',
+      );
+    }
+  }
+
+  /// Preflight: tanya server berapa record yang akan di-pull untuk project +
+  /// filter ini (mode `count_only=true`, tanpa serialisasi record). Melempar
+  /// [Exception] bila server tidak membalas 200.
+  Future<int> countGeoDataOnServer(
+    String projectId, {
+    Map<String, String>? formDataFilters,
+  }) async {
+    final filterParam = _buildFormDataFilterParam(formDataFilters);
+    final response = await _apiService.get(
+      '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&count_only=true$filterParam',
+    );
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return (body['total_count'] as num?)?.toInt() ?? 0;
+    }
+    throw Exception('Count failed: HTTP ${response.statusCode}');
+  }
+
   Future<SyncResult> pullGeoDataFromServer(
     String projectId, {
     void Function(String message)? onProgress,
     bool forceFull = false,
     DateTime? updatedAfter,
+    Map<String, String>? formDataFilters,
   }) async {
     try {
       // Get project for photo field identification (once, outside the loop)
@@ -506,6 +577,7 @@ class SyncService {
       final deltaParam = effectiveAfter != null
           ? '&updated_after=${effectiveAfter.toUtc().toIso8601String()}'
           : '';
+      final filterParam = _buildFormDataFilterParam(formDataFilters);
       DateTime? maxUpdatedAt;
 
       int savedCount = 0;
@@ -519,7 +591,7 @@ class SyncService {
         );
 
         final response = await _apiService.get(
-          '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&page=$currentPage$deltaParam',
+          '${ApiConfig.syncDataEndpoint}by-project/?project_id=$projectId&page=$currentPage$deltaParam$filterParam',
         );
 
         if (response.statusCode == 200) {
