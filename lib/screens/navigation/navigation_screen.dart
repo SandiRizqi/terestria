@@ -585,6 +585,24 @@ class _NavigationScreenState extends State<NavigationScreen>
         if (_snapped != null && _isNavigating)
           MarkerLayer(markers: [_buildSnappedMarker()]),
 
+        // Accuracy ring — radius = akurasi (m); biru = fix bagus, amber = acquiring.
+        if (_animatedMarker != null && _currentGps != null)
+          CircleLayer(
+            circles: [
+              CircleMarker(
+                point: _animatedMarker!,
+                radius: (_currentGps!.accuracy ?? 15).clamp(3.0, 80.0),
+                useRadiusInMeter: true,
+                color: (_currentGps!.recordable ? Colors.blue : Colors.orange)
+                    .withOpacity(0.12),
+                borderColor:
+                    (_currentGps!.recordable ? Colors.blue : Colors.orange)
+                        .withOpacity(0.55),
+                borderStrokeWidth: 1.5,
+              ),
+            ],
+          ),
+
         // GPS blue dot (smooth animated)
         if (_animatedMarker != null)
           MarkerLayer(markers: [
