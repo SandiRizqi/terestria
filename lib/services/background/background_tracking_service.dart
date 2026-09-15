@@ -445,7 +445,10 @@ class BackgroundTrackingService {
                   distanceFilter: distanceFilterM,
                   activityType: ActivityType.other,
                   pauseLocationUpdatesAutomatically: false,
-                  showBackgroundLocationIndicator: true, // tunjukkan indicator background di iOS
+                  // WAJIB agar iOS terus mengirim lokasi saat app di background
+                  // (bersama UIBackgroundModes 'location' + izin Always).
+                  allowBackgroundLocationUpdates: true,
+                  showBackgroundLocationIndicator: true, // indicator biru di iOS
                 )
               : LocationSettings(
                   accuracy: LocationAccuracy.bestForNavigation,

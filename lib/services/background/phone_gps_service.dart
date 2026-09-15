@@ -244,7 +244,10 @@ class PhoneGpsService {
         distanceFilter: distanceFilter.toInt(),
         activityType: ActivityType.other,
         pauseLocationUpdatesAutomatically: false,
-        // Background indicator tidak perlu di sini — background via BackgroundTrackingService
+        // Foreground marker-only: JANGAN jaga GPS hidup di background (hemat
+        // baterai). Tracking background ditangani BackgroundTrackingService yang
+        // meng-set allowBackgroundLocationUpdates: true di isolatenya.
+        allowBackgroundLocationUpdates: false,
         showBackgroundLocationIndicator: false,
       );
     } else {
