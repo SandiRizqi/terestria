@@ -2,7 +2,10 @@ import 'dart:io' show Platform;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/basemap/road_geometry_index.dart';
+import '../services/basemap/road_tile_provider.dart';
 import '../services/routing_service.dart';
 import '../theme/app_theme.dart';
 
@@ -28,6 +31,62 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
 
   // ─── State milik mixin ─────────────────────────────────────────────────────
   bool isImportingOsm = false;
+
+  // ─── Basemap jaringan jalan (Opsi B: raster on-device, lazy + cache) ────────
+  /// Provider tile jalan untuk data aktif; `null` = belum ada data / index kosong.
+  RoadTileProvider? roadTileProvider;
+
+  /// Toggle tampil layer jalan (default HIDUP; dipersist per perangkat).
+  bool roadLayerOn = true;
+
+  static const String _roadLayerPrefKey = 'road_layer_visible';
+
+  /// Muat status toggle tersimpan lalu bangun provider dari data aktif.
+  /// Panggil sekali saat initState layar peta.
+  Future<void> loadRoadLayerState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      roadLayerOn = prefs.getBool(_roadLayerPrefKey) ?? true;
+    } catch (_) {}
+    await refreshRoadLayer();
+  }
+
+  /// Nyala/mati layer jalan + persist. Aman dipanggil dari tombol toolbar.
+  Future<void> toggleRoadLayer() async {
+    roadLayerOn = !roadLayerOn;
+    if (mounted) setState(() {});
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_roadLayerPrefKey, roadLayerOn);
+    } catch (_) {}
+  }
+
+  /// Bangun ulang [roadTileProvider] dari `.pbf` aktif (di isolate). Dipanggil
+  /// saat data jalan berganti (import/download/activate) atau dihapus.
+  /// Decoupled dari routing engine → jalan tetap tampil walau routing mati (iOS).
+  Future<void> refreshRoadLayer() async {
+    final path = osmFilePath;
+    if (path == null) {
+      if (mounted) setState(() => roadTileProvider = null);
+      return;
+    }
+    try {
+      final saved = await routingService.listDownloadedRoads();
+      final companyId = RoutingService.companyIdForPath(path, saved);
+      final index = await buildRoadIndexFromFile(path);
+      if (!mounted) return;
+      setState(() {
+        roadTileProvider = index.isEmpty
+            ? null
+            : RoadTileProvider(
+                index: index,
+                basemapId: RoutingService.roadBasemapId(companyId),
+              );
+      });
+    } catch (_) {
+      if (mounted) setState(() => roadTileProvider = null);
+    }
+  }
 
   // ─── Ketersediaan routing per-platform ─────────────────────────────────────
 
@@ -102,6 +161,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     if (imported != null) {
       showRoutingSnack('✅ Routing data imported. Building routing engine...');
       initRoutingEngine(reinit: true);
+      await refreshRoadLayer(); // data jalan berganti → bangun ulang basemap
     } else {
       showRoutingSnack('❌ Failed to import routing file');
     }
@@ -130,6 +190,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     if (confirm != true) return;
     await routingService.deleteOsmFile();
     if (mounted) setState(() => osmFilePath = null);
+    await refreshRoadLayer(); // data dihapus → matikan basemap jalan
     showRoutingSnack('🗑️ Routing data deleted');
   }
 
@@ -540,6 +601,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
       case RoadPrepareStatus.ready:
         final path = await routingService.getOsmFilePath();
         if (mounted) setState(() => osmFilePath = path);
+        await refreshRoadLayer(); // data jalan baru → bangun ulang basemap
         showRoutingSnack('✅ ${result.message} ($name)');
         break;
       case RoadPrepareStatus.empty:
@@ -585,6 +647,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     await routingService.deleteDownloadedRoads(road.id);
     if (mounted && osmFilePath == road.path) {
       setState(() => osmFilePath = null);
+      await refreshRoadLayer(); // data aktif dihapus → matikan basemap jalan
     }
     showRoutingSnack('🗑️ Road data deleted');
   }
@@ -777,6 +840,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
     if (result.status == RoadPrepareStatus.ready) {
       final path = await routingService.getOsmFilePath();
       if (mounted) setState(() => osmFilePath = path);
+      await refreshRoadLayer(); // aktifkan basemap jalan untuk data terpilih
       showRoutingSnack('✅ ${result.message} (${chosen.name})');
     } else {
       showRoutingSnack('❌ ${result.message}');

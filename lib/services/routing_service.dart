@@ -125,6 +125,16 @@ class RoutingService {
   static String roadBasemapId(int? companyId) =>
       companyId != null ? 'roads_$companyId' : 'roads_local';
 
+  /// Cari companyId dari path data jalan aktif dengan mencocokkan daftar road
+  /// cloud tersimpan. Tak cocok / null (mis. file lokal import) → null → local.
+  static int? companyIdForPath(String? activePath, List<DownloadedRoad> saved) {
+    if (activePath == null) return null;
+    for (final d in saved) {
+      if (d.path == activePath) return d.id;
+    }
+    return null;
+  }
+
   /// Kosongkan cache road-tile agar di-regenerate lazy. Dipanggil saat data
   /// jalan berubah (update/ganti) atau dihapus. Gagal-diam (cache best-effort).
   Future<void> clearRoadTileCache(int? companyId) async {

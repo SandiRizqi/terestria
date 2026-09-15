@@ -26,6 +26,7 @@ import '../../mixins/routing_data_manager.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../widgets/map/map_controls_column.dart';
 import '../../widgets/map/map_tool_button.dart';
+import '../../widgets/map/road_network_layer.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -142,6 +143,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _loadProjects(),
       _loadOsmState(),
     ]);
+    await loadRoadLayerState(); // basemap jaringan jalan (setelah osm state siap)
     await _startGps();
   }
 
@@ -567,6 +569,10 @@ class _NavigationScreenState extends State<NavigationScreen>
             userAgentPackageName: ApiConfig.bundleName,
           ),
 
+        // Basemap jaringan jalan (raster on-device, lazy; zoom>10; toggle) —
+        // di atas basemap, di bawah data lain.
+        RoadNetworkLayer(provider: roadTileProvider, visible: roadLayerOn),
+
         // GeoJSON layers
         ..._buildGeoJsonLayers(),
 
@@ -879,6 +885,14 @@ class _NavigationScreenState extends State<NavigationScreen>
                 tooltip: 'Change Basemap',
                 icon: Icons.map_outlined,
                 onPressed: _showBasemapSelector,
+              ),
+
+              // Basemap jaringan jalan (on/off) — hanya berguna bila ada data.
+              MapToolButton(
+                tooltip: 'Jaringan Jalan',
+                icon: Icons.alt_route,
+                active: roadLayerOn && roadTileProvider != null,
+                onPressed: toggleRoadLayer,
               ),
             ],
           ),
