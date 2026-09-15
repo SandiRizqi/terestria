@@ -17,6 +17,34 @@ class PermissionService {
   }) =>
       !alreadyAsked && alwaysDenied;
 
+  /// Apakah background tracking akan bermasalah dengan izin saat ini?
+  /// iOS HANYA mengirim lokasi di background bila izin "Always" (bukan
+  /// When-In-Use). Bila iOS dan belum "Always" → true (harus diberi peringatan;
+  /// track background bisa berhenti begitu app keluar dari foreground).
+  /// Android memakai foreground-service, jadi When-In-Use pun cukup → false.
+  static bool backgroundNeedsAlways({
+    required bool isIOS,
+    required LocationPermission permission,
+  }) =>
+      isIOS && permission != LocationPermission.always;
+
+  /// Escalate ke "Always" untuk background tracking, lalu laporkan izin final.
+  /// Dipanggil saat user MEMULAI tracking (aksi eksplisit), jadi meminta
+  /// "Always" di sini wajar — iOS tak menampilkan dialog ulang bila sudah
+  /// pernah diputuskan. Mengembalikan permission terkini setelah percobaan.
+  static Future<LocationPermission> ensureBackgroundPermission() async {
+    try {
+      // Escalate hanya bila foreground sudah granted (syarat iOS/Android).
+      final foreground = await Permission.locationWhenInUse.status;
+      if (foreground.isGranted) {
+        await Permission.locationAlways.request();
+      }
+    } catch (e) {
+      logDebug('⚠️ ensureBackgroundPermission: gagal minta Always: $e');
+    }
+    return Geolocator.checkPermission();
+  }
+
   /// Request ALL required permissions
   static Future<bool> requestAllPermissions() async {
     try {

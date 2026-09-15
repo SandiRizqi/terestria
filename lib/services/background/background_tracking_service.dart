@@ -8,6 +8,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../models/geo_data_model.dart';
 import 'notification_service.dart';
+import 'permission_service.dart';
 import '../gps_settings_service.dart';
 import '../gps/gps_filter_pipeline.dart';
 import '../../utils/app_logger.dart';
@@ -207,6 +208,23 @@ class BackgroundTrackingService {
           permission == LocationPermission.deniedForever) {
         logError('❌ Location permission not granted: $permission');
         return false;
+      }
+
+      // Background tracking butuh "Always". Ini aksi eksplisit user (memulai
+      // tracking), jadi escalate ke Always di sini wajar — iOS tak menampilkan
+      // dialog ulang bila sudah pernah diputuskan.
+      if (permission == LocationPermission.whileInUse) {
+        permission = await PermissionService.ensureBackgroundPermission();
+      }
+
+      // Di iOS, tanpa "Always" CLLocationManager berhenti mengirim lokasi
+      // begitu app keluar dari foreground → track background akan terputus.
+      // Tetap lanjut (bagian foreground tetap jalan) tapi beri peringatan jelas.
+      if (PermissionService.backgroundNeedsAlways(
+          isIOS: Platform.isIOS, permission: permission)) {
+        logError('⚠️ Background tracking iOS butuh izin "Always"; saat ini '
+            '$permission. Track bisa berhenti saat app di background — minta '
+            'user set "Always/Selalu" di Pengaturan.');
       }
 
       logDebug('✅ Location permission verified: $permission');
