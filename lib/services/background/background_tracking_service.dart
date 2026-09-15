@@ -210,10 +210,12 @@ class BackgroundTrackingService {
         return false;
       }
 
-      // Background tracking butuh "Always". Ini aksi eksplisit user (memulai
-      // tracking), jadi escalate ke Always di sini wajar — iOS tak menampilkan
-      // dialog ulang bila sudah pernah diputuskan.
-      if (permission == LocationPermission.whileInUse) {
+      // Escalate ke "Always" HANYA di iOS. Di Android, background tracking
+      // ditanggung oleh foreground-service (foregroundServiceType=location +
+      // notifikasi persisten) yang jalan dengan When-In-Use — meminta Always di
+      // sini malah memicu redirect ke Settings di Android 11+. Request Always
+      // Android (opsional, best-effort) sudah dilakukan di _requestAndroidPermissions.
+      if (Platform.isIOS && permission == LocationPermission.whileInUse) {
         permission = await PermissionService.ensureBackgroundPermission();
       }
 
