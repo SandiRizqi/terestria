@@ -3635,6 +3635,31 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                       ),
                     ],
 
+                    // Ring akurasi di sekitar posisi: radius = akurasi (meter),
+                    // warna = confidence. Biru = fix bagus (recordable), amber =
+                    // masih "acquiring"/tak layak rekam. Memberi umpan balik agar
+                    // user tahu kualitas GPS tanpa menunggu track sempurna.
+                    if (_currentLocation != null && _animatedMarkerLatLng != null)
+                      CircleLayer(
+                        circles: [
+                          CircleMarker(
+                            point: _animatedMarkerLatLng!,
+                            radius:
+                                (_currentLocation!.accuracy ?? 15).clamp(3.0, 80.0),
+                            useRadiusInMeter: true,
+                            color: (_currentLocation!.recordable
+                                    ? Colors.blue
+                                    : Colors.orange)
+                                .withOpacity(0.12),
+                            borderColor: (_currentLocation!.recordable
+                                    ? Colors.blue
+                                    : Colors.orange)
+                                .withOpacity(0.55),
+                            borderStrokeWidth: 1.5,
+                          ),
+                        ],
+                      ),
+
                     // Current Location Marker (User Location - Blue with direction)
                     // Posisi marker dianimasikan smooth menggunakan _animatedMarkerLatLng
                     // (interpolasi easeOut antara posisi lama dan posisi GPS terbaru)

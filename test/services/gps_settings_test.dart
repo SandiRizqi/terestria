@@ -45,6 +45,29 @@ void main() {
       expect(c.coordinateRoundFactor, 1000000.0);
     });
 
+    test('param baru (Kalman/outlier/stationary/warmup) mengalir & di-clamp', () {
+      final s = GpsSettings.defaults().copyWith(
+        kalmanQMetersPerSecond: 5,
+        outlierAccuracyK: 4,
+        stationaryAccuracyFactor: 2,
+        warmupRequireGoodFix: false,
+      );
+      final c = s.toFilterConfig();
+      expect(c.kalmanQMetersPerSecond, 5);
+      expect(c.outlierAccuracyK, 4);
+      expect(c.stationaryAccuracyFactor, 2);
+      expect(c.warmupRequireGoodFix, isFalse);
+      // round-trip + clamp nilai liar
+      final wild = GpsSettings.fromJson({
+        'kalmanQMetersPerSecond': 9999,
+        'outlierAccuracyK': -5,
+      });
+      expect(wild.kalmanQMetersPerSecond,
+          lessThanOrEqualTo(GpsSettings.kalmanQMax));
+      expect(wild.outlierAccuracyK,
+          greaterThanOrEqualTo(GpsSettings.outlierKMin));
+    });
+
     test('setelan mengalir ke pipeline: maxAccuracy kustom menyaring record', () {
       final s = GpsSettings.defaults().copyWith(maxAccuracyMeters: 15);
       final p = GpsFilterPipeline(s.toFilterConfig());

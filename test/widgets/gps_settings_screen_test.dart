@@ -13,7 +13,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Accuracy filter'), findsOneWidget);
-    expect(find.text('Smoothing (EMA α)'), findsOneWidget);
+    expect(find.text('Smoothing (Kalman Q)'), findsOneWidget);
     expect(find.byType(Slider), findsWidgets);
 
     // Restart button is near the bottom (lazy ListView) — scroll to it first.

@@ -26,6 +26,9 @@ class GpsSettings {
   static const int emlidStaleMin = 2, emlidStaleMax = 60;
   static const int lastKnownAgeMin = 5, lastKnownAgeMax = 600;
   static const int coordinateDecimalsMin = 4, coordinateDecimalsMax = 8;
+  static const double outlierKMin = 0, outlierKMax = 10;
+  static const double stationaryFactorMin = 0, stationaryFactorMax = 5;
+  static const double kalmanQMin = 0.1, kalmanQMax = 20;
 
   // ─── Field ───────────────────────────────────────────────────────────────
   final double maxAccuracyMeters;
@@ -44,6 +47,11 @@ class GpsSettings {
   final int emlidStaleSeconds;
   final int maxLastKnownAgeSeconds;
   final int coordinateDecimals;
+  // Anti-outlier / stationary / warm-up / Kalman.
+  final double outlierAccuracyK;
+  final double stationaryAccuracyFactor;
+  final bool warmupRequireGoodFix;
+  final double kalmanQMetersPerSecond;
 
   const GpsSettings({
     required this.maxAccuracyMeters,
@@ -62,6 +70,10 @@ class GpsSettings {
     required this.emlidStaleSeconds,
     required this.maxLastKnownAgeSeconds,
     required this.coordinateDecimals,
+    required this.outlierAccuracyK,
+    required this.stationaryAccuracyFactor,
+    required this.warmupRequireGoodFix,
+    required this.kalmanQMetersPerSecond,
   });
 
   /// Default dari konstanta terpusat [LocationConfig].
@@ -83,6 +95,10 @@ class GpsSettings {
         emlidStaleSeconds: LocationConfig.emlidStaleSeconds,
         maxLastKnownAgeSeconds: LocationConfig.maxLastKnownAgeSeconds,
         coordinateDecimals: LocationConfig.coordinateDecimals,
+        outlierAccuracyK: LocationConfig.outlierAccuracyK,
+        stationaryAccuracyFactor: LocationConfig.stationaryAccuracyFactor,
+        warmupRequireGoodFix: LocationConfig.warmupRequireGoodFix,
+        kalmanQMetersPerSecond: LocationConfig.kalmanQMetersPerSecond,
       );
 
   GpsSettings copyWith({
@@ -102,6 +118,10 @@ class GpsSettings {
     int? emlidStaleSeconds,
     int? maxLastKnownAgeSeconds,
     int? coordinateDecimals,
+    double? outlierAccuracyK,
+    double? stationaryAccuracyFactor,
+    bool? warmupRequireGoodFix,
+    double? kalmanQMetersPerSecond,
   }) =>
       GpsSettings(
         maxAccuracyMeters: maxAccuracyMeters ?? this.maxAccuracyMeters,
@@ -129,6 +149,13 @@ class GpsSettings {
         maxLastKnownAgeSeconds:
             maxLastKnownAgeSeconds ?? this.maxLastKnownAgeSeconds,
         coordinateDecimals: coordinateDecimals ?? this.coordinateDecimals,
+        outlierAccuracyK: outlierAccuracyK ?? this.outlierAccuracyK,
+        stationaryAccuracyFactor:
+            stationaryAccuracyFactor ?? this.stationaryAccuracyFactor,
+        warmupRequireGoodFix:
+            warmupRequireGoodFix ?? this.warmupRequireGoodFix,
+        kalmanQMetersPerSecond:
+            kalmanQMetersPerSecond ?? this.kalmanQMetersPerSecond,
       );
 
   Map<String, dynamic> toJson() => {
@@ -148,6 +175,10 @@ class GpsSettings {
         'emlidStaleSeconds': emlidStaleSeconds,
         'maxLastKnownAgeSeconds': maxLastKnownAgeSeconds,
         'coordinateDecimals': coordinateDecimals,
+        'outlierAccuracyK': outlierAccuracyK,
+        'stationaryAccuracyFactor': stationaryAccuracyFactor,
+        'warmupRequireGoodFix': warmupRequireGoodFix,
+        'kalmanQMetersPerSecond': kalmanQMetersPerSecond,
       };
 
   /// Baca dari JSON; field yang hilang memakai default, semua nilai di-clamp
@@ -203,6 +234,16 @@ class GpsSettings {
       coordinateDecimals: _clampI(
           integer('coordinateDecimals', d.coordinateDecimals),
           coordinateDecimalsMin, coordinateDecimalsMax),
+      outlierAccuracyK: _clampD(
+          dbl('outlierAccuracyK', d.outlierAccuracyK), outlierKMin, outlierKMax),
+      stationaryAccuracyFactor: _clampD(
+          dbl('stationaryAccuracyFactor', d.stationaryAccuracyFactor),
+          stationaryFactorMin, stationaryFactorMax),
+      warmupRequireGoodFix:
+          (j['warmupRequireGoodFix'] as bool?) ?? d.warmupRequireGoodFix,
+      kalmanQMetersPerSecond: _clampD(
+          dbl('kalmanQMetersPerSecond', d.kalmanQMetersPerSecond),
+          kalmanQMin, kalmanQMax),
     );
   }
 
@@ -219,12 +260,10 @@ class GpsSettings {
         emaAlpha: emaAlpha,
         emaBypassSpeedKmh: emaBypassSpeedKmh,
         coordinateRoundFactor: pow(10, coordinateDecimals).toDouble(),
-        // Parameter baru — sementara ambil dari default terpusat; dijadikan
-        // tunable di GpsSettings pada tahap lanjut.
-        outlierAccuracyK: LocationConfig.outlierAccuracyK,
-        stationaryAccuracyFactor: LocationConfig.stationaryAccuracyFactor,
-        warmupRequireGoodFix: LocationConfig.warmupRequireGoodFix,
-        kalmanQMetersPerSecond: LocationConfig.kalmanQMetersPerSecond,
+        outlierAccuracyK: outlierAccuracyK,
+        stationaryAccuracyFactor: stationaryAccuracyFactor,
+        warmupRequireGoodFix: warmupRequireGoodFix,
+        kalmanQMetersPerSecond: kalmanQMetersPerSecond,
       );
 
   static double _clampD(double v, double min, double max) =>

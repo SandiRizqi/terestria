@@ -107,13 +107,15 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
               ),
               _divider(),
               _sliderTile(
-                title: 'Smoothing (EMA α)',
-                subtitle: 'Higher = more responsive, lower = smoother',
-                value: _s.emaAlpha,
-                min: GpsSettings.emaAlphaMin,
-                max: GpsSettings.emaAlphaMax,
-                fractionDigits: 2,
-                onChanged: (v) => _save(_s.copyWith(emaAlpha: v)),
+                title: 'Smoothing (Kalman Q)',
+                subtitle: 'Lower = smoother track, higher = more responsive',
+                value: _s.kalmanQMetersPerSecond,
+                min: GpsSettings.kalmanQMin,
+                max: GpsSettings.kalmanQMax,
+                fractionDigits: 1,
+                unit: 'm/s',
+                onChanged: (v) =>
+                    _save(_s.copyWith(kalmanQMetersPerSecond: v)),
               ),
               _divider(),
               _sliderTile(
@@ -157,6 +159,34 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                     activeColor: AppTheme.primaryGreen,
                     onChanged: (v) =>
                         _save(_s.copyWith(acceptAllUntilGoodFix: v)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Record only after good fix'),
+                    subtitle: const Text(
+                        'Warm-up: start recording the track after the first good fix'),
+                    value: _s.warmupRequireGoodFix,
+                    activeColor: AppTheme.primaryGreen,
+                    onChanged: (v) =>
+                        _save(_s.copyWith(warmupRequireGoodFix: v)),
+                  ),
+                  _sliderTile(
+                    title: 'Outlier tolerance (k × accuracy)',
+                    subtitle: 'Higher tolerates bigger jumps before rejecting',
+                    value: _s.outlierAccuracyK,
+                    min: GpsSettings.outlierKMin,
+                    max: GpsSettings.outlierKMax,
+                    fractionDigits: 1,
+                    onChanged: (v) => _save(_s.copyWith(outlierAccuracyK: v)),
+                  ),
+                  _sliderTile(
+                    title: 'Stationary hold (× accuracy)',
+                    subtitle: 'Freeze track when movement is below this × accuracy',
+                    value: _s.stationaryAccuracyFactor,
+                    min: GpsSettings.stationaryFactorMin,
+                    max: GpsSettings.stationaryFactorMax,
+                    fractionDigits: 1,
+                    onChanged: (v) =>
+                        _save(_s.copyWith(stationaryAccuracyFactor: v)),
                   ),
                   _sliderTile(
                     title: 'Good-fix threshold',
