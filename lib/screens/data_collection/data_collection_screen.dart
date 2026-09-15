@@ -1470,8 +1470,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             _markerTargetLatLng = newLatLng;
             _currentLocation = location;
 
-            // Tambahkan ke tracking points HANYA saat tracking aktif & tidak pause
-            if (_isTracking && !_isPaused) {
+            // Marker SELALU mengikuti (di atas). Titik jalur DIREKAM hanya bila
+            // `recordable` (lolos warm-up + akurasi + anti-outlier + bukan diam)
+            // → marker cepat muncul & halus, track tidak meloncat.
+            if (_isTracking && !_isPaused && location.recordable) {
               _collectedPoints.add(location);
               if (_collectedPoints.length % 5 == 0) {
                 print('✅ 📍 ${_collectedPoints.length} points collected');
@@ -1483,7 +1485,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           _markerAnimController.forward(from: 0);
 
           // Update service tracking points (tidak perlu setState)
-          if (_isTracking && !_isPaused) {
+          if (_isTracking && !_isPaused && location.recordable) {
             _locationService.addTrackingPoint(location);
           }
         }

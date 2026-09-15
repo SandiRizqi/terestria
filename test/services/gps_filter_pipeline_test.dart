@@ -1,160 +1,87 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/services/gps/gps_filter_pipeline.dart';
 
+/// Pipeline baru: SELALU keluarkan titik display (marker mengikuti cepat);
+/// [GeoPoint.recordable] menandai apakah titik layak DIREKAM ke jalur.
 void main() {
   final t0 = DateTime(2026, 8, 13, 12, 0, 0);
   GpsFilterConfig cfg() => GpsFilterConfig.fromDefaults();
+  DateTime at(int sec) => t0.add(Duration(seconds: sec));
 
-  test('reading pertama dengan akurasi buruk tetap diterima (acceptAllUntilGoodFix)', () {
+  test('display selalu keluar walau akurasi buruk (marker cepat muncul)', () {
     final p = GpsFilterPipeline(cfg());
     final out = p.process(
-      latitude: 1.0, longitude: 2.0, accuracy: 80, speed: 0, timestamp: t0);
-    expect(out, isNotNull);
+        latitude: 1, longitude: 2, accuracy: 80, speed: 0, timestamp: t0);
+    expect(out, isNotNull, reason: 'marker harus tampil');
+    expect(out!.recordable, isFalse, reason: 'belum ada fix bagus (warm-up)');
   });
 
-  test('setelah fix bagus, akurasi > maxAccuracy dibuang', () {
+  test('warm-up: sebelum fix bagus pertama, tidak recordable', () {
     final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    // 30 m > goodFixThreshold (20) → belum good fix
     final out = p.process(
-      latitude: 0.01, longitude: 0, accuracy: 60,
-      speed: 0, timestamp: t0.add(const Duration(seconds: 1)));
-    expect(out, isNull);
+        latitude: 0, longitude: 0, accuracy: 30, speed: 0, timestamp: t0);
+    expect(out!.recordable, isFalse);
   });
 
-  test('speed spike tidak wajar dibuang', () {
+  test('setelah fix bagus pertama, gerak normal → recordable', () {
     final p = GpsFilterPipeline(cfg());
+    // fix bagus (acc 5 <= 20) & titik pertama (tanpa prev) → recordable
+    final first = p.process(
+        latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
+    expect(first!.recordable, isTrue);
+    // ~11 m dalam 1 s → bukan diam, bukan outlier
     final out = p.process(
-      latitude: 0, longitude: 0, accuracy: 10, speed: 60, timestamp: t0); // 216 km/h
-    expect(out, isNull);
+        latitude: 0.0001, longitude: 0, accuracy: 5, speed: 1, timestamp: at(1));
+    expect(out!.recordable, isTrue);
   });
 
-  test('static-noise: gerak < threshold setelah fix bagus dibuang', () {
+  test('OUTLIER/teleport ditolak walau speed OS = 0 (bug utama loncat)', () {
     final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
+    // ~111 m dalam 1 s, tapi OS speed = 0 → dulu lolos, sekarang ditolak-record
     final out = p.process(
-      latitude: 0.000001, longitude: 0, accuracy: 10, // ~0.11 m
-      speed: 0, timestamp: t0.add(const Duration(seconds: 1)));
-    expect(out, isNull);
+        latitude: 0.001, longitude: 0, accuracy: 5, speed: 0, timestamp: at(1));
+    expect(out, isNotNull, reason: 'marker tetap tampil');
+    expect(out!.recordable, isFalse, reason: 'teleport tak boleh direkam');
   });
 
-  test('EMA meratakan reading kedua (alpha 0.6)', () {
+  test('drift diam ditahan dari rekaman (hold)', () {
     final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
+    // ~2.2 m < radius diam (max(0.5, 1×acc)=5) → ditahan
     final out = p.process(
-      latitude: 0.001, longitude: 0, accuracy: 10, // ~111 m, lolos static
-      speed: 0, timestamp: t0.add(const Duration(seconds: 1)));
-    expect(out, isNotNull);
-    // 0.6*0.001 + 0.4*0 = 0.0006
-    expect(out!.latitude, closeTo(0.0006, 1e-9));
+        latitude: 0.00002, longitude: 0, accuracy: 5, speed: 0, timestamp: at(1));
+    expect(out!.recordable, isFalse);
   });
 
-  test('gerak cepat mem-bypass EMA (pakai koordinat mentah)', () {
+  test('Kalman meratakan reading (tak meloncat penuh ke raw)', () {
     final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
+    // var: 25 → predict +1×3² = 34 → K = 34/(34+25) = 0.5763
+    // kLat = 0.5763 × 0.001 = 0.000576
     final out = p.process(
-      latitude: 0.001, longitude: 0, accuracy: 10,
-      speed: 15, timestamp: t0.add(const Duration(seconds: 1))); // 54 km/h > 30
-    expect(out!.latitude, closeTo(0.001, 1e-9));
+        latitude: 0.001, longitude: 0, accuracy: 5, speed: 0, timestamp: at(1));
+    expect(out!.latitude, closeTo(0.000576, 5e-6));
+    expect(out.latitude, lessThan(0.001)); // tergeser dari raw = smoothing
   });
 
-  test('anti-beku: setelah fix bagus lalu sinyal memburuk, marker tetap emit', () {
+  test('reset() mengosongkan state (warm-up & Kalman ulang)', () {
     final p = GpsFilterPipeline(cfg());
-    // fix bagus dulu → filter akurasi aktif
-    expect(
-      p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0),
-      isNotNull,
-    );
-    // sinyal memburuk (di atas maxAccuracy) — beberapa reading awal dibuang…
-    var lastOut;
-    for (var i = 1; i <= 6; i++) {
-      lastOut = p.process(
-        latitude: 0.01 * i, longitude: 0, accuracy: 70,
-        speed: 0, timestamp: t0.add(Duration(seconds: i)));
-    }
-    // …tapi setelah beberapa drop beruntun, pipeline melonggar & emit lagi
-    // (marker tidak boleh beku permanen di area sinyal lemah).
-    expect(lastOut, isNotNull);
-  });
-
-  test('good fix baru meng-arm ulang filter akurasi setelah longgar', () {
-    final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
-    for (var i = 1; i <= 5; i++) {
-      p.process(latitude: 0.01 * i, longitude: 0, accuracy: 70,
-        speed: 0, timestamp: t0.add(Duration(seconds: i)));
-    }
-    // good fix lagi
-    p.process(latitude: 1, longitude: 1, accuracy: 8,
-      speed: 0, timestamp: t0.add(const Duration(seconds: 6)));
-    // sekarang filter aktif lagi → reading buruk berikutnya dibuang
-    final out = p.process(latitude: 1.5, longitude: 1, accuracy: 70,
-      speed: 0, timestamp: t0.add(const Duration(seconds: 7)));
-    expect(out, isNull);
-  });
-
-  test('akurasi laporan mencerminkan pergeseran EMA (bukan sekadar raw)', () {
-    final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
-    final out = p.process(
-      latitude: 0.001, longitude: 0, accuracy: 10, // raw 10m, tapi EMA menggeser ~44m
-      speed: 0, timestamp: t0.add(const Duration(seconds: 1)));
-    expect(out, isNotNull);
-    // titik ter-EMA ~44m dari raw → akurasi dilaporkan tak boleh tetap 10m
-    expect(out!.accuracy, greaterThan(30));
-  });
-
-  test('speed OS tak diketahui: spike diturunkan dari jarak/waktu', () {
-    final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
-    // lompat ~111 km dalam 1 detik dengan speed=-1 → derived >> 180 km/h → dibuang
-    final out = p.process(
-      latitude: 1.0, longitude: 0, accuracy: 10,
-      speed: -1, timestamp: t0.add(const Duration(seconds: 1)));
-    expect(out, isNull);
-  });
-
-  test('speed=-1 tanpa gerak berlebihan tetap diterima (tak salah drop)', () {
-    final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
-    final out = p.process(
-      latitude: 0.001, longitude: 0, accuracy: 10, // ~111 m dalam 1s ≈ 400 km/h? tidak
-      speed: -1, timestamp: t0.add(const Duration(seconds: 30))); // 111m/30s ≈ 13 km/h
-    expect(out, isNotNull);
-  });
-
-  test('mode longgar tetap membuang fix sampah di atas cap (relaxedMultiplier)', () {
-    final p = GpsFilterPipeline(cfg()); // default mult 3, maxAcc 50 → cap 150
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
-    // buat memburuk → melonggar
-    for (var i = 1; i <= 4; i++) {
-      p.process(latitude: 0.01 * i, longitude: 0, accuracy: 70,
-        speed: 0, timestamp: t0.add(Duration(seconds: i)));
-    }
-    // sampah 500m (> cap 150) tetap dibuang meski sedang longgar
-    final garbage = p.process(latitude: 0.2, longitude: 0, accuracy: 500,
-      speed: 0, timestamp: t0.add(const Duration(seconds: 10)));
-    expect(garbage, isNull);
-    // 70m (<= cap) masih diterima → marker tetap bergerak
-    final ok = p.process(latitude: 0.25, longitude: 0, accuracy: 70,
-      speed: 0, timestamp: t0.add(const Duration(seconds: 11)));
-    expect(ok, isNotNull);
-  });
-
-  test('sebelum fix bagus pertama, cap tak berlaku (acceptAllUntilGoodFix)', () {
-    final p = GpsFilterPipeline(cfg());
-    // belum pernah good fix → 500m pun diterima agar marker muncul
-    final out = p.process(latitude: 0, longitude: 0, accuracy: 500,
-      speed: 0, timestamp: t0);
-    expect(out, isNotNull);
-  });
-
-  test('reset() menghapus state EMA & fix', () {
-    final p = GpsFilterPipeline(cfg());
-    p.process(latitude: 0, longitude: 0, accuracy: 10, speed: 0, timestamp: t0);
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
     p.reset();
-    // Setelah reset, reading akurasi buruk diterima lagi (belum ada good fix).
     final out = p.process(
-      latitude: 5, longitude: 5, accuracy: 90, speed: 0, timestamp: t0);
+        latitude: 9, longitude: 9, accuracy: 80, speed: 0, timestamp: t0);
     expect(out, isNotNull);
+    expect(out!.recordable, isFalse, reason: 'good fix hilang → warm-up lagi');
+    expect(out.latitude, closeTo(9, 1e-6), reason: 'Kalman re-init di titik baru');
+  });
+
+  test('speed OS diketahui tetap dipakai untuk field speed', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
+    final out = p.process(
+        latitude: 0.0001, longitude: 0, accuracy: 5, speed: 2, timestamp: at(1));
+    expect(out!.speed, closeTo(7.2, 0.05)); // 2 m/s = 7.2 km/h
   });
 }

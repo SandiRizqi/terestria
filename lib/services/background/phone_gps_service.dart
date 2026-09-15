@@ -143,7 +143,9 @@ class PhoneGpsService {
   /// [distanceFilter] — minimum jarak (meter) sebelum update baru dikirim.
   /// [maxAccuracyMeters] — ambang buang reading SETELAH dapat fix bagus.
   Future<bool> startTracking({
-    LocationAccuracy accuracy = LocationAccuracy.high,
+    // bestForNavigation = akurasi tertinggi utk jalur (mirip tracker olahraga).
+    // Single-shot getCurrentLocation tetap 'high' agar fix pertama cepat.
+    LocationAccuracy accuracy = LocationAccuracy.bestForNavigation,
     int? intervalMs,
     double? distanceFilter,
     double? maxAccuracyMeters, // dipertahankan utk kompat; pipeline yg menguasai

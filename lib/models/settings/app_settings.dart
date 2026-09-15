@@ -72,7 +72,7 @@ class AppSettings {
     this.lineWidth = 3.0,
     this.polygonOpacity = 0.3,
     this.darkMode = false,
-    this.photoWatermark = false,
+    this.photoWatermark = true,
   });
 
   // Default settings

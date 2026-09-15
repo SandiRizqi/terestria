@@ -1,4 +1,4 @@
-import 'dart:math' show cos, asin, sqrt;
+import 'dart:math' as math;
 
 import '../../config/location_config.dart';
 import '../../models/geo_data_model.dart';
@@ -17,9 +17,14 @@ class GpsFilterConfig {
   final double maxRealisticSpeedKmh;
   final double staticNoiseThresholdMeters;
   final int staticNoiseWindowMs;
-  final double emaAlpha;
-  final double emaBypassSpeedKmh;
+  final double emaAlpha; // vestigial — smoothing kini via Kalman (dipertahankan
+  final double emaBypassSpeedKmh; // untuk kompat GpsSettings; tak dipakai lagi)
   final double coordinateRoundFactor;
+  // Parameter baru:
+  final double outlierAccuracyK;
+  final double stationaryAccuracyFactor;
+  final bool warmupRequireGoodFix;
+  final double kalmanQMetersPerSecond;
 
   const GpsFilterConfig({
     required this.maxAccuracyMeters,
@@ -33,6 +38,10 @@ class GpsFilterConfig {
     required this.emaAlpha,
     required this.emaBypassSpeedKmh,
     required this.coordinateRoundFactor,
+    required this.outlierAccuracyK,
+    required this.stationaryAccuracyFactor,
+    required this.warmupRequireGoodFix,
+    required this.kalmanQMetersPerSecond,
   });
 
   /// Konfigurasi dari nilai default terpusat [LocationConfig].
@@ -49,45 +58,68 @@ class GpsFilterConfig {
         emaAlpha: LocationConfig.emaAlpha,
         emaBypassSpeedKmh: LocationConfig.emaBypassSpeedKmh,
         coordinateRoundFactor: LocationConfig.coordinateRoundFactor,
+        outlierAccuracyK: LocationConfig.outlierAccuracyK,
+        stationaryAccuracyFactor: LocationConfig.stationaryAccuracyFactor,
+        warmupRequireGoodFix: LocationConfig.warmupRequireGoodFix,
+        kalmanQMetersPerSecond: LocationConfig.kalmanQMetersPerSecond,
       );
 }
 
 /// Pipeline pengolahan reading GPS mentah menjadi [GeoPoint] siap pakai.
 ///
-/// Urutan: filter akurasi (adaptif) → filter kecepatan → filter static-noise →
-/// EMA smoothing → pembulatan. Menyimpan state (EMA, titik sebelumnya, status
-/// fix bagus) sehingga dipakai satu instance per sesi tracking.
+/// Memisahkan **display** vs **record**:
+///  - SELALU mengeluarkan titik ter-smooth (Kalman) → marker mengikuti cepat.
+///  - [GeoPoint.recordable] = true HANYA bila reading lolos semua gerbang ketat:
+///    warm-up (sudah pernah fix bagus) + akurasi + anti-outlier (jarak/akurasi)
+///    + bukan drift diam. Konsumen menampilkan marker selalu, tapi merekam ke
+///    jalur hanya bila `recordable`.
 ///
-/// Dipakai bersama oleh foreground ([PhoneGpsService]) dan isolate background
-/// agar pengolahan identik di kedua mode.
+/// Smoothing memakai Kalman skalar (akurasi = measurement-noise, Q = process-
+/// noise m/s) sehingga reading buruk otomatis nyaris tak menggeser estimasi.
+///
+/// Menyimpan state (Kalman, titik terakhir DIREKAM, status fix). Satu instance
+/// per sesi tracking. Dipakai bersama oleh foreground ([PhoneGpsService]) dan
+/// isolate background agar pengolahan identik di kedua mode.
 class GpsFilterPipeline {
   final GpsFilterConfig config;
   GpsFilterPipeline(this.config);
 
-  double? _smoothLat;
-  double? _smoothLon;
+  // Titik terakhir yang DIREKAM (untuk gerbang outlier & stationary).
   double? _prevLat;
   double? _prevLon;
+  double? _prevAcc;
   DateTime? _prevTime;
+
+  // Status fix / warm-up.
   bool _hasGoodFix = false;
   bool _everHadGoodFix = false;
   int _consecutivePoorDrops = 0;
 
+  // State Kalman skalar (posisi). _kVariance < 0 = belum diinisialisasi.
+  double _kLat = 0;
+  double _kLon = 0;
+  double _kVariance = -1;
+  DateTime? _kTime;
+
   bool get hasGoodFix => _hasGoodFix;
+  bool get everHadGoodFix => _everHadGoodFix;
 
   void reset() {
-    _smoothLat = null;
-    _smoothLon = null;
     _prevLat = null;
     _prevLon = null;
+    _prevAcc = null;
     _prevTime = null;
     _hasGoodFix = false;
     _everHadGoodFix = false;
     _consecutivePoorDrops = 0;
+    _kVariance = -1;
+    _kTime = null;
   }
 
-  /// Proses satu reading. Mengembalikan [GeoPoint] terfilter, atau `null` bila
-  /// reading dibuang. [speed] dalam m/s (`<0` = tidak diketahui).
+  /// Proses satu reading. Mengembalikan [GeoPoint] ter-smooth untuk DISPLAY
+  /// (dengan [GeoPoint.recordable] menandai apakah aman direkam ke jalur), atau
+  /// `null` bila reading benar-benar tak terpakai. [speed] dalam m/s (`<0` =
+  /// tidak diketahui).
   GeoPoint? process({
     required double latitude,
     required double longitude,
@@ -96,136 +128,118 @@ class GpsFilterPipeline {
     required DateTime timestamp,
     double? altitude,
   }) {
-    // Tandai fix bagus begitu akurasi cukup baik (mengaktifkan filter penuh &
-    // meng-arm ulang bila sebelumnya melonggar).
-    if (accuracy <= config.goodFixThresholdMeters) {
+    final double acc =
+        (accuracy.isFinite && accuracy > 0) ? accuracy : 9999.0;
+
+    // Tandai fix bagus → aktifkan filter penuh & buka warm-up.
+    if (acc <= config.goodFixThresholdMeters) {
       _hasGoodFix = true;
       _everHadGoodFix = true;
       _consecutivePoorDrops = 0;
     }
 
-    // Filter 1: Accuracy filter ADAPTIF, dengan tiga rezim langit-langit:
-    //  • fix penuh (_hasGoodFix)         → buang di atas maxAccuracy
-    //  • longgar/degradasi (pernah bagus)→ buang di atas maxAccuracy × mult
-    //    (anti-beku TAPI tetap tolak fix sampah agar marker tak meloncat liar)
-    //  • startup (belum pernah bagus)    → terima semua bila acceptAllUntilGoodFix
-    final double? ceiling;
-    if (_hasGoodFix) {
-      ceiling = config.maxAccuracyMeters;
-    } else if (_everHadGoodFix) {
-      ceiling = config.maxAccuracyMeters * config.relaxedAccuracyMultiplier;
-    } else {
-      ceiling = config.acceptAllUntilGoodFix ? null : config.maxAccuracyMeters;
+    // ── Kalman smoothing (SELALU, untuk display) ────────────────────────────
+    final (kLat, kLon) = _kalman(latitude, longitude, acc, timestamp);
+
+    // ── Keputusan recordable ────────────────────────────────────────────────
+    bool recordable = true;
+
+    // Warm-up: rekam hanya setelah fix bagus pertama.
+    if (config.warmupRequireGoodFix && !_everHadGoodFix) {
+      recordable = false;
     }
-    if (ceiling != null && accuracy > ceiling) {
-      // Hitung drop hanya saat filter penuh, untuk memicu pelonggaran.
+
+    // Filter akurasi untuk REKAM (adaptif: melonggar saat sinyal memburuk agar
+    // tak beku permanen di bawah kanopi, tapi tetap tolak fix sampah).
+    final double recCeil = _hasGoodFix
+        ? config.maxAccuracyMeters
+        : config.maxAccuracyMeters * config.relaxedAccuracyMultiplier;
+    if (acc > recCeil) {
+      recordable = false;
       if (_hasGoodFix) {
         _consecutivePoorDrops++;
         if (_consecutivePoorDrops >= config.poorAccuracyDropsBeforeRelax) {
-          _hasGoodFix = false; // masuk mode longgar (cap × mult)
+          _hasGoodFix = false;
         }
       }
-      return null;
-    }
-    // Reading lolos filter akurasi → reset hitungan drop.
-    _consecutivePoorDrops = 0;
-
-    // Kecepatan efektif untuk keputusan filter: pakai speed OS bila tersedia
-    // (>=0), jika tidak turunkan dari jarak/waktu terhadap titik sebelumnya.
-    // `position.speed` sering 0/-1 di sebagian device Android.
-    final double effSpeedKmh = _effectiveSpeedKmh(
-      osSpeed: speed,
-      latitude: latitude,
-      longitude: longitude,
-      timestamp: timestamp,
-    );
-
-    // Filter 2: Speed filter — buang spike GPS (kecepatan tidak wajar).
-    if (effSpeedKmh > config.maxRealisticSpeedKmh) {
-      return null;
-    }
-
-    // Filter 3: Static-noise — buang bila hampir tidak bergerak. Hanya aktif
-    // setelah fix bagus agar tidak menahan update awal.
-    if (_hasGoodFix &&
-        _prevLat != null &&
-        _prevLon != null &&
-        _prevTime != null) {
-      final dist = _haversineMeters(_prevLat!, _prevLon!, latitude, longitude);
-      final deltaMs = timestamp.difference(_prevTime!).inMilliseconds;
-      if (dist < config.staticNoiseThresholdMeters &&
-          deltaMs < config.staticNoiseWindowMs) {
-        return null;
-      }
-    }
-    _prevLat = latitude;
-    _prevLon = longitude;
-    _prevTime = timestamp;
-
-    // Filter 4: EMA smoothing — dilewati saat bergerak cepat agar tidak lag.
-    final double outLat;
-    final double outLon;
-    if (effSpeedKmh > config.emaBypassSpeedKmh) {
-      _smoothLat = latitude;
-      _smoothLon = longitude;
-      outLat = latitude;
-      outLon = longitude;
     } else {
-      final (sLat, sLon) = _applyEma(latitude, longitude);
-      outLat = sLat;
-      outLon = sLon;
+      _consecutivePoorDrops = 0;
     }
 
-    // Akurasi laporan harus mendeskripsikan titik yang DIKELUARKAN. EMA bisa
-    // menggeser koordinat dari reading mentah, jadi tambahkan pergeseran itu
-    // sebagai ketidakpastian: akurasi = max(raw, jarak(raw, ter-EMA)).
-    final displacement = _haversineMeters(latitude, longitude, outLat, outLon);
-    final reportedAccuracy =
-        accuracy > displacement ? accuracy : displacement;
+    // Gerbang anti-outlier + stationary — SELALU dihitung dari titik terakhir
+    // yang direkam (bukan speed OS), sehingga teleport & drift diam tertahan.
+    double? segSpeedKmh;
+    if (recordable && _prevLat != null && _prevTime != null) {
+      final dtSec = timestamp.difference(_prevTime!).inMilliseconds / 1000.0;
+      final jump = _haversineMeters(_prevLat!, _prevLon!, latitude, longitude);
+      if (dtSec > 0) segSpeedKmh = jump / dtSec * 3.6;
 
-    final speedRounded = (effSpeedKmh * 10).round() / 10.0;
+      // Anti-outlier: tolak lompatan yang melebihi (kecepatan wajar × dt) plus
+      // toleransi akurasi (makin buruk akurasi, makin longgar). dt yang membesar
+      // saat menolak → gerbang melonggar → pulih bila memang berpindah nyata.
+      final maxJump = (config.maxRealisticSpeedKmh / 3.6) * dtSec +
+          config.outlierAccuracyK * ((_prevAcc ?? acc) + acc);
+      if (jump > maxJump) recordable = false;
+
+      // Stationary hold: bila hampir tak bergerak, tahan dari rekaman (marker
+      // tetap tampil). Radius diam menyesuaikan akurasi.
+      final stationaryRadius = math.max(config.staticNoiseThresholdMeters,
+          config.stationaryAccuracyFactor * acc);
+      if (jump < stationaryRadius) recordable = false;
+    }
+
+    // Perbarui titik terakhir DIREKAM hanya saat recordable.
+    if (recordable) {
+      _prevLat = latitude;
+      _prevLon = longitude;
+      _prevAcc = acc;
+      _prevTime = timestamp;
+    }
+
+    // Speed: pakai OS bila diketahui (>=0), jika tidak turunkan dari segmen.
+    final double? outSpeedKmh = speed >= 0 ? speed * 3.6 : segSpeedKmh;
+    final double? speedRounded =
+        outSpeedKmh != null ? (outSpeedKmh * 10).round() / 10.0 : null;
+
+    // Akurasi laporan = std posterior Kalman (ketidakpastian titik ter-smooth).
+    final double kStd = _kVariance > 0 ? math.sqrt(_kVariance) : acc;
+    final double reportedAcc = kStd.isFinite ? kStd : acc;
 
     return GeoPoint(
-      latitude: _round(outLat),
-      longitude: _round(outLon),
+      latitude: _round(kLat),
+      longitude: _round(kLon),
       altitude: altitude,
-      accuracy: reportedAccuracy,
-      speed: effSpeedKmh >= 0 ? speedRounded : null,
+      accuracy: reportedAcc,
+      speed: speedRounded,
       timestamp: timestamp,
+      recordable: recordable,
     );
   }
 
-  /// Kecepatan efektif (km/h) untuk keputusan filter. Bila [osSpeed] (m/s)
-  /// `< 0` (tidak diketahui), turunkan dari perpindahan sejak titik sebelumnya;
-  /// bila tetap tak bisa dihitung, kembalikan `-1` (dianggap tak diketahui,
-  /// tidak memicu bypass maupun filter spike).
-  double _effectiveSpeedKmh({
-    required double osSpeed,
-    required double latitude,
-    required double longitude,
-    required DateTime timestamp,
-  }) {
-    if (osSpeed >= 0) return osSpeed * 3.6;
-    if (_prevLat != null && _prevLon != null && _prevTime != null) {
-      final dtSec = timestamp.difference(_prevTime!).inMilliseconds / 1000.0;
-      if (dtSec > 0) {
-        final dist = _haversineMeters(_prevLat!, _prevLon!, latitude, longitude);
-        return dist / dtSec * 3.6;
+  /// Kalman skalar untuk posisi (lat/lon). Akurasi = measurement-noise (meter),
+  /// Q = process-noise (m/s). Mengembalikan (lat, lon) ter-smooth.
+  (double, double) _kalman(double lat, double lon, double acc, DateTime ts) {
+    final double accM = acc < 1.0 ? 1.0 : acc;
+    if (_kVariance < 0) {
+      _kLat = lat;
+      _kLon = lon;
+      _kVariance = accM * accM;
+      _kTime = ts;
+      return (_kLat, _kLon);
+    }
+    if (_kTime != null) {
+      final dt = ts.difference(_kTime!).inMilliseconds / 1000.0;
+      if (dt > 0) {
+        final q = config.kalmanQMetersPerSecond;
+        _kVariance += dt * q * q;
+        _kTime = ts;
       }
     }
-    return -1.0;
-  }
-
-  (double, double) _applyEma(double lat, double lon) {
-    if (_smoothLat == null || _smoothLon == null) {
-      _smoothLat = lat;
-      _smoothLon = lon;
-    } else {
-      final a = config.emaAlpha;
-      _smoothLat = a * lat + (1.0 - a) * _smoothLat!;
-      _smoothLon = a * lon + (1.0 - a) * _smoothLon!;
-    }
-    return (_smoothLat!, _smoothLon!);
+    final k = _kVariance / (_kVariance + accM * accM);
+    _kLat += k * (lat - _kLat);
+    _kLon += k * (lon - _kLon);
+    _kVariance = (1 - k) * _kVariance;
+    return (_kLat, _kLon);
   }
 
   double _round(double value) =>
@@ -237,8 +251,10 @@ class GpsFilterPipeline {
     const toRad = 3.141592653589793 / 180;
     final dLat = (lat2 - lat1) * toRad;
     final dLon = (lon2 - lon1) * toRad;
-    final a = (dLat / 2) * (dLat / 2) +
-        cos(lat1 * toRad) * cos(lat2 * toRad) * (dLon / 2) * (dLon / 2);
-    return r * 2 * asin(sqrt(a));
+    final sLat = math.sin(dLat / 2);
+    final sLon = math.sin(dLon / 2);
+    final a = sLat * sLat +
+        math.cos(lat1 * toRad) * math.cos(lat2 * toRad) * sLon * sLon;
+    return r * 2 * math.asin(math.sqrt(a));
   }
 }

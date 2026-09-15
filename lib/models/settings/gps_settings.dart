@@ -219,6 +219,12 @@ class GpsSettings {
         emaAlpha: emaAlpha,
         emaBypassSpeedKmh: emaBypassSpeedKmh,
         coordinateRoundFactor: pow(10, coordinateDecimals).toDouble(),
+        // Parameter baru — sementara ambil dari default terpusat; dijadikan
+        // tunable di GpsSettings pada tahap lanjut.
+        outlierAccuracyK: LocationConfig.outlierAccuracyK,
+        stationaryAccuracyFactor: LocationConfig.stationaryAccuracyFactor,
+        warmupRequireGoodFix: LocationConfig.warmupRequireGoodFix,
+        kalmanQMetersPerSecond: LocationConfig.kalmanQMetersPerSecond,
       );
 
   static double _clampD(double v, double min, double max) =>

@@ -58,9 +58,33 @@ class LocationConfig {
   /// Jendela waktu (ms) untuk static-noise filter.
   static const int staticNoiseWindowMs = 3600000; // 1 jam
 
-  // ─── Speed filter ───────────────────────────────────────────────────────
-  /// Buang reading dengan kecepatan tidak wajar (km/h) — spike GPS.
-  static const double maxRealisticSpeedKmh = 180.0;
+  // ─── Speed / anti-outlier filter ────────────────────────────────────────
+  /// Batas kecepatan wajar (km/h) untuk gerbang anti-lonjakan. Dipakai bersama
+  /// [outlierAccuracyK]: sebuah titik ditolak-untuk-REKAM bila jaraknya dari
+  /// titik terakhir > (maxSpeed·dt + k·(akurasiPrev+akurasiCur)). Diturunkan
+  /// 180 → 90 agar teleport GPS (mis. 45 m/1 s) tak lagi lolos.
+  static const double maxRealisticSpeedKmh = 90.0;
+
+  /// Faktor akurasi pada gerbang anti-outlier: makin buruk akurasi, makin besar
+  /// lompatan yang ditoleransi (menghindari salah-buang saat sinyal lemah).
+  static const double outlierAccuracyK = 3.0;
+
+  // ─── Stationary hold ────────────────────────────────────────────────────
+  /// Saat hampir diam, titik DITAHAN dari rekaman (marker tetap tampil). Diam =
+  /// perpindahan < max([staticNoiseThresholdMeters], faktor × akurasi).
+  static const double stationaryAccuracyFactor = 1.0;
+
+  // ─── Warm-up rekaman ────────────────────────────────────────────────────
+  /// Bila true: titik baru DIREKAM ke jalur hanya SETELAH fix bagus pertama
+  /// (display marker tetap muncul cepat sejak awal). Menghilangkan lonjakan
+  /// cold-start di awal track.
+  static const bool warmupRequireGoodFix = true;
+
+  // ─── Kalman smoothing (pengganti EMA) ───────────────────────────────────
+  /// Process-noise Kalman (meter/detik): seberapa cepat posisi boleh berubah
+  /// tanpa dimodelkan. Besar = lebih responsif (kurang halus); kecil = lebih
+  /// halus (bisa lag). Akurasi reading dipakai sebagai measurement-noise.
+  static const double kalmanQMetersPerSecond = 3.0;
 
   // ─── Single-shot fix ────────────────────────────────────────────────────
   /// Batas waktu getCurrentPosition sebelum fallback ke last known position.

@@ -111,6 +111,8 @@ class BackgroundTrackingService {
             timestamp: DateTime.fromMillisecondsSinceEpoch(
               event['timestamp'] as int,
             ),
+            // Teruskan flag agar konsumen (screen) merekam hanya bila layak.
+            recordable: event['recordable'] as bool? ?? true,
           );
           
           logDebug('📥 RECEIVED FROM BACKGROUND:');
@@ -431,7 +433,7 @@ class BackgroundTrackingService {
       final distanceFilterM = gpsSettings.distanceFilterMeters.toInt();
       final locationSettings = Platform.isAndroid
           ? AndroidSettings(
-              accuracy: LocationAccuracy.high,
+              accuracy: LocationAccuracy.bestForNavigation,
               distanceFilter: distanceFilterM,
               intervalDuration:
                   Duration(milliseconds: gpsSettings.trackingIntervalMs),
@@ -439,14 +441,14 @@ class BackgroundTrackingService {
             )
           : Platform.isIOS
               ? AppleSettings(
-                  accuracy: LocationAccuracy.high,
+                  accuracy: LocationAccuracy.bestForNavigation,
                   distanceFilter: distanceFilterM,
                   activityType: ActivityType.other,
                   pauseLocationUpdatesAutomatically: false,
                   showBackgroundLocationIndicator: true, // tunjukkan indicator background di iOS
                 )
               : LocationSettings(
-                  accuracy: LocationAccuracy.high,
+                  accuracy: LocationAccuracy.bestForNavigation,
                   distanceFilter: distanceFilterM,
                 );
 
@@ -484,29 +486,35 @@ class BackgroundTrackingService {
           final lon = processed.longitude;
           final speedKmh = processed.speed;
 
-          // ✅ CRITICAL: Send location to UI via service communication
+          // ✅ CRITICAL: Send location to UI via service communication.
+          // Marker SELALU dikirim (display); `recordable` menandai apakah UI
+          // boleh merekamnya ke jalur — identik dengan foreground.
           final locationMap = {
             'latitude': lat,
             'longitude': lon,
             'altitude': position.altitude,
-            'accuracy': position.accuracy,
+            'accuracy': processed.accuracy,
             'speed': speedKmh,
             'timestamp': position.timestamp.millisecondsSinceEpoch,
+            'recordable': processed.recordable,
           };
-          
+
           logDebug('📤 SENDING TO FOREGROUND: $locationMap');
-          
+
           service.invoke('location_update', locationMap);
           logDebug('✅ Data sent via service.invoke()');
-          
-          // Save to SharedPreferences untuk persistence
-          await _saveLocationToPrefs(
-            lat,
-            lon,
-            position.altitude,
-            position.accuracy,
-            speedKmh,
-          );
+
+          // Persist untuk recovery — HANYA titik yang layak direkam (jalur
+          // tak boleh terisi display-only/outlier/drift diam).
+          if (processed.recordable) {
+            await _saveLocationToPrefs(
+              lat,
+              lon,
+              position.altitude,
+              processed.accuracy,
+              speedKmh,
+            );
+          }
           
           // Update notification setiap 5 detik untuk monitoring
           if (locationCount % 5 == 0) {

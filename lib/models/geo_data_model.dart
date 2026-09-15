@@ -8,6 +8,13 @@ class GeoPoint {
   final String? fixQuality; // RTK fix quality: fix, float, autonomous, etc.
   final int? satelliteCount; // Number of satellites used
 
+  /// Flag RUNTIME (bukan data tersimpan): true = titik ini layak DIREKAM ke
+  /// jalur track (lolos warm-up + akurasi + anti-outlier + bukan drift diam).
+  /// false = tampilkan sebagai marker saja, JANGAN direkam. Default true agar
+  /// titik dari sumber lain (Emlid RTK, data tersimpan) selalu dianggap valid.
+  /// SENGAJA tidak masuk [toJson]/[fromJson] — hanya relevan saat live.
+  final bool recordable;
+
   GeoPoint({
     required this.latitude,
     required this.longitude,
@@ -17,6 +24,7 @@ class GeoPoint {
     required this.timestamp,
     this.fixQuality,
     this.satelliteCount,
+    this.recordable = true,
   });
 
   Map<String, dynamic> toJson() {

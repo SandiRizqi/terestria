@@ -2,7 +2,7 @@ name: geoform_app
 description: "Terestria - Agricultural and Environmental Mapping App"
 publish_to: 'none'
 
-version: 4.4.0+36
+version: 4.4.2+39
 
 environment:
   sdk: ^3.5.1
