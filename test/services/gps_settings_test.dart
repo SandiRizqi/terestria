@@ -8,31 +8,31 @@ void main() {
     test('defaults sesuai LocationConfig', () {
       final d = GpsSettings.defaults();
       expect(d.maxAccuracyMeters, LocationConfig.maxAccuracyMeters);
-      expect(d.emaAlpha, LocationConfig.emaAlpha);
+      expect(d.kalmanQMetersPerSecond, LocationConfig.kalmanQMetersPerSecond);
       expect(d.maxLastKnownAgeSeconds, LocationConfig.maxLastKnownAgeSeconds);
     });
 
     test('toJson → fromJson round-trip', () {
       final s = GpsSettings.defaults().copyWith(
         maxAccuracyMeters: 42,
-        emaAlpha: 0.8,
+        kalmanQMetersPerSecond: 8,
         staticNoiseWindowSeconds: 30,
       );
       final back = GpsSettings.fromJson(s.toJson());
       expect(back.maxAccuracyMeters, 42);
-      expect(back.emaAlpha, 0.8);
+      expect(back.kalmanQMetersPerSecond, 8);
       expect(back.staticNoiseWindowSeconds, 30);
     });
 
     test('fromJson meng-clamp nilai di luar rentang', () {
       final s = GpsSettings.fromJson({
         'maxAccuracyMeters': 99999, // > max
-        'emaAlpha': 0, // < min
+        'kalmanQMetersPerSecond': 0, // < min
         'coordinateDecimals': 99, // > max
       });
       expect(s.maxAccuracyMeters,
           lessThanOrEqualTo(GpsSettings.maxAccuracyMax));
-      expect(s.emaAlpha, greaterThanOrEqualTo(GpsSettings.emaAlphaMin));
+      expect(s.kalmanQMetersPerSecond, greaterThanOrEqualTo(GpsSettings.kalmanQMin));
       expect(s.coordinateDecimals,
           lessThanOrEqualTo(GpsSettings.coordinateDecimalsMax));
     });

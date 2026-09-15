@@ -16,9 +16,9 @@ bool isLastKnownFresh(DateTime fixTime, DateTime now, int maxAgeSec) =>
 /// Menggunakan geolocator dengan:
 /// - distanceFilter: hanya update jika bergerak minimal
 ///   [LocationConfig.distanceFilterMeters] meter
-/// - Accuracy filter ADAPTIF: sebelum dapat fix bagus, terima semua reading;
-///   setelahnya buang reading dengan akurasi > [LocationConfig.maxAccuracyMeters]
-/// - EMA smoothing: ratakan noise koordinat sebelum dikirim ke stream
+/// - Pipeline bersama [GpsFilterPipeline]: warm-up, anti-outlier, stationary
+///   hold, dan Kalman smoothing (memisahkan display vs record) sebelum
+///   koordinat dikirim ke stream.
 ///
 /// Semua nilai tuning terpusat di [LocationConfig].
 class PhoneGpsService {
@@ -179,7 +179,7 @@ class PhoneGpsService {
       logDebug(
         '✅ PhoneGpsService: Tracking started '
         '(distanceFilter: ${distFilter}m, maxAccuracy: '
-        '${_settings.maxAccuracyMeters}m, EMA α=${_settings.emaAlpha})',
+        '${_settings.maxAccuracyMeters}m, Kalman Q=${_settings.kalmanQMetersPerSecond})',
       );
       return true;
     } catch (e) {

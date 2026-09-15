@@ -17,8 +17,6 @@ class GpsFilterConfig {
   final double maxRealisticSpeedKmh;
   final double staticNoiseThresholdMeters;
   final int staticNoiseWindowMs;
-  final double emaAlpha; // vestigial — smoothing kini via Kalman (dipertahankan
-  final double emaBypassSpeedKmh; // untuk kompat GpsSettings; tak dipakai lagi)
   final double coordinateRoundFactor;
   // Parameter baru:
   final double outlierAccuracyK;
@@ -37,8 +35,6 @@ class GpsFilterConfig {
     required this.maxRealisticSpeedKmh,
     required this.staticNoiseThresholdMeters,
     required this.staticNoiseWindowMs,
-    required this.emaAlpha,
-    required this.emaBypassSpeedKmh,
     required this.coordinateRoundFactor,
     required this.outlierAccuracyK,
     required this.stationaryAccuracyFactor,
@@ -59,8 +55,6 @@ class GpsFilterConfig {
         maxRealisticSpeedKmh: LocationConfig.maxRealisticSpeedKmh,
         staticNoiseThresholdMeters: LocationConfig.staticNoiseThresholdMeters,
         staticNoiseWindowMs: LocationConfig.staticNoiseWindowMs,
-        emaAlpha: LocationConfig.emaAlpha,
-        emaBypassSpeedKmh: LocationConfig.emaBypassSpeedKmh,
         coordinateRoundFactor: LocationConfig.coordinateRoundFactor,
         outlierAccuracyK: LocationConfig.outlierAccuracyK,
         stationaryAccuracyFactor: LocationConfig.stationaryAccuracyFactor,

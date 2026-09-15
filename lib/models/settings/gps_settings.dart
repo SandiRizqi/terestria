@@ -15,8 +15,6 @@ class GpsSettings {
   static const double goodFixMin = 3, goodFixMax = 50;
   static const int poorDropsMin = 1, poorDropsMax = 20;
   static const double relaxedMultMin = 1, relaxedMultMax = 6;
-  static const double emaAlphaMin = 0.1, emaAlphaMax = 1.0;
-  static const double emaBypassMin = 5, emaBypassMax = 120;
   static const double distanceFilterMin = 0, distanceFilterMax = 50;
   static const double staticNoiseMin = 0, staticNoiseMax = 10;
   static const int staticWindowMin = 0, staticWindowMax = 3600;
@@ -36,8 +34,6 @@ class GpsSettings {
   final bool acceptAllUntilGoodFix;
   final int poorAccuracyDropsBeforeRelax;
   final double relaxedAccuracyMultiplier;
-  final double emaAlpha;
-  final double emaBypassSpeedKmh;
   final double distanceFilterMeters;
   final double staticNoiseThresholdMeters;
   final int staticNoiseWindowSeconds;
@@ -59,8 +55,6 @@ class GpsSettings {
     required this.acceptAllUntilGoodFix,
     required this.poorAccuracyDropsBeforeRelax,
     required this.relaxedAccuracyMultiplier,
-    required this.emaAlpha,
-    required this.emaBypassSpeedKmh,
     required this.distanceFilterMeters,
     required this.staticNoiseThresholdMeters,
     required this.staticNoiseWindowSeconds,
@@ -84,8 +78,6 @@ class GpsSettings {
         poorAccuracyDropsBeforeRelax:
             LocationConfig.poorAccuracyDropsBeforeRelax,
         relaxedAccuracyMultiplier: LocationConfig.relaxedAccuracyMultiplier,
-        emaAlpha: LocationConfig.emaAlpha,
-        emaBypassSpeedKmh: LocationConfig.emaBypassSpeedKmh,
         distanceFilterMeters: LocationConfig.distanceFilterMeters,
         staticNoiseThresholdMeters: LocationConfig.staticNoiseThresholdMeters,
         staticNoiseWindowSeconds: LocationConfig.staticNoiseWindowMs ~/ 1000,
@@ -107,8 +99,6 @@ class GpsSettings {
     bool? acceptAllUntilGoodFix,
     int? poorAccuracyDropsBeforeRelax,
     double? relaxedAccuracyMultiplier,
-    double? emaAlpha,
-    double? emaBypassSpeedKmh,
     double? distanceFilterMeters,
     double? staticNoiseThresholdMeters,
     int? staticNoiseWindowSeconds,
@@ -133,8 +123,6 @@ class GpsSettings {
             poorAccuracyDropsBeforeRelax ?? this.poorAccuracyDropsBeforeRelax,
         relaxedAccuracyMultiplier:
             relaxedAccuracyMultiplier ?? this.relaxedAccuracyMultiplier,
-        emaAlpha: emaAlpha ?? this.emaAlpha,
-        emaBypassSpeedKmh: emaBypassSpeedKmh ?? this.emaBypassSpeedKmh,
         distanceFilterMeters: distanceFilterMeters ?? this.distanceFilterMeters,
         staticNoiseThresholdMeters:
             staticNoiseThresholdMeters ?? this.staticNoiseThresholdMeters,
@@ -164,8 +152,6 @@ class GpsSettings {
         'acceptAllUntilGoodFix': acceptAllUntilGoodFix,
         'poorAccuracyDropsBeforeRelax': poorAccuracyDropsBeforeRelax,
         'relaxedAccuracyMultiplier': relaxedAccuracyMultiplier,
-        'emaAlpha': emaAlpha,
-        'emaBypassSpeedKmh': emaBypassSpeedKmh,
         'distanceFilterMeters': distanceFilterMeters,
         'staticNoiseThresholdMeters': staticNoiseThresholdMeters,
         'staticNoiseWindowSeconds': staticNoiseWindowSeconds,
@@ -203,10 +189,6 @@ class GpsSettings {
       relaxedAccuracyMultiplier: _clampD(
           dbl('relaxedAccuracyMultiplier', d.relaxedAccuracyMultiplier),
           relaxedMultMin, relaxedMultMax),
-      emaAlpha: _clampD(dbl('emaAlpha', d.emaAlpha), emaAlphaMin, emaAlphaMax),
-      emaBypassSpeedKmh: _clampD(
-          dbl('emaBypassSpeedKmh', d.emaBypassSpeedKmh),
-          emaBypassMin, emaBypassMax),
       distanceFilterMeters: _clampD(
           dbl('distanceFilterMeters', d.distanceFilterMeters),
           distanceFilterMin, distanceFilterMax),
@@ -257,8 +239,6 @@ class GpsSettings {
         maxRealisticSpeedKmh: maxRealisticSpeedKmh,
         staticNoiseThresholdMeters: staticNoiseThresholdMeters,
         staticNoiseWindowMs: staticNoiseWindowSeconds * 1000,
-        emaAlpha: emaAlpha,
-        emaBypassSpeedKmh: emaBypassSpeedKmh,
         coordinateRoundFactor: pow(10, coordinateDecimals).toDouble(),
         outlierAccuracyK: outlierAccuracyK,
         stationaryAccuracyFactor: stationaryAccuracyFactor,

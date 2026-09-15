@@ -38,15 +38,6 @@ class LocationConfig {
   /// (terima akurasi berapa pun) supaya marker langsung muncul & bergerak.
   static const bool acceptAllUntilGoodFix = true;
 
-  // ─── EMA smoothing (foreground & background) ────────────────────────────
-  /// Bobot EMA: new = alpha × reading + (1 - alpha) × previous.
-  /// Lebih besar = lebih responsif (lag kecil). Dinaikkan 0.3 → 0.6.
-  static const double emaAlpha = 0.6;
-
-  /// Bila kecepatan di atas nilai ini (km/h), lewati EMA dan pakai koordinat
-  /// mentah agar marker tidak tertinggal saat bergerak cepat.
-  static const double emaBypassSpeedKmh = 30.0;
-
   // ─── Distance & static-noise filter ─────────────────────────────────────
   /// Minimum perpindahan (meter) sebelum geolocator mengirim update baru.
   static const double distanceFilterMeters = 2.0;

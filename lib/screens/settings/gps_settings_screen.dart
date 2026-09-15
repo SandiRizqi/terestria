@@ -219,14 +219,6 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(relaxedAccuracyMultiplier: v)),
                   ),
                   _sliderTile(
-                    title: 'Bypass EMA above speed',
-                    value: _s.emaBypassSpeedKmh,
-                    min: GpsSettings.emaBypassMin,
-                    max: GpsSettings.emaBypassMax,
-                    unit: 'km/h',
-                    onChanged: (v) => _save(_s.copyWith(emaBypassSpeedKmh: v)),
-                  ),
-                  _sliderTile(
                     title: 'Distance filter',
                     subtitle: 'Minimum distance before a new update',
                     value: _s.distanceFilterMeters,
