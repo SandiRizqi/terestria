@@ -84,4 +84,35 @@ void main() {
         latitude: 0.0001, longitude: 0, accuracy: 5, speed: 2, timestamp: at(1));
     expect(out!.speed, closeTo(7.2, 0.05)); // 2 m/s = 7.2 km/h
   });
+
+  test('gerak lambat (OS speed > ambang) TIDAK di-hold walau jarak < radius', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
+    // ~3.3 m dalam 1 s (< radius 5), tapi OS speed 1.4 m/s (jalan) → tetap direkam
+    final out = p.process(
+        latitude: 0.00003, longitude: 0, accuracy: 5, speed: 1.4, timestamp: at(1));
+    expect(out!.recordable, isTrue);
+  });
+
+  test('diam (OS speed ~0) & jarak < radius tetap di-hold', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 0, timestamp: t0);
+    final out = p.process(
+        latitude: 0.00003, longitude: 0, accuracy: 5, speed: 0.1, timestamp: at(1));
+    expect(out!.recordable, isFalse);
+  });
+
+  test('akurasi laporan di-lantai (tak lebih optimis dari 0.7 × mentah)', () {
+    final p = GpsFilterPipeline(cfg());
+    // beberapa fix bagus bergerak → varian Kalman menyempit
+    for (var i = 0; i <= 5; i++) {
+      p.process(
+          latitude: 0.0002 * i, longitude: 0, accuracy: 10, speed: 2,
+          timestamp: at(i));
+    }
+    final out = p.process(
+        latitude: 0.0014, longitude: 0, accuracy: 10, speed: 2, timestamp: at(7));
+    expect(out!.accuracy, greaterThanOrEqualTo(7.0)); // lantai 0.7 × 10
+    expect(out.accuracy, lessThanOrEqualTo(10.0));
+  });
 }

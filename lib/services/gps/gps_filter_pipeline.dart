@@ -25,6 +25,8 @@ class GpsFilterConfig {
   final double stationaryAccuracyFactor;
   final bool warmupRequireGoodFix;
   final double kalmanQMetersPerSecond;
+  final double stationarySpeedThresholdMps;
+  final double kalmanReportedAccuracyFloorFactor;
 
   const GpsFilterConfig({
     required this.maxAccuracyMeters,
@@ -42,6 +44,8 @@ class GpsFilterConfig {
     required this.stationaryAccuracyFactor,
     required this.warmupRequireGoodFix,
     required this.kalmanQMetersPerSecond,
+    required this.stationarySpeedThresholdMps,
+    required this.kalmanReportedAccuracyFloorFactor,
   });
 
   /// Konfigurasi dari nilai default terpusat [LocationConfig].
@@ -62,6 +66,10 @@ class GpsFilterConfig {
         stationaryAccuracyFactor: LocationConfig.stationaryAccuracyFactor,
         warmupRequireGoodFix: LocationConfig.warmupRequireGoodFix,
         kalmanQMetersPerSecond: LocationConfig.kalmanQMetersPerSecond,
+        stationarySpeedThresholdMps:
+            LocationConfig.stationarySpeedThresholdMps,
+        kalmanReportedAccuracyFloorFactor:
+            LocationConfig.kalmanReportedAccuracyFloorFactor,
       );
 }
 
@@ -181,11 +189,15 @@ class GpsFilterPipeline {
           config.outlierAccuracyK * ((_prevAcc ?? acc) + acc);
       if (jump > maxJump) recordable = false;
 
-      // Stationary hold: bila hampir tak bergerak, tahan dari rekaman (marker
-      // tetap tampil). Radius diam menyesuaikan akurasi.
+      // Stationary hold: tahan dari rekaman bila hampir tak bergerak (marker
+      // tetap tampil). Radius diam menyesuaikan akurasi. TAPI hanya ditahan
+      // bila OS tak melaporkan gerak jelas (doppler) — agar jalan lambat di
+      // area akurasi buruk (radius besar) tak ikut terbuang. speed OS < 0
+      // (tak diketahui) → jatuh ke keputusan jarak saja.
       final stationaryRadius = math.max(config.staticNoiseThresholdMeters,
           config.stationaryAccuracyFactor * acc);
-      if (jump < stationaryRadius) recordable = false;
+      final movingByOs = speed >= config.stationarySpeedThresholdMps;
+      if (jump < stationaryRadius && !movingByOs) recordable = false;
     }
 
     // Perbarui titik terakhir DIREKAM hanya saat recordable.
@@ -201,9 +213,13 @@ class GpsFilterPipeline {
     final double? speedRounded =
         outSpeedKmh != null ? (outSpeedKmh * 10).round() / 10.0 : null;
 
-    // Akurasi laporan = std posterior Kalman (ketidakpastian titik ter-smooth).
+    // Akurasi laporan = std posterior Kalman, DILANTAI relatif akurasi mentah.
+    // Std Kalman bisa terlalu optimistis (error GPS berkorelasi), jadi ring tak
+    // boleh menampilkan lingkaran yang menyesatkan kecil.
     final double kStd = _kVariance > 0 ? math.sqrt(_kVariance) : acc;
-    final double reportedAcc = kStd.isFinite ? kStd : acc;
+    final double floored =
+        math.max(kStd, config.kalmanReportedAccuracyFloorFactor * acc);
+    final double reportedAcc = floored.isFinite ? floored : acc;
 
     return GeoPoint(
       latitude: _round(kLat),

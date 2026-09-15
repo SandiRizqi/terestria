@@ -74,6 +74,17 @@ class LocationConfig {
   /// perpindahan < max([staticNoiseThresholdMeters], faktor × akurasi).
   static const double stationaryAccuracyFactor = 1.0;
 
+  /// Ambang kecepatan (m/detik) untuk menganggap benar-benar DIAM. Bila speed
+  /// OS >= nilai ini, titik TIDAK di-hold walau perpindahan < radius diam —
+  /// mencegah gerak lambat (di bawah kanopi, akurasi buruk) ikut terbuang.
+  /// ~0.6 m/s ≈ 2 km/h; jalan santai (~1.4 m/s) di atasnya → tetap terekam.
+  static const double stationarySpeedThresholdMps = 0.6;
+
+  /// Lantai akurasi laporan relatif akurasi mentah. Std posterior Kalman bisa
+  /// terlalu optimistis (error GPS berkorelasi), jadi akurasi yang dilaporkan
+  /// = max(std Kalman, faktor × akurasi mentah) agar ring tak menyesatkan.
+  static const double kalmanReportedAccuracyFloorFactor = 0.7;
+
   // ─── Warm-up rekaman ────────────────────────────────────────────────────
   /// Bila true: titik baru DIREKAM ke jalur hanya SETELAH fix bagus pertama
   /// (display marker tetap muncul cepat sejak awal). Menghilangkan lonjakan

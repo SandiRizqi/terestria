@@ -264,6 +264,11 @@ class GpsSettings {
         stationaryAccuracyFactor: stationaryAccuracyFactor,
         warmupRequireGoodFix: warmupRequireGoodFix,
         kalmanQMetersPerSecond: kalmanQMetersPerSecond,
+        // Internal (bukan setelan user) — dari default terpusat.
+        stationarySpeedThresholdMps:
+            LocationConfig.stationarySpeedThresholdMps,
+        kalmanReportedAccuracyFloorFactor:
+            LocationConfig.kalmanReportedAccuracyFloorFactor,
       );
 
   static double _clampD(double v, double min, double max) =>
