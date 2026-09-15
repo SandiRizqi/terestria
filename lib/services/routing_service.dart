@@ -11,6 +11,7 @@ import '../config/api_config.dart';
 import '../models/route_result.dart';
 import 'api_service.dart';
 import 'routing_dart/engine.dart';
+import 'tile_cache_sqlite_service.dart';
 
 /// Gate ketersediaan routing lintas-platform: Android selalu (GraphHopper); iOS
 /// bila mesin Dart offline diaktifkan. Dipakai RoutingService & RoutingDataManager.
@@ -116,6 +117,23 @@ class RoutingService {
       );
 
   // ─────────────────────────────────────────────────────────────────────────
+  // BASEMAP JALAN — cache tile raster (Opsi B)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// basemapId cache road-tile untuk sebuah company (`roads_<id>`) atau data
+  /// lokal (`roads_local`). Konsisten dengan penyimpanan `.pbf` per-company.
+  static String roadBasemapId(int? companyId) =>
+      companyId != null ? 'roads_$companyId' : 'roads_local';
+
+  /// Kosongkan cache road-tile agar di-regenerate lazy. Dipanggil saat data
+  /// jalan berubah (update/ganti) atau dihapus. Gagal-diam (cache best-effort).
+  Future<void> clearRoadTileCache(int? companyId) async {
+    try {
+      await TileCacheSqliteService().clearCache(roadBasemapId(companyId));
+    } catch (_) {}
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // OSM DATA MANAGEMENT
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -147,6 +165,10 @@ class RoutingService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefOsmKey, dest.path);
 
+      // Ganti data jalan lokal → cache road-tile lama basi → bersihkan
+      // (di-regenerate lazy dari .pbf baru).
+      await clearRoadTileCache(null);
+
       debugPrint('✅ RoutingService: OSM file imported → ${dest.path}');
       return dest.path;
     } catch (e) {
@@ -164,6 +186,8 @@ class RoutingService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefOsmKey);
     _isInitialized = false;
+    // Hapus data jalan lokal → hapus juga cache road-tile-nya.
+    await clearRoadTileCache(null);
     debugPrint('🗑️ RoutingService: OSM file deleted');
   }
 
@@ -267,6 +291,9 @@ class RoutingService {
       await prefs.remove(_prefOsmKey);
       _isInitialized = false;
     }
+
+    // Hapus data jalan company → hapus juga cache road-tile-nya.
+    await clearRoadTileCache(id);
   }
 
   /// Unduh .osm.pbf sebuah company, simpan PER-COMPANY (bisa dipakai offline
@@ -300,6 +327,10 @@ class RoutingService {
         ..removeWhere((e) => (e['id'] as num?)?.toInt() == companyId)
         ..add({'id': companyId, 'name': name ?? 'Company #$companyId'});
       await _writeIndex(idx);
+
+      // Update/ganti data jalan company ini → cache road-tile lama basi →
+      // bersihkan agar di-regenerate lazy dari .pbf baru.
+      await clearRoadTileCache(companyId);
 
       onProgress?.call('Building routing engine…');
       final ok = await _activate(dest.path);
