@@ -21,8 +21,17 @@ class RoadStyle {
 class RoadVectorStyle {
   RoadVectorStyle._();
 
+  // ─── Palet warna (mengikuti style MapLibre TAP: source-layer `road`) ──────
+  static const Color _major = Color(0xFFE65100); // primary (& motorway/trunk)
+  static const Color _secondary = Color(0xFFF57C00); // secondary
+  static const Color _tertiary = Color(0xFFFBC02D); // tertiary
+  static const Color _residential = Color(0xFFBDBDBD); // residential
+  static const Color _service = Color(0xFF9E9E9E); // service
+  static const Color _track = Color(0xFFA1887F); // track
+  static const Color _other = Color(0xFF999999); // fallback (jalan-major other)
+
   /// Gaya default untuk kelas jalan yang tak punya entri khusus.
-  static final RoadStyle defaultStyle = RoadStyle(Colors.grey.shade500, 1.0);
+  static const RoadStyle defaultStyle = RoadStyle(_other, 1.2);
 
   /// Kelas jalan yang SENGAJA tidak digambar (khusus pejalan kaki / non-jalan).
   static const Set<String> _skip = {
@@ -41,24 +50,26 @@ class RoadVectorStyle {
     'platform',
   };
 
-  /// Peta kelas → gaya. Ketebalan menurun dari jalan arteri ke jalan kecil.
-  static final Map<String, RoadStyle> _styles = {
-    'motorway': RoadStyle(Colors.orange.shade700, 2.4),
-    'motorway_link': RoadStyle(Colors.orange.shade700, 1.8),
-    'trunk': RoadStyle(Colors.orange.shade600, 2.2),
-    'trunk_link': RoadStyle(Colors.orange.shade600, 1.7),
-    'primary': RoadStyle(Colors.orange.shade400, 2.0),
-    'primary_link': RoadStyle(Colors.orange.shade400, 1.5),
-    'secondary': RoadStyle(Colors.amber.shade600, 1.7),
-    'secondary_link': RoadStyle(Colors.amber.shade600, 1.3),
-    'tertiary': RoadStyle(Colors.grey.shade600, 1.4),
-    'tertiary_link': RoadStyle(Colors.grey.shade600, 1.2),
-    'unclassified': RoadStyle(Colors.grey.shade500, 1.1),
-    'residential': RoadStyle(Colors.grey.shade500, 1.1),
-    'living_street': RoadStyle(Colors.grey.shade400, 1.0),
-    'road': RoadStyle(Colors.grey.shade500, 1.0),
-    'service': RoadStyle(Colors.grey.shade400, 0.9),
-    'track': RoadStyle(Colors.brown.shade400, 1.0),
+  /// Peta kelas → gaya. Warna dari palet TAP; ketebalan menurun dari arteri ke
+  /// jalan kecil (majors jauh lebih tebal, seperti interpolasi width di style).
+  static const Map<String, RoadStyle> _styles = {
+    // Majors — oranye TAP (#E65100). motorway/trunk disamakan dgn primary.
+    'motorway': RoadStyle(_major, 3.2),
+    'motorway_link': RoadStyle(_major, 2.2),
+    'trunk': RoadStyle(_major, 3.0),
+    'trunk_link': RoadStyle(_major, 2.0),
+    'primary': RoadStyle(_major, 3.0),
+    'primary_link': RoadStyle(_major, 2.0),
+    'secondary': RoadStyle(_secondary, 2.6),
+    'secondary_link': RoadStyle(_secondary, 1.8),
+    'tertiary': RoadStyle(_tertiary, 2.0),
+    'tertiary_link': RoadStyle(_tertiary, 1.6),
+    'unclassified': RoadStyle(_residential, 1.6),
+    'residential': RoadStyle(_residential, 1.6),
+    'living_street': RoadStyle(_residential, 1.4),
+    'road': RoadStyle(_residential, 1.5),
+    'service': RoadStyle(_service, 1.3),
+    'track': RoadStyle(_track, 1.5),
   };
 
   /// Kembalikan gaya garis untuk kelas [highway], atau `null` bila kelas ini

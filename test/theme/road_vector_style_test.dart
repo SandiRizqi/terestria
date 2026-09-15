@@ -1,3 +1,4 @@
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/theme/road_vector_style.dart';
 
@@ -45,6 +46,26 @@ void main() {
     test('warna berbeda antara kelas utama dan kelas pemukiman', () {
       expect(RoadVectorStyle.forHighway('motorway')!.color,
           isNot(RoadVectorStyle.forHighway('residential')!.color));
+    });
+
+    test('palet TAP: warna per kelas sesuai style MapLibre', () {
+      expect(RoadVectorStyle.forHighway('primary')!.color,
+          const Color(0xFFE65100));
+      expect(RoadVectorStyle.forHighway('secondary')!.color,
+          const Color(0xFFF57C00));
+      expect(RoadVectorStyle.forHighway('tertiary')!.color,
+          const Color(0xFFFBC02D));
+      expect(RoadVectorStyle.forHighway('residential')!.color,
+          const Color(0xFFBDBDBD));
+      expect(RoadVectorStyle.forHighway('service')!.color,
+          const Color(0xFF9E9E9E));
+      expect(RoadVectorStyle.forHighway('track')!.color,
+          const Color(0xFFA1887F));
+      // major (primary/trunk/motorway) memakai oranye yang sama.
+      expect(RoadVectorStyle.forHighway('motorway')!.color,
+          const Color(0xFFE65100));
+      // default (kelas tak terpetakan) abu-abu netral.
+      expect(RoadVectorStyle.defaultStyle.color, const Color(0xFF999999));
     });
   });
 }
