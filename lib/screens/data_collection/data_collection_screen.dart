@@ -21,6 +21,7 @@ import '../../models/basemap_model.dart';
 import '../../models/form_field_model.dart';
 import '../../services/location_service_v2.dart';
 import '../../services/storage_service.dart';
+import '../../services/tracking/tracking_session_manager.dart';
 import '../../services/basemap_service.dart';
 import '../../services/tile_cache_sqlite_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
@@ -617,12 +618,22 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _restoreTrackingState() {
-    // Check if tracking was active when we left this screen
-    if (_locationService.isActivelyTracking) {
-      print('🔄 Restoring tracking state...');
+    // Pulihkan state HANYA bila sesi project INI masih aktif di manajer
+    // (isolasi per-project — tak lagi mencampur titik global antar project).
+    final session =
+        TrackingSessionManager.instance.sessionFor(widget.project.id);
+    if (session != null) {
+      print('🔄 Restoring tracking state (sesi manajer)...');
       setState(() {
         _isTracking = true;
-        // Restore collected points from service
+        _collectedPoints = List.from(session.points);
+      });
+      print('✅ Restored ${_collectedPoints.length} points');
+    } else if (_locationService.isActivelyTracking) {
+      // Fallback lama (tanpa sesi manajer) demi kompatibilitas.
+      print('🔄 Restoring tracking state (fallback)...');
+      setState(() {
+        _isTracking = true;
         _collectedPoints = List.from(_locationService.activeTrackingPoints);
       });
       print('✅ Restored ${_collectedPoints.length} points');
@@ -1575,6 +1586,22 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
     }
 
+    // 2b. Daftarkan sesi ke manajer multi-project (guard cap + no-dup).
+    final startRes = TrackingSessionManager.instance.start(widget.project);
+    if (startRes.status == StartStatus.capReached) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Maksimal ${TrackingSessionManager.instance.maxConcurrent} project boleh tracking bersamaan. Hentikan salah satu dulu.'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
     // 3. Start background tracking with detailed error handling
     try {
       _locationService.startActiveTracking();
@@ -1596,6 +1623,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       crashlytics.setContext('point_count', _collectedPoints.length);
       crashlytics.recordError(e, stack,
           reason: 'DataCollection: startBackgroundTracking failed');
+
+      // Rollback pendaftaran sesi bila kita yang baru mendaftarkannya.
+      if (startRes.status == StartStatus.started) {
+        TrackingSessionManager.instance.stop(widget.project.id);
+      }
 
       if (mounted) {
         await _showTrackingErrorDialog(e.toString());
@@ -2066,6 +2098,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       );
 
       await _storageService.saveGeoData(geoData);
+
+      // Sesi project ini selesai → lepas dari manajer multi-project.
+      TrackingSessionManager.instance.stop(widget.project.id);
 
       if (mounted) {
         // Reset saving state sebelum pop

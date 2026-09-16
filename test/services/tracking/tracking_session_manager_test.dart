@@ -106,6 +106,20 @@ void main() {
       expect(m.sessionFor('a')!.points.length, 1);
     });
 
+    test('fan-out dedup fix identik beruntun (aman dari double-call)', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      final p = GeoPoint(
+          latitude: 1, longitude: 2, timestamp: DateTime(2026, 1, 1, 10, 0, 0));
+      m.addPointToActiveSessions(p);
+      m.addPointToActiveSessions(p); // fix sama (double) → dilewati
+      expect(m.sessionFor('a')!.points.length, 1);
+      // koordinat sama tapi timestamp beda (diam sungguhan) → tetap ditambah
+      m.addPointToActiveSessions(GeoPoint(
+          latitude: 1, longitude: 2, timestamp: DateTime(2026, 1, 1, 10, 0, 1)));
+      expect(m.sessionFor('a')!.points.length, 2);
+    });
+
     test('ingest tanpa sesi aktif tak error', () {
       final m = TrackingSessionManager(maxConcurrent: 3);
       m.ingest(_pt(0, 0));

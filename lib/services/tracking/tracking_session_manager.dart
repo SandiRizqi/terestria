@@ -68,15 +68,27 @@ class TrackingSessionManager extends ChangeNotifier {
   }
 
   /// Fan-out satu titik GPS ke semua sesi aktif yang tidak paused.
+  ///
+  /// Fix identik beruntun (timestamp + lat + lon sama) DILEWATI — melindungi
+  /// dari double-delivery satu fix lewat dua jalur (listener service + layar)
+  /// tanpa mengutak-atik alur titik yang rapuh & per-provider.
   void addPointToActiveSessions(GeoPoint point) {
     var changed = false;
     for (final s in _sessions.values) {
-      if (!s.paused) {
-        s.points.add(point);
-        changed = true;
-      }
+      if (s.paused) continue;
+      if (_isDuplicateOfLast(s, point)) continue;
+      s.points.add(point);
+      changed = true;
     }
     if (changed) notifyListeners();
+  }
+
+  static bool _isDuplicateOfLast(TrackingSession s, GeoPoint p) {
+    if (s.points.isEmpty) return false;
+    final last = s.points.last;
+    return last.timestamp == p.timestamp &&
+        last.latitude == p.latitude &&
+        last.longitude == p.longitude;
   }
 
   void pause(String projectId) {
