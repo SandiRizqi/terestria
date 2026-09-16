@@ -1383,6 +1383,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // ✅ FIX: Capture location untuk avoid null safety issue
     final initialLocation = location;
+
+    // Tampilkan marker SEGERA dari fix awal (getCurrentLocation/last-known) —
+    // penting saat kembali ke layar sementara tracking jalan: stream background
+    // hanya mengirim fix BERIKUTNYA, jadi tanpa priming ini marker akan kosong.
+    if (initialLocation != null && mounted) {
+      final ll = LatLng(initialLocation.latitude, initialLocation.longitude);
+      setState(() {
+        _currentLocation = initialLocation;
+        _markerBeginLatLng = _markerTargetLatLng ?? ll;
+        _markerTargetLatLng = ll;
+      });
+    }
+
     if (initialLocation != null && !_hasInitialZoom) {
       // Wait untuk map controller ready
       WidgetsBinding.instance.addPostFrameCallback((_) {
