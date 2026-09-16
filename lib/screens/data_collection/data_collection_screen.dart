@@ -254,63 +254,22 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   Future<bool> didPopRoute() async {
     print('🚪 User is exiting DataCollectionScreen...');
     
-    // Stop background tracking if active
+    // Multi-project: meninggalkan layar TIDAK menghentikan tracking. Sesi terus
+    // berjalan di background (titik tetap terkumpul); user mengelola stop/simpan
+    // dari daftar project lewat banner/panel "Tracking Aktif".
     if (_isTracking) {
-      print('⚠️ Tracking is active - showing confirmation...');
-      
-      // Show confirmation dialog
-      final shouldExit = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
-              SizedBox(width: 12),
-              Text('Stop Tracking?'),
-            ],
+      print('▶️ Keluar layar — tracking lanjut di background (multi-project)');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Tracking tetap berjalan. Kelola dari banner "Tracking Aktif" di daftar project.'),
+            duration: Duration(seconds: 3),
           ),
-          content: const Text(
-            'You are currently tracking. Do you want to stop tracking and exit?',
-            style: TextStyle(fontSize: 14),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text('Stop & Exit'),
-            ),
-          ],
-        ),
-      );
-
-      if (shouldExit == true) {
-        // Stop background tracking
-        await _locationService.stopBackgroundTracking();
-        _locationService.stopActiveTracking();
-        
-        setState(() {
-          _isTracking = false;
-          _isPaused = false;
-        });
-        
-        print('✅ Background tracking stopped - exiting screen');
-        return false; // Allow navigation
-      } else {
-        print('❌ User cancelled exit - tracking continues');
-        return true; // Prevent navigation
+        );
       }
     }
-    
-    // No tracking active - allow navigation
-    print('✅ No active tracking - allowing exit');
-    return false;
+    return false; // selalu izinkan keluar
   }
 
   // ✅ OPSI C: Cek status permission secara langsung.
@@ -1288,13 +1247,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // Cancel viewport culling debounce
     _cullingDebounce?.cancel();
 
-    // ✅ ALWAYS stop background tracking on dispose
-    // This handles cases where didPopRoute wasn't called (e.g., app termination)
-    if (_isTracking) {
-      print('⚠️ Dispose called while tracking - emergency stop...');
+    // Multi-project: JANGAN hentikan background service bila masih ada sesi
+    // aktif di manajer — titik harus tetap masuk walau layar ini ditutup.
+    // Service dihentikan terpusat oleh TrackingPersistenceCoordinator saat sesi
+    // terakhir berhenti (activeCount→0).
+    if (_isTracking && TrackingSessionManager.instance.activeCount == 0) {
+      print('⚠️ Dispose while tracking & tak ada sesi → emergency stop...');
       _locationService.stopBackgroundTracking();
       _locationService.stopActiveTracking();
-      print('✅ Emergency stop completed');
+    } else if (_isTracking) {
+      print('ℹ️ Dispose: sesi masih aktif → tracking lanjut di background');
     }
     
     // Cancel location stream

@@ -25,12 +25,14 @@ class TrackingPersistenceCoordinator {
   final SessionRepository repo;
   final Duration debounce;
   final void Function(String text) _notify;
+  final void Function()? onAllSessionsStopped;
 
   TrackingPersistenceCoordinator({
     TrackingSessionManager? manager,
     SessionRepository? repo,
     this.debounce = const Duration(seconds: 2),
     void Function(String text)? notify,
+    this.onAllSessionsStopped,
   })  : manager = manager ?? TrackingSessionManager.instance,
         repo = repo ?? SessionRepository(),
         _notify = notify ??
@@ -42,6 +44,7 @@ class TrackingPersistenceCoordinator {
   Timer? _debounceTimer;
   bool _attached = false;
   int _lastNotifiedCount = -1;
+  bool _serviceActive = false;
 
   /// Pulihkan sesi tersimpan ke manajer saat app start.
   Future<void> restore() async {
@@ -52,6 +55,7 @@ class TrackingPersistenceCoordinator {
     }
     _knownIds = manager.sessions.keys.toSet();
     maybeUpdateNotification();
+    maybeManageService();
   }
 
   /// Mulai mengawasi perubahan manajer.
@@ -69,8 +73,22 @@ class TrackingPersistenceCoordinator {
 
   void _onChanged() {
     maybeUpdateNotification();
+    maybeManageService();
     _debounceTimer?.cancel();
     _debounceTimer = Timer(debounce, flushNow);
+  }
+
+  /// Hentikan background service HANYA saat sesi terakhir berhenti
+  /// (activeCount 0). Saat masih ada sesi, service tetap jalan agar titik terus
+  /// masuk walau layar collection sudah ditutup (multi-project).
+  void maybeManageService() {
+    final count = manager.activeCount;
+    if (count > 0) {
+      _serviceActive = true;
+    } else if (_serviceActive) {
+      _serviceActive = false;
+      onAllSessionsStopped?.call();
+    }
   }
 
   /// Update notifikasi HANYA saat jumlah sesi aktif berubah — bukan tiap fix GPS

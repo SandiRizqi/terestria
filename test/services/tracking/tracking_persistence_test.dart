@@ -89,6 +89,34 @@ void main() {
     mgr.stop('a');
   });
 
+  test('service dihentikan HANYA saat sesi terakhir berhenti (activeCount→0)',
+      () {
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    mgr.stop('a');
+    mgr.stop('b');
+    var stops = 0;
+    final coord = TrackingPersistenceCoordinator(
+      manager: mgr,
+      repo: _FakeRepo(),
+      onAllSessionsStopped: () => stops++,
+    );
+
+    mgr.start(_proj('a'));
+    coord.maybeManageService(); // 1 → service jalan
+    mgr.start(_proj('b'));
+    coord.maybeManageService(); // 2 → tetap jalan
+    expect(stops, 0);
+
+    mgr.stop('a');
+    coord.maybeManageService(); // 1 → masih ada B → jangan stop
+    expect(stops, 0);
+
+    mgr.stop('b');
+    coord.maybeManageService(); // 0 → stop service
+    coord.maybeManageService(); // tetap 0 → tak dobel
+    expect(stops, 1);
+  });
+
   test('notifikasi hanya di-update saat activeCount berubah (bukan tiap fix)',
       () {
     final mgr = TrackingSessionManager(maxConcurrent: 3);

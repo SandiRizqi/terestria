@@ -53,8 +53,15 @@ void main() async {
       await AppInitializer().initialize();
 
       // 5. Pulihkan sesi tracking multi-project dari SQLite + mulai persistensi.
+      //    Saat sesi TERAKHIR berhenti, hentikan background service terpusat
+      //    (bukan lagi tiap layar collection ditutup).
       try {
-        trackingPersistence = TrackingPersistenceCoordinator();
+        trackingPersistence = TrackingPersistenceCoordinator(
+          onAllSessionsStopped: () {
+            LocationServiceV2().stopBackgroundTracking();
+            LocationServiceV2().stopActiveTracking();
+          },
+        );
         await trackingPersistence!.restore();
         trackingPersistence!.attach();
       } catch (e) {
