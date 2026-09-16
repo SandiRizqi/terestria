@@ -158,6 +158,24 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // Rebuild marker cache setiap kali user mengubah settings
     _settingsService.addListener(_onSettingsChanged);
 
+    // Sinkronkan tampilan track dari SESI manajer (sumber tunggal saat tracking).
+    TrackingSessionManager.instance.addListener(_onSessionChanged);
+  }
+
+  /// Titik yang di-mirror terakhir dari sesi (untuk membatasi rebuild).
+  int _lastMirroredCount = -1;
+
+  /// Saat sesi project INI bertambah titik (feed GPS global), sinkronkan
+  /// [_collectedPoints] ke titik sesi. Menjadikan sesi sumber tunggal → tampilan
+  /// tak divergen & tak "melonjak" saat finish. Hanya aktif saat layar menandai
+  /// tracking (bukan mode gambar manual).
+  void _onSessionChanged() {
+    if (!mounted || !_isTracking) return;
+    final s = TrackingSessionManager.instance.sessionFor(widget.project.id);
+    if (s == null) return;
+    if (s.points.length == _lastMirroredCount) return;
+    _lastMirroredCount = s.points.length;
+    setState(() => _collectedPoints = List.of(s.points));
   }
 
   /// Dipanggil setiap frame animasi marker — cukup trigger setState
@@ -577,8 +595,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _restoreTrackingState() {
-    // Pulihkan state HANYA bila sesi project INI masih aktif di manajer
-    // (isolasi per-project — tak lagi mencampur titik global antar project).
+    // Pulihkan state HANYA bila sesi project INI aktif di manajer. Isolasi
+    // per-project — JANGAN pakai state global (isActivelyTracking/
+    // activeTrackingPoints) karena itu milik project mana pun yang sedang
+    // tracking → dulu menyebabkan project lain ikut "tracking" + titik tercampur.
     final session =
         TrackingSessionManager.instance.sessionFor(widget.project.id);
     if (session != null) {
@@ -586,14 +606,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       setState(() {
         _isTracking = true;
         _collectedPoints = List.from(session.points);
-      });
-      print('✅ Restored ${_collectedPoints.length} points');
-    } else if (_locationService.isActivelyTracking) {
-      // Fallback lama (tanpa sesi manajer) demi kompatibilitas.
-      print('🔄 Restoring tracking state (fallback)...');
-      setState(() {
-        _isTracking = true;
-        _collectedPoints = List.from(_locationService.activeTrackingPoints);
       });
       print('✅ Restored ${_collectedPoints.length} points');
     }
@@ -1270,6 +1282,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // Hapus settings listener
     _settingsService.removeListener(_onSettingsChanged);
+    TrackingSessionManager.instance.removeListener(_onSessionChanged);
 
     super.dispose();
   }
@@ -1456,15 +1469,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             _markerTargetLatLng = newLatLng;
             _currentLocation = location;
 
-            // Marker SELALU mengikuti (di atas). Titik jalur DIREKAM hanya bila
-            // `recordable` (lolos warm-up + akurasi + anti-outlier + bukan diam)
-            // → marker cepat muncul & halus, track tidak meloncat.
-            if (_isTracking && !_isPaused && location.recordable) {
-              _collectedPoints.add(location);
-              if (_collectedPoints.length % 5 == 0) {
-                print('✅ 📍 ${_collectedPoints.length} points collected');
-              }
-            }
+            // Marker SELALU mengikuti (di atas). Titik jalur direkam ke SESI
+            // manajer via addTrackingPoint (di bawah); tampilan [_collectedPoints]
+            // disinkronkan dari sesi lewat _onSessionChanged → sumber tunggal,
+            // tak divergen antar project maupun antara layar & sesi.
           });
 
           // Jalankan animasi smooth dari posisi lama ke baru (di luar setState)
@@ -3683,7 +3691,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     // Current Location Marker (User Location - Blue with direction)
                     // Posisi marker dianimasikan smooth menggunakan _animatedMarkerLatLng
                     // (interpolasi easeOut antara posisi lama dan posisi GPS terbaru)
-                    if (_animatedMarkerLatLng != null && !(_isTracking && _collectedPoints.isNotEmpty))
+                    // Marker lokasi user SELALU tampil (termasuk saat tracking) —
+                    // dulu disembunyikan saat tracking, membuat user bingung
+                    // "marker hilang, tinggal ring". Kini dot + ring tampil bersama.
+                    if (_animatedMarkerLatLng != null)
                       MarkerLayer(
                         markers: [
                           Marker(
