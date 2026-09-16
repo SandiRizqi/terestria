@@ -297,7 +297,12 @@ class _ProjectCardState extends State<ProjectCard>
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
-                          Row(
+                          // Wrap (bukan Row) agar type + badge Synced + REC tak
+                          // saling bertabrakan / overflow pada nama panjang / layar sempit.
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(
                                 widget.project.geometryType.toString().split('.').last.toUpperCase(),
@@ -307,12 +312,8 @@ class _ProjectCardState extends State<ProjectCard>
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              const SizedBox(width: 8),
                               _buildSyncBadge(widget.project.isSynced),
-                              if (_isTracking) ...[
-                                const SizedBox(width: 8),
-                                _buildTrackingBadge(),
-                              ],
+                              if (_isTracking) _buildTrackingBadge(),
                             ],
                           ),
                         ],
