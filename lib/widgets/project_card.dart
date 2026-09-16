@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geoform_app/theme/app_theme.dart';
 import '../models/project_model.dart';
 import '../services/auth_service.dart';
+import '../services/tracking/tracking_session_manager.dart';
 import 'project/manage_collectors_dialog.dart';
 
 class ProjectCard extends StatefulWidget {
@@ -25,13 +26,82 @@ class ProjectCard extends StatefulWidget {
   State<ProjectCard> createState() => _ProjectCardState();
 }
 
-class _ProjectCardState extends State<ProjectCard> {
+class _ProjectCardState extends State<ProjectCard>
+    with SingleTickerProviderStateMixin {
   String? _currentUsername;
+
+  late final AnimationController _blinkController;
+  late final Animation<double> _blink;
+  final TrackingSessionManager _tracking = TrackingSessionManager.instance;
+
+  bool get _isTracking => _tracking.isActive(widget.project.id);
 
   @override
   void initState() {
     super.initState();
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _blink = Tween<double>(begin: 0.35, end: 1.0).animate(_blinkController);
+    _tracking.addListener(_onTrackingChanged);
+    _syncBlink();
     _loadUsername();
+  }
+
+  void _onTrackingChanged() {
+    if (!mounted) return;
+    setState(_syncBlink);
+  }
+
+  /// Jalankan animasi kelap-kelip hanya saat project ini sedang tracking.
+  void _syncBlink() {
+    if (_isTracking) {
+      if (!_blinkController.isAnimating) {
+        _blinkController.repeat(reverse: true);
+      }
+    } else {
+      if (_blinkController.isAnimating) {
+        _blinkController.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _tracking.removeListener(_onTrackingChanged);
+    _blinkController.dispose();
+    super.dispose();
+  }
+
+  /// Badge "REC" berkedip saat project sedang aktif merekam.
+  Widget _buildTrackingBadge() {
+    return FadeTransition(
+      key: ValueKey('tracking-active-${widget.project.id}'),
+      opacity: _blink,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEF4444).withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.fiber_manual_record, size: 10, color: Color(0xFFEF4444)),
+            SizedBox(width: 3),
+            Text(
+              'REC',
+              style: TextStyle(
+                color: Color(0xFFEF4444),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadUsername() async {
@@ -239,6 +309,10 @@ class _ProjectCardState extends State<ProjectCard> {
                               ),
                               const SizedBox(width: 8),
                               _buildSyncBadge(widget.project.isSynced),
+                              if (_isTracking) ...[
+                                const SizedBox(width: 8),
+                                _buildTrackingBadge(),
+                              ],
                             ],
                           ),
                         ],
