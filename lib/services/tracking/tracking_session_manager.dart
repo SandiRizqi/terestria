@@ -59,6 +59,14 @@ class TrackingSessionManager extends ChangeNotifier {
     return StartResult(StartStatus.started, s);
   }
 
+  /// Intake dari stream GPS: hanya titik **recordable** yang di-fan-out.
+  /// Aman dipanggil walau tak ada sesi aktif (no-op).
+  void ingest(GeoPoint point) {
+    if (!point.recordable) return;
+    if (_sessions.isEmpty) return;
+    addPointToActiveSessions(point);
+  }
+
   /// Fan-out satu titik GPS ke semua sesi aktif yang tidak paused.
   void addPointToActiveSessions(GeoPoint point) {
     var changed = false;

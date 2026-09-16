@@ -89,6 +89,29 @@ void main() {
       expect(m.distanceOf('a'), greaterThan(d0));
     });
 
+    test('ingest hanya menerima titik recordable', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.ingest(GeoPoint(
+          latitude: 0,
+          longitude: 0,
+          timestamp: DateTime(2026, 1, 1),
+          recordable: false));
+      expect(m.sessionFor('a')!.points.length, 0);
+      m.ingest(GeoPoint(
+          latitude: 0,
+          longitude: 0,
+          timestamp: DateTime(2026, 1, 1),
+          recordable: true));
+      expect(m.sessionFor('a')!.points.length, 1);
+    });
+
+    test('ingest tanpa sesi aktif tak error', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.ingest(_pt(0, 0));
+      expect(m.activeCount, 0);
+    });
+
     test('notifyListeners terpanggil saat start & addPoint', () {
       final m = TrackingSessionManager(maxConcurrent: 3);
       var n = 0;
