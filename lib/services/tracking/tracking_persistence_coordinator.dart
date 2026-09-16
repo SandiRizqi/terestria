@@ -24,18 +24,24 @@ class TrackingPersistenceCoordinator {
   final TrackingSessionManager manager;
   final SessionRepository repo;
   final Duration debounce;
+  final void Function(String text) _notify;
 
   TrackingPersistenceCoordinator({
     TrackingSessionManager? manager,
     SessionRepository? repo,
     this.debounce = const Duration(seconds: 2),
+    void Function(String text)? notify,
   })  : manager = manager ?? TrackingSessionManager.instance,
-        repo = repo ?? SessionRepository();
+        repo = repo ?? SessionRepository(),
+        _notify = notify ??
+            ((text) =>
+                NotificationService.updateNotification('Terestria Tracking', text));
 
   final Map<String, int> _flushed = {}; // projectId → jumlah titik ter-flush
   Set<String> _knownIds = {};
   Timer? _debounceTimer;
   bool _attached = false;
+  int _lastNotifiedCount = -1;
 
   /// Pulihkan sesi tersimpan ke manajer saat app start.
   Future<void> restore() async {
@@ -45,7 +51,7 @@ class TrackingPersistenceCoordinator {
       _flushed[s.projectId] = s.points.length;
     }
     _knownIds = manager.sessions.keys.toSet();
-    _updateNotification();
+    maybeUpdateNotification();
   }
 
   /// Mulai mengawasi perubahan manajer.
@@ -62,16 +68,19 @@ class TrackingPersistenceCoordinator {
   }
 
   void _onChanged() {
-    _updateNotification();
+    maybeUpdateNotification();
     _debounceTimer?.cancel();
     _debounceTimer = Timer(debounce, flushNow);
   }
 
-  void _updateNotification() {
-    final text = trackingNotificationText(manager.activeCount);
-    if (text != null) {
-      NotificationService.updateNotification('Terestria Tracking', text);
-    }
+  /// Update notifikasi HANYA saat jumlah sesi aktif berubah — bukan tiap fix GPS
+  /// (mencegah spam platform-channel ~1×/detik saat tracking).
+  void maybeUpdateNotification() {
+    final count = manager.activeCount;
+    if (count == _lastNotifiedCount) return;
+    _lastNotifiedCount = count;
+    final text = trackingNotificationText(count);
+    if (text != null) _notify(text);
   }
 
   /// Flush perubahan ke SQLite: hapus sesi yang berhenti, upsert + append titik baru.
@@ -88,11 +97,14 @@ class TrackingPersistenceCoordinator {
     for (final s in manager.activeSessions) {
       await repo.upsertSession(s);
       final flushed = _flushed[s.projectId] ?? 0;
-      final pending = pendingAppendCount(s.points.length, flushed);
+      // Snapshot panjang SEBELUM await — bila fix baru tiba saat append berjalan,
+      // titik itu tak ikut ter-mark flushed (dikirim di flush berikutnya).
+      final len = s.points.length;
+      final pending = pendingAppendCount(len, flushed);
       if (pending > 0) {
         await repo.appendPoints(
-            s.projectId, s.points.sublist(flushed), flushed);
-        _flushed[s.projectId] = s.points.length;
+            s.projectId, s.points.sublist(flushed, len), flushed);
+        _flushed[s.projectId] = len;
       }
     }
 

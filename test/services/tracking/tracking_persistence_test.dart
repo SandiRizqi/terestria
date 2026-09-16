@@ -1,6 +1,42 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geoform_app/models/project_model.dart';
+import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/services/tracking/tracking_notification.dart';
 import 'package:geoform_app/services/tracking/tracking_persistence_coordinator.dart';
+import 'package:geoform_app/services/tracking/tracking_session.dart';
+import 'package:geoform_app/services/tracking/tracking_session_manager.dart';
+import 'package:geoform_app/services/tracking/session_repository.dart';
+
+Project _proj(String id) => Project(
+      id: id,
+      name: 'P$id',
+      description: '',
+      geometryType: GeometryType.line,
+      formFields: const [],
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+    );
+
+GeoPoint _pt(double lon) =>
+    GeoPoint(latitude: 0, longitude: lon, timestamp: DateTime(2026, 1, 1));
+
+/// Repo palsu: catat titik yang di-append; hook onAppend mensimulasikan fix baru
+/// tiba saat proses append sedang berjalan (uji race deterministik).
+class _FakeRepo extends SessionRepository {
+  final List<GeoPoint> appended = [];
+  void Function()? onAppend;
+  @override
+  Future<void> upsertSession(TrackingSession s) async {}
+  @override
+  Future<void> deleteSession(String id) async {}
+  @override
+  Future<List<TrackingSession>> restoreAll() async => [];
+  @override
+  Future<void> appendPoints(String id, List<GeoPoint> pts, int fromSeq) async {
+    appended.addAll(pts);
+    onAppend?.call();
+  }
+}
 
 /// Helper murni untuk persistensi & notifikasi multi-sesi (koordinator penuh
 /// butuh DB/plugin → diverifikasi manual).
@@ -29,5 +65,50 @@ void main() {
       expect(removedIds({'a'}, {'a', 'b'}), <String>{});
       expect(removedIds({'a', 'b'}, {'a', 'b'}), <String>{});
     });
+  });
+
+  test('flushNow tak kehilangan titik yang tiba saat append (race)', () async {
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    mgr.stop('a');
+    final repo = _FakeRepo();
+    final coord = TrackingPersistenceCoordinator(manager: mgr, repo: repo);
+    mgr.start(_proj('a'));
+    mgr.addPointToActiveSessions(_pt(0)); // 1 titik
+
+    // Titik ke-2 tiba TEPAT saat append titik ke-1 sedang berjalan.
+    repo.onAppend = () {
+      repo.onAppend = null;
+      mgr.addPointToActiveSessions(_pt(1));
+    };
+    await coord.flushNow(); // flush pertama: hanya titik ke-1 (len ter-snapshot)
+    expect(repo.appended.length, 1);
+
+    await coord.flushNow(); // flush kedua: HARUS menambah titik ke-2 (tak hilang)
+    expect(repo.appended.length, 2);
+
+    mgr.stop('a');
+  });
+
+  test('notifikasi hanya di-update saat activeCount berubah (bukan tiap fix)',
+      () {
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    mgr.stop('a');
+    mgr.stop('b');
+    var calls = 0;
+    final coord = TrackingPersistenceCoordinator(
+        manager: mgr, repo: _FakeRepo(), notify: (_) => calls++);
+
+    mgr.start(_proj('a'));
+    coord.maybeUpdateNotification(); // 1 → update
+    mgr.addPointToActiveSessions(_pt(0));
+    coord.maybeUpdateNotification(); // masih 1 → TIDAK update
+    mgr.addPointToActiveSessions(_pt(1));
+    coord.maybeUpdateNotification(); // masih 1 → TIDAK update
+    mgr.start(_proj('b'));
+    coord.maybeUpdateNotification(); // 2 → update
+    expect(calls, 2);
+
+    mgr.stop('a');
+    mgr.stop('b');
   });
 }
