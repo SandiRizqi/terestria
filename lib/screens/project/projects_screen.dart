@@ -10,6 +10,7 @@ import '../auth/login_screen.dart';
 import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
 import '../../widgets/project_card.dart';
+import '../../widgets/tracking/active_tracking_panel.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../services/project_template_service.dart';
 import '../../services/crashlytics_service.dart';
@@ -730,6 +731,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               ),
             ),
           
+          // Banner "Tracking Aktif" (muncul saat ada sesi tracking berjalan)
+          ActiveTrackingBanner(
+            onTap: () => showActiveTrackingPanel(
+              context,
+              onOpenProject: _navigateToProjectDetail,
+            ),
+          ),
+
           // Project List
           Expanded(
             child: _isLoading
