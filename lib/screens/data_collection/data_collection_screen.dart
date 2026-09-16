@@ -1824,6 +1824,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   void _pauseTracking() async {
     // 🔧 FIX: Just set pause flag, stream keeps running
     setState(() => _isPaused = true);
+    // Sinkronkan pause ke sesi manajer agar tak terus merekam saat di-pause.
+    TrackingSessionManager.instance.pause(widget.project.id);
 
     print('⏸️ Tracking paused (stream continues)');
 
@@ -1838,6 +1840,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   void _resumeTracking() async {
     // 🔧 FIX: Just clear pause flag, stream already running
     setState(() => _isPaused = false);
+    TrackingSessionManager.instance.resume(widget.project.id);
 
     print('▶️ Tracking resumed');
 
