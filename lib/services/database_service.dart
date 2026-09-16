@@ -12,7 +12,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 3;
+  static const int _databaseVersion = 4;
   static const String _databaseName = 'geoform.db';
 
   Future<Database> get database async {
@@ -103,6 +103,35 @@ class DatabaseService {
     await db.execute('''
       CREATE INDEX idx_notifications_isRead ON notifications(isRead)
     ''');
+
+    // Tracking sessions (multi-project concurrent tracking)
+    await _createTrackingTables(db);
+  }
+
+  /// Tabel persistensi sesi tracking (recovery setelah crash/kill). Idempoten
+  /// (IF NOT EXISTS) agar aman dipanggil di _onCreate maupun _onUpgrade.
+  Future<void> _createTrackingTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS tracking_sessions (
+        projectId TEXT PRIMARY KEY,
+        projectJson TEXT NOT NULL,
+        startedAt INTEGER NOT NULL,
+        paused INTEGER NOT NULL DEFAULT 0,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS tracking_session_points (
+        projectId TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        point TEXT NOT NULL,
+        PRIMARY KEY (projectId, seq)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_tsp_project_seq
+        ON tracking_session_points(projectId, seq)
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -134,6 +163,11 @@ class DatabaseService {
       await db.execute('''
         ALTER TABLE projects ADD COLUMN collectors TEXT DEFAULT '[]'
       ''');
+    }
+
+    if (oldVersion < 4) {
+      // Tabel persistensi sesi tracking (multi-project concurrent tracking)
+      await _createTrackingTables(db);
     }
   }
 
