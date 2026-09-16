@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/settings/app_settings.dart';
+import 'tracking/tracking_session_manager.dart';
 
 class SettingsService extends ChangeNotifier {
   static final SettingsService _instance = SettingsService._internal();
@@ -33,6 +34,9 @@ class SettingsService extends ChangeNotifier {
       // Sync theme mode notifier setelah load
       themeModeNotifier.value =
           _settings.darkMode ? ThemeMode.dark : ThemeMode.light;
+      // Selaraskan batas tracking bersamaan ke manajer sesi.
+      TrackingSessionManager.instance.maxConcurrent =
+          _settings.maxConcurrentTracking;
 
       notifyListeners();
     } catch (e) {
@@ -52,6 +56,8 @@ class SettingsService extends ChangeNotifier {
       // Sync theme mode notifier setiap kali settings disimpan
       themeModeNotifier.value =
           _settings.darkMode ? ThemeMode.dark : ThemeMode.light;
+      TrackingSessionManager.instance.maxConcurrent =
+          _settings.maxConcurrentTracking;
       notifyListeners();
     } catch (e) {
       debugPrint('Error saving settings: $e');
@@ -67,6 +73,15 @@ class SettingsService extends ChangeNotifier {
   // Update watermark foto
   Future<void> updatePhotoWatermark(bool enabled) async {
     await saveSettings(_settings.copyWith(photoWatermark: enabled));
+  }
+
+  // Update batas project tracking bersamaan (clamp 3..7)
+  Future<void> updateMaxConcurrentTracking(int value) async {
+    final clamped = value.clamp(
+      AppSettings.minConcurrentTracking,
+      AppSettings.maxConcurrentTrackingLimit,
+    );
+    await saveSettings(_settings.copyWith(maxConcurrentTracking: clamped));
   }
 
   // Update specific setting

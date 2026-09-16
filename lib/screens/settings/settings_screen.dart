@@ -153,6 +153,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 24),
 
+            // Data Collection Section
+            _buildSectionTitle('Data Collection'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: _buildSliderTile(
+                title: 'Max Concurrent Tracking',
+                subtitle:
+                    'Berapa project boleh tracking bersamaan (${_settings.maxConcurrentTracking} project)',
+                value: _settings.maxConcurrentTracking.toDouble(),
+                min: AppSettings.minConcurrentTracking.toDouble(),
+                max: AppSettings.maxConcurrentTrackingLimit.toDouble(),
+                divisions: AppSettings.maxConcurrentTrackingLimit -
+                    AppSettings.minConcurrentTracking,
+                onChanged: (value) async {
+                  await _settingsService
+                      .updateMaxConcurrentTracking(value.round());
+                  setState(() => _settings = _settingsService.settings);
+                },
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
             // Measurement Units Section
             _buildSectionTitle('Measurement Units'),
             Container(

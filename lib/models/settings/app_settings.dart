@@ -61,6 +61,14 @@ class AppSettings {
   /// Default nonaktif — foto disimpan apa adanya.
   final bool photoWatermark;
 
+  /// Batas project yang boleh tracking bersamaan (multi-project). Default 3,
+  /// dapat disetel user dalam rentang [minConcurrentTracking]..[maxConcurrentTrackingLimit].
+  final int maxConcurrentTracking;
+
+  // Rentang setting batas tracking bersamaan.
+  static const int minConcurrentTracking = 3;
+  static const int maxConcurrentTrackingLimit = 7;
+
   AppSettings({
     this.areaUnit = AreaUnit.squareMeters,
     this.lengthUnit = LengthUnit.meters,
@@ -73,6 +81,7 @@ class AppSettings {
     this.polygonOpacity = 0.3,
     this.darkMode = false,
     this.photoWatermark = true,
+    this.maxConcurrentTracking = minConcurrentTracking,
   });
 
   // Default settings
@@ -91,6 +100,7 @@ class AppSettings {
     double? polygonOpacity,
     bool? darkMode,
     bool? photoWatermark,
+    int? maxConcurrentTracking,
   }) {
     return AppSettings(
       areaUnit: areaUnit ?? this.areaUnit,
@@ -104,6 +114,8 @@ class AppSettings {
       polygonOpacity: polygonOpacity ?? this.polygonOpacity,
       darkMode: darkMode ?? this.darkMode,
       photoWatermark: photoWatermark ?? this.photoWatermark,
+      maxConcurrentTracking:
+          maxConcurrentTracking ?? this.maxConcurrentTracking,
     );
   }
 
@@ -121,6 +133,7 @@ class AppSettings {
       'polygonOpacity': polygonOpacity,
       'darkMode': darkMode,
       'photoWatermark': photoWatermark,
+      'maxConcurrentTracking': maxConcurrentTracking,
     };
   }
 
@@ -144,6 +157,8 @@ class AppSettings {
       polygonOpacity: (json['polygonOpacity'] ?? 0.3).toDouble(),
       darkMode: json['darkMode'] ?? false,
       photoWatermark: json['photoWatermark'] ?? false,
+      maxConcurrentTracking: ((json['maxConcurrentTracking'] ?? minConcurrentTracking) as int)
+          .clamp(minConcurrentTracking, maxConcurrentTrackingLimit),
     );
   }
 
