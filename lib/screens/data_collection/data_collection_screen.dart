@@ -1853,15 +1853,22 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // ✅ NEW: Stop heartbeat first
     _stopHeartbeat();
     
-    // 🔧 FIXED: Stop background service properly
-    try {
-      print('⏹️ Stopping background tracking...');
-      await _locationService.stopBackgroundTracking();
-      print('✅ Background tracking stopped');
-    } catch (e, stack) {
-      print('❌ Error stopping background tracking: $e');
-      crashlytics.recordError(e, stack,
-          reason: 'DataCollection: stopBackgroundTracking failed');
+    // 🔧 FIXED: Stop background service properly — TAPI hanya bila tak ada
+    // project lain yang masih tracking (multi-project). Menghentikan 1 project
+    // tak boleh mematikan feed background project lain.
+    if (TrackingSessionManager.shouldStopBackgroundOnFinish(
+        TrackingSessionManager.instance.activeCount)) {
+      try {
+        print('⏹️ Stopping background tracking...');
+        await _locationService.stopBackgroundTracking();
+        print('✅ Background tracking stopped');
+      } catch (e, stack) {
+        print('❌ Error stopping background tracking: $e');
+        crashlytics.recordError(e, stack,
+            reason: 'DataCollection: stopBackgroundTracking failed');
+      }
+    } else {
+      print('ℹ️ Background service tetap jalan (project lain masih tracking)');
     }
 
     // Stop persistent tracking in service

@@ -14,6 +14,11 @@ import "services/photo_migration_service.dart";
 import 'services/update_service.dart';
 import 'app_initializer.dart';
 import 'services/settings_service.dart';
+import 'services/tracking/tracking_persistence_coordinator.dart';
+
+/// Koordinator persistensi sesi tracking (restore + flush ke SQLite). Disimpan
+/// di top-level agar tetap hidup selama app berjalan.
+TrackingPersistenceCoordinator? trackingPersistence;
 
 void main() async {
   // Wrap everything in a guarded zone — last-resort catcher for async errors
@@ -46,6 +51,15 @@ void main() async {
 
       // 4. Initialize app services (includes FCM if Firebase is ready)
       await AppInitializer().initialize();
+
+      // 5. Pulihkan sesi tracking multi-project dari SQLite + mulai persistensi.
+      try {
+        trackingPersistence = TrackingPersistenceCoordinator();
+        await trackingPersistence!.restore();
+        trackingPersistence!.attach();
+      } catch (e) {
+        debugPrint('⚠️ Gagal restore/attach tracking persistence: $e');
+      }
 
       runApp(const TerestriaApp());
     },

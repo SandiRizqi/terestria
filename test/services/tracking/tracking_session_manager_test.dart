@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
+import 'package:geoform_app/services/tracking/tracking_session.dart';
 import 'package:geoform_app/services/tracking/tracking_session_manager.dart';
 
 /// Manajer multi-sesi tracking: start (cap + no-dup), fan-out titik ke sesi
@@ -124,6 +125,25 @@ void main() {
       final m = TrackingSessionManager(maxConcurrent: 3);
       m.ingest(_pt(0, 0));
       expect(m.activeCount, 0);
+    });
+
+    test('restoreSessions memuat sesi tersimpan', () {
+      final m = TrackingSessionManager(maxConcurrent: 5);
+      final s = TrackingSession(
+        project: _proj('a'),
+        startedAt: DateTime(2026, 1, 1),
+        points: [_pt(0, 0), _pt(0, 1)],
+      );
+      m.restoreSessions([s]);
+      expect(m.isActive('a'), isTrue);
+      expect(m.sessionFor('a')!.points.length, 2);
+    });
+
+    test('shouldStopBackgroundOnFinish: hanya bila ≤1 sesi', () {
+      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(0), isTrue);
+      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(1), isTrue);
+      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(2), isFalse);
+      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(3), isFalse);
     });
 
     test('notifyListeners terpanggil saat start & addPoint', () {

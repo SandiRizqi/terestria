@@ -116,4 +116,17 @@ class TrackingSessionManager extends ChangeNotifier {
 
   double distanceOf(String projectId) =>
       _sessions[projectId]?.distanceMeters ?? 0.0;
+
+  /// Muat sesi tersimpan (dari SQLite) ke manajer saat app start (recovery).
+  void restoreSessions(List<TrackingSession> sessions) {
+    for (final s in sessions) {
+      _sessions[s.projectId] = s;
+    }
+    if (sessions.isNotEmpty) notifyListeners();
+  }
+
+  /// Saat sebuah layar menghentikan tracking-nya, background service hanya boleh
+  /// dimatikan bila TAK ada sesi lain (≤1 aktif) — mencegah stop 1 project ikut
+  /// mematikan feed background project lain.
+  static bool shouldStopBackgroundOnFinish(int activeCount) => activeCount <= 1;
 }
