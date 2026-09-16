@@ -124,6 +124,30 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
     if (saved) _manager.stop(projectId);
   }
 
+  /// Hentikan & BUANG sesi tanpa menyimpan (mis. titik belum cukup untuk
+  /// disimpan) — mencegah sesi "zombie" yang tak bisa dilepas.
+  Future<void> _discard(String projectId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Buang sesi tracking?'),
+        content: const Text('Titik yang belum disimpan akan hilang.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Buang'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) _manager.stop(projectId);
+  }
+
   @override
   Widget build(BuildContext context) {
     final sessions = _manager.activeSessions;
@@ -172,6 +196,14 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          key: ValueKey('discard-${s.projectId}'),
+                          tooltip: 'Buang',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.delete_outline_rounded,
+                              size: 20, color: Colors.red),
+                          onPressed: () => _discard(s.projectId),
+                        ),
                         TextButton(
                           key: ValueKey('open-${s.projectId}'),
                           onPressed: () => widget.onOpenProject(s.project),

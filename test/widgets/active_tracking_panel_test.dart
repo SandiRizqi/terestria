@@ -56,4 +56,24 @@ void main() {
     mgr.stop('a');
     mgr.stop('b');
   });
+
+  testWidgets('Buang menghentikan sesi tanpa perlu menyimpan (anti zombie)',
+      (tester) async {
+    final mgr = TrackingSessionManager.instance;
+    mgr.stop('z');
+    mgr.start(_proj('z', 'Zombie')); // 0 titik → tak bisa disimpan sbg line
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ActiveTrackingPanel(onOpenProject: (_) {})),
+    ));
+    await tester.pump();
+    expect(mgr.isActive('z'), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('discard-z')));
+    await tester.pumpAndSettle(); // dialog konfirmasi
+    await tester.tap(find.text('Buang'));
+    await tester.pumpAndSettle();
+
+    expect(mgr.isActive('z'), isFalse);
+  });
 }
