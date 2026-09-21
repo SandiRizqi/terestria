@@ -158,23 +158,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // Rebuild marker cache setiap kali user mengubah settings
     _settingsService.addListener(_onSettingsChanged);
 
-    // Sinkronkan tampilan track dari SESI manajer (sumber tunggal saat tracking).
-    TrackingSessionManager.instance.addListener(_onSessionChanged);
   }
 
-  /// Titik yang di-mirror terakhir dari sesi (untuk membatasi rebuild).
-  int _lastMirroredCount = -1;
-
-  /// Saat sesi project INI bertambah titik (feed GPS global), sinkronkan
-  /// [_collectedPoints] ke titik sesi. Menjadikan sesi sumber tunggal → tampilan
-  /// tak divergen & tak "melonjak" saat finish. Hanya aktif saat layar menandai
-  /// tracking (bukan mode gambar manual).
-  void _onSessionChanged() {
-    if (!mounted || !_isTracking) return;
+  /// Tambal [_collectedPoints] dari sesi manajer bila sesi punya lebih banyak
+  /// titik (mis. terkumpul lewat feed background saat layar di-pause/ditutup).
+  /// Hanya menambah — tak pernah mengecilkan; perekaman foreground tetap lewat
+  /// append langsung di stream (andal, tak bergantung rantai listener).
+  void _syncCollectedFromSession() {
     final s = TrackingSessionManager.instance.sessionFor(widget.project.id);
     if (s == null) return;
-    if (s.points.length == _lastMirroredCount) return;
-    _lastMirroredCount = s.points.length;
+    if (s.points.length <= _collectedPoints.length) return;
     setState(() => _collectedPoints = List.of(s.points));
   }
 
@@ -221,6 +214,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         if (!_isTracking) {
           // Only restart if not tracking (untuk blue dot)
           _startUnifiedLocationStream();
+        } else {
+          // Tracking aktif: tambal titik yang terkumpul via feed background
+          // selagi layar di-pause (agar tampilan tak tertinggal / "melonjak").
+          _syncCollectedFromSession();
         }
         break;
 
@@ -1282,7 +1279,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // Hapus settings listener
     _settingsService.removeListener(_onSettingsChanged);
-    TrackingSessionManager.instance.removeListener(_onSessionChanged);
 
     super.dispose();
   }
@@ -1469,10 +1465,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             _markerTargetLatLng = newLatLng;
             _currentLocation = location;
 
-            // Marker SELALU mengikuti (di atas). Titik jalur direkam ke SESI
-            // manajer via addTrackingPoint (di bawah); tampilan [_collectedPoints]
-            // disinkronkan dari sesi lewat _onSessionChanged → sumber tunggal,
-            // tak divergen antar project maupun antara layar & sesi.
+            // Marker SELALU mengikuti. Titik jalur direkam LANGSUNG ke tampilan
+            // (jalur andal foreground) DAN ke sesi manajer via addTrackingPoint
+            // (di bawah, untuk multi-project + background + recovery). Saat
+            // kembali/resume, _syncCollectedFromSession menambal titik yang
+            // terkumpul selagi layar di background.
+            if (_isTracking && !_isPaused && location.recordable) {
+              _collectedPoints.add(location);
+            }
           });
 
           // Jalankan animasi smooth dari posisi lama ke baru (di luar setState)
