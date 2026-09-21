@@ -1584,6 +1584,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
       return;
     }
+    // Lanjutkan sesi bila sebelumnya di-pause (mis. re-start setelah finish).
+    TrackingSessionManager.instance.resume(widget.project.id);
 
     // 3. Start background tracking with detailed error handling
     try {
@@ -1864,6 +1866,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       _isTracking = false;
       _isPaused = false;
     });
+
+    // Pause sesi manajer agar TIDAK terus bertambah lewat feed background setelah
+    // user menghentikan tracking di layar ini (penting di multi-project: feed
+    // global masih jalan untuk project lain). Save akan melepas sesi sepenuhnya.
+    TrackingSessionManager.instance.pause(widget.project.id);
 
     print('⏹️ Tracking finished (stream continues for blue marker)');
 
