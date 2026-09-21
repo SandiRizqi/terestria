@@ -67,6 +67,46 @@ void main() {
     });
   });
 
+  group('partitionRestorable', () {
+    TrackingSession s(String id, DateTime started) => TrackingSession(
+        project: _proj(id), startedAt: started, points: [_pt(0)]);
+    final now = DateTime(2026, 1, 2, 12, 0);
+    const maxAge = Duration(hours: 12);
+
+    test('buang sesi lebih tua dari maxAge (abandoned)', () {
+      final r = partitionRestorable([
+        s('old', now.subtract(const Duration(hours: 20))),
+        s('fresh', now.subtract(const Duration(hours: 1))),
+      ], 3, now, maxAge);
+      expect(r.keep.map((e) => e.projectId), ['fresh']);
+      expect(r.drop.map((e) => e.projectId), ['old']);
+    });
+
+    test('batasi ke cap, simpan yang terbaru', () {
+      final r = partitionRestorable([
+        s('c', now.subtract(const Duration(hours: 3))),
+        s('a', now.subtract(const Duration(hours: 1))),
+        s('b', now.subtract(const Duration(hours: 2))),
+      ], 2, now, maxAge);
+      expect(r.keep.map((e) => e.projectId).toSet(), {'a', 'b'});
+      expect(r.drop.map((e) => e.projectId), ['c']);
+    });
+
+    test('semua fresh & dalam cap → keep semua', () {
+      final r = partitionRestorable(
+          [s('a', now), s('b', now)], 3, now, maxAge);
+      expect(r.keep.length, 2);
+      expect(r.drop, isEmpty);
+    });
+
+    test('sesi kosong (0 titik) dibuang', () {
+      final empty = TrackingSession(project: _proj('e'), startedAt: now);
+      final r = partitionRestorable([empty, s('a', now)], 3, now, maxAge);
+      expect(r.keep.map((e) => e.projectId), ['a']);
+      expect(r.drop.map((e) => e.projectId), ['e']);
+    });
+  });
+
   test('flushNow tak kehilangan titik yang tiba saat append (race)', () async {
     final mgr = TrackingSessionManager(maxConcurrent: 3);
     mgr.stop('a');

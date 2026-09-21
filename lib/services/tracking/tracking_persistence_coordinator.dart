@@ -3,7 +3,40 @@ import 'dart:async';
 import '../background/notification_service.dart';
 import 'session_repository.dart';
 import 'tracking_notification.dart';
+import 'tracking_session.dart';
 import 'tracking_session_manager.dart';
+
+/// Usia maksimum sesi tersimpan yang masih layak dipulihkan. Lebih tua dari ini
+/// dianggap ditinggalkan (abandoned) → dibuang saat restore.
+const Duration kRestoreMaxAge = Duration(hours: 12);
+
+/// Pisahkan sesi tersimpan menjadi yang layak dipulihkan (keep) dan yang dibuang
+/// (drop): buang yang lebih tua dari [maxAge], lalu batasi ke [maxConcurrent]
+/// sesi terbaru (berdasarkan startedAt). Mencegah sesi "zombie" dari sesi lama
+/// yang tak pernah disimpan memenuhi cap & memblokir Start baru.
+({List<TrackingSession> keep, List<TrackingSession> drop}) partitionRestorable(
+  List<TrackingSession> all,
+  int maxConcurrent,
+  DateTime now,
+  Duration maxAge,
+) {
+  final fresh = <TrackingSession>[];
+  final drop = <TrackingSession>[];
+  for (final s in all) {
+    // Kosong (tak ada titik) = tak ada yang bisa dipulihkan; atau terlalu lama.
+    if (s.points.isEmpty || now.difference(s.startedAt) > maxAge) {
+      drop.add(s);
+    } else {
+      fresh.add(s);
+    }
+  }
+  fresh.sort((a, b) => b.startedAt.compareTo(a.startedAt)); // terbaru dulu
+  if (fresh.length > maxConcurrent) {
+    drop.addAll(fresh.sublist(maxConcurrent));
+    return (keep: fresh.sublist(0, maxConcurrent), drop: drop);
+  }
+  return (keep: fresh, drop: drop);
+}
 
 /// Berapa titik baru yang belum di-flush untuk sebuah sesi.
 int pendingAppendCount(int pointCount, int flushedCount) {
@@ -46,11 +79,18 @@ class TrackingPersistenceCoordinator {
   int _lastNotifiedCount = -1;
   bool _serviceActive = false;
 
-  /// Pulihkan sesi tersimpan ke manajer saat app start.
+  /// Pulihkan sesi tersimpan ke manajer saat app start. Sesi usang (lebih tua
+  /// dari [kRestoreMaxAge]) atau melebihi cap DIBUANG (dihapus dari SQLite) agar
+  /// tak jadi "zombie" yang memenuhi cap & memblokir Start.
   Future<void> restore() async {
-    final sessions = await repo.restoreAll();
-    manager.restoreSessions(sessions);
-    for (final s in sessions) {
+    final all = await repo.restoreAll();
+    final part =
+        partitionRestorable(all, manager.maxConcurrent, DateTime.now(), kRestoreMaxAge);
+    for (final s in part.drop) {
+      await repo.deleteSession(s.projectId);
+    }
+    manager.restoreSessions(part.keep);
+    for (final s in part.keep) {
       _flushed[s.projectId] = s.points.length;
     }
     _knownIds = manager.sessions.keys.toSet();
