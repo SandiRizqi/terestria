@@ -77,7 +77,7 @@ class _StepListSheet extends StatelessWidget {
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
-                        'Petunjuk Arah',
+                        'Directions',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -102,7 +102,7 @@ class _StepListSheet extends StatelessWidget {
                 child: instructions.isEmpty
                     ? const Center(
                         child: Text(
-                          'Tidak ada petunjuk untuk rute ini',
+                          'No directions for this route',
                           style: TextStyle(color: AppTheme.textSecondary),
                         ),
                       )

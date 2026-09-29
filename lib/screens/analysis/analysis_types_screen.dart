@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart' show friendlyErrorMessage;
 import '../../models/analysis/analysis_type_model.dart';
 import '../../services/analysis_report_service.dart';
 import '../../theme/app_theme.dart';
@@ -75,8 +78,9 @@ class _AnalysisTypesScreenState extends State<AnalysisTypesScreen> {
   }
 
   String _friendlyError(Object e) {
+    logWarn('Analysis types: loading failed', tag: 'ANALYSIS', error: e);
     if (e is AnalysisApiException) return e.message;
-    return 'Gagal memuat jenis analisis. Periksa koneksi Anda.';
+    return 'Could not load the analysis types. ${friendlyErrorMessage(e)}';
   }
 
   void _openType(AnalysisType type) {
@@ -126,7 +130,7 @@ class _AnalysisTypesScreenState extends State<AnalysisTypesScreen> {
         controller: _searchController,
         onChanged: (value) => setState(() => _query = value.trim()),
         decoration: InputDecoration(
-          hintText: 'Cari jenis analisis...',
+          hintText: 'Search analysis types…',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
@@ -184,7 +188,7 @@ class _NoResultView extends StatelessWidget {
         const SizedBox(height: 12),
         Center(
           child: Text(
-            'Tidak ada hasil untuk "$query"',
+            'No results for "$query"',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 15, color: Colors.grey),
           ),
@@ -207,7 +211,7 @@ class _EmptyView extends StatelessWidget {
         const SizedBox(height: 12),
         const Center(
           child: Text(
-            'Belum ada jenis analisis',
+            'No analysis types yet',
             style: TextStyle(fontSize: 15, color: Colors.grey),
           ),
         ),
@@ -244,7 +248,7 @@ class _ErrorView extends StatelessWidget {
           child: ElevatedButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label: const Text('Coba lagi'),
+            label: const Text('Try again'),
           ),
         ),
       ],

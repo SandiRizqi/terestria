@@ -32,7 +32,7 @@ Map<String, dynamic> kmlToGeoJson(String text) {
   }
 
   if (features.isEmpty) {
-    throw const LayerImportException('KML tidak berisi Placemark bergeometri');
+    throw const LayerImportException('The KML file has no placemarks with geometry');
   }
   return {'type': 'FeatureCollection', 'features': features};
 }
@@ -44,7 +44,7 @@ Map<String, dynamic> kmzToGeoJson(Uint8List bytes) {
       .toList()
     ..sort((a, b) => _kmlRank(a.name).compareTo(_kmlRank(b.name)));
   if (files.isEmpty) {
-    throw const LayerImportException('KMZ tidak berisi berkas .kml');
+    throw const LayerImportException('The KMZ file does not contain a .kml file');
   }
   return kmlToGeoJson(
       utf8.decode(files.first.content, allowMalformed: true));

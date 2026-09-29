@@ -114,7 +114,7 @@ class PdfOverlayLoadingChip extends StatelessWidget {
                 ),
                 SizedBox(width: 8),
                 Text(
-                  'Memuat peta PDF…',
+                  'Loading PDF map…',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 12,

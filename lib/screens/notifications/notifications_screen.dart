@@ -8,6 +8,7 @@ import '../../models/notification_model.dart';
 import '../../theme/app_theme.dart';
 import 'notification_settings_screen.dart';
 import 'notification_map_screen.dart';
+import '../../utils/ui_feedback.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
@@ -62,7 +63,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading notifications: $e'),
+            content: Text(loggedErrorMessage('Could not load the notifications', e, tag: 'NOTIF')),
             backgroundColor: Colors.red,
           ),
         );
@@ -85,7 +86,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error marking as read: $e'),
+            content: Text(loggedErrorMessage('Could not mark the notification as read', e, tag: 'NOTIF')),
             backgroundColor: Colors.red,
           ),
         );
@@ -115,7 +116,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(loggedErrorMessage('Could not mark all notifications as read', e, tag: 'NOTIF')),
             backgroundColor: Colors.red,
           ),
         );
@@ -163,7 +164,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error deleting notification: $e'),
+              content: Text(loggedErrorMessage('Could not delete the notification', e, tag: 'NOTIF')),
               backgroundColor: Colors.red,
             ),
           );
@@ -214,7 +215,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error: $e'),
+              content: Text(loggedErrorMessage('Could not delete the notifications', e, tag: 'NOTIF')),
               backgroundColor: Colors.red,
             ),
           );
@@ -654,7 +655,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               children: [
                                 Icon(Icons.broken_image, color: Colors.red[300], size: 32),
                                 const SizedBox(height: 8),
-                                Text('Gagal memuat gambar',
+                                Text('Could not load the image',
                                     style: TextStyle(color: Colors.red[400], fontSize: 12)),
                               ],
                             ),
@@ -684,7 +685,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Tidak dapat membuka link: $e'),
+                                  content: Text(loggedErrorMessage('Could not open the link', e, tag: 'NOTIF')),
                                   backgroundColor: Colors.red,
                                 ),
                               );
@@ -694,7 +695,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Format link tidak valid'),
+                                content: Text('The link is not valid'),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -702,7 +703,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         }
                       },
                       icon: const Icon(Icons.open_in_new),
-                      label: const Text('Buka Link'),
+                      label: const Text('Open link'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.blue,
                         side: const BorderSide(color: Colors.blue),
@@ -731,7 +732,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         );
                       },
                       icon: const Icon(Icons.map),
-                      label: const Text('Lihat di Peta'),
+                      label: const Text('View on map'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primaryGreen,
                         foregroundColor: Colors.white,

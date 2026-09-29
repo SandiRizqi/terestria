@@ -18,16 +18,16 @@ CoordTransform? transformFromPrj(String? prj, {required List<double> bbox}) {
   if (wkt.isEmpty) {
     if (_looksLikeDegrees(bbox)) return null;
     throw const LayerImportException(
-        'Shapefile tanpa .prj dan koordinatnya bukan derajat — sertakan '
-        'berkas .prj (WGS84 / UTM WGS84) di dalam zip');
+        'The shapefile has no .prj and its coordinates are not degrees — '
+        'include the .prj file (WGS84 / UTM WGS84) in the zip');
   }
 
   final upper = wkt.toUpperCase();
   final name = _crsName(wkt);
   if (!_isWgs84Datum(upper)) {
     throw LayerImportException(
-        'Proyeksi "$name" belum didukung. Gunakan WGS84 (EPSG:4326) atau '
-        'UTM WGS84, lalu ekspor ulang shapefile');
+        'Projection "$name" is not supported yet. Use WGS84 (EPSG:4326) or '
+        'UTM WGS84 and export the shapefile again');
   }
 
   if (upper.startsWith('GEOGCS') || upper.startsWith('GEOGCRS')) {
@@ -37,8 +37,8 @@ CoordTransform? transformFromPrj(String? prj, {required List<double> bbox}) {
       !upper.contains('TRANSVERSE_MERCATOR') &&
           !upper.contains('TRANSVERSE MERCATOR')) {
     throw LayerImportException(
-        'Proyeksi "$name" belum didukung. Gunakan WGS84 (EPSG:4326) atau '
-        'UTM WGS84, lalu ekspor ulang shapefile');
+        'Projection "$name" is not supported yet. Use WGS84 (EPSG:4326) or '
+        'UTM WGS84 and export the shapefile again');
   }
 
   final p = _parameters(wkt);

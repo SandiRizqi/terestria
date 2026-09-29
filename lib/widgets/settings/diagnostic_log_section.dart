@@ -9,15 +9,16 @@ import '../../services/logging/log_setup.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/share_origin.dart';
+import '../../utils/ui_feedback.dart' show friendlyErrorMessage;
 
 // ─── Helper tampilan (murni, teruji) ─────────────────────────────────────────
 
 String diagnosticStatusLabel(DateTime? until, DateTime now) {
-  if (!DiagnosticMode.isActive(until, now)) return 'Mati';
+  if (!DiagnosticMode.isActive(until, now)) return 'Off';
   final left = until!.difference(now);
   return left.inHours >= 1
-      ? 'Aktif · ${left.inHours} jam lagi'
-      : 'Aktif · ${left.inMinutes} mnt lagi';
+      ? 'On · ${left.inHours} h left'
+      : 'On · ${left.inMinutes} min left';
 }
 
 String formatBytes(int bytes) {
@@ -170,7 +171,7 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
       logError('Gagal membagikan log', tag: 'LOG', error: e, stack: stack);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Gagal membagikan log: $e'),
+          content: Text('Could not share the logs. ${friendlyErrorMessage(e)}'),
           backgroundColor: AppTheme.errorColor,
         ));
       }
@@ -184,17 +185,17 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hapus semua log?'),
+        title: const Text('Delete all logs?'),
         content: const Text(
-            'Berkas log di HP ini akan dihapus. Log baru tetap dicatat.'),
+            'Log files on this phone will be deleted. New logs are still recorded.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Batal')),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
-            child: const Text('Hapus'),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -217,8 +218,8 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
   Widget build(BuildContext context) {
     final stats = _stats;
     final statsText = stats == null
-        ? 'Menghitung…'
-        : '${stats.files} berkas · ${formatBytes(stats.bytes)}';
+        ? 'Counting…'
+        : '${stats.files} file${stats.files == 1 ? '' : 's'} · ${formatBytes(stats.bytes)}';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -235,8 +236,8 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
               title: const Text('Diagnostic Mode',
                   style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(
-                'Catat detail tiap fix GPS (lebih boros baterai, otomatis '
-                'mati 24 jam) · ${diagnosticStatusLabel(_until, widget.now())}',
+                'Log every GPS fix in detail (uses more battery, turns off '
+                'after 24 h) · ${diagnosticStatusLabel(_until, widget.now())}',
                 style: const TextStyle(fontSize: 12),
               ),
               value: _active,
@@ -251,7 +252,7 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
                 title: const Text('Share Logs',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text(
-                    'Kirim ke tim (WhatsApp, email, Drive) · $statsText',
+                    'Send to the team (WhatsApp, email, Drive) · $statsText',
                     style: const TextStyle(fontSize: 12)),
                 trailing: _sharing
                     ? const SizedBox(
@@ -269,7 +270,7 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
               leading: _icon(Icons.delete_sweep_outlined, AppTheme.errorColor),
               title: const Text('Clear Logs',
                   style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Hapus semua berkas log di HP ini',
+              subtitle: const Text('Delete all log files on this phone',
                   style: TextStyle(fontSize: 12)),
               onTap: _clear,
             ),

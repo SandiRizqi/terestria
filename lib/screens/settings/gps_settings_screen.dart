@@ -4,6 +4,7 @@ import '../../models/settings/gps_settings.dart';
 import '../../services/gps_settings_service.dart';
 import '../../services/location_service_v2.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/ui_feedback.dart';
 
 /// Layar pengaturan tuning GPS. Kontrol dasar tampil langsung; sisanya di balik
 /// expander "Advanced". Perubahan disimpan ke [GpsSettingsService]; tombol
@@ -54,7 +55,7 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
       await _location.restartTracking();
       _snack('Settings applied to tracking');
     } catch (e) {
-      _snack('Failed to restart tracking: $e', error: true);
+      _snack(loggedErrorMessage('Could not restart tracking', e, tag: 'GPS'), error: true);
     }
   }
 

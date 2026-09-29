@@ -514,7 +514,7 @@ class BackgroundTrackingService {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         logError('❌ Location service not enabled');
-        _reportStoppedAndStop(service, reason: 'layanan lokasi (GPS) HP mati');
+        _reportStoppedAndStop(service, reason: 'phone location (GPS) service turned off');
         return;
       }
       
@@ -537,7 +537,7 @@ class BackgroundTrackingService {
         heartbeatTimer?.cancel();
         await subscription?.cancel();
         await NotificationService.cancelNotification();
-        _reportStoppedAndStop(service, reason: 'perintah stop dari app', expected: true);
+        _reportStoppedAndStop(service, reason: 'stop requested by the app', expected: true);
       });
       
       // Ringkasan multi-project dari app ("Merekam 2 project · 1 jeda").
@@ -576,7 +576,7 @@ class BackgroundTrackingService {
           timer.cancel();
           await subscription?.cancel();
           await NotificationService.cancelNotification();
-          _reportStoppedAndStop(service, reason: 'tak ada heartbeat > 15 dtk (app tertutup/dibekukan)');
+          _reportStoppedAndStop(service, reason: 'no heartbeat for > 15 s (app closed or frozen)');
         } else {
           logDebug('💚 Service alive - last heartbeat ${timeSinceLastHeartbeat.inSeconds}s ago');
         }

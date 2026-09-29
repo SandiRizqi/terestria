@@ -93,7 +93,7 @@ class UpdateService {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Update sudah didownload dan siap diterapkan.'),
+        content: const Text('The update has been downloaded and is ready to install.'),
         duration: const Duration(seconds: 10),
         action: SnackBarAction(
           label: 'RESTART',

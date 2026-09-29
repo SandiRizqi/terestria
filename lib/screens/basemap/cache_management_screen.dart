@@ -7,6 +7,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 class CacheManagementScreen extends StatefulWidget {
   const CacheManagementScreen({Key? key}) : super(key: key);
 
@@ -70,7 +71,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       logWarn('Error loading cache data: $e', tag: 'TILE');
       if (mounted) {
         setState(() => _isLoading = false);
-        _showError('Failed to load cache data: $e');
+        _showError(loggedErrorMessage('Could not load the cache data', e, tag: 'TILE'));
       }
     }
   }
@@ -188,7 +189,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       } catch (e) {
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
-          _showError('Failed to clear cache: $e');
+          _showError(loggedErrorMessage('Could not clear the cache', e, tag: 'TILE'));
         }
       }
     }
@@ -279,7 +280,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       } catch (e) {
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
-          _showError('Failed to clear cache: $e');
+          _showError(loggedErrorMessage('Could not clear the cache', e, tag: 'TILE'));
         }
       }
     }

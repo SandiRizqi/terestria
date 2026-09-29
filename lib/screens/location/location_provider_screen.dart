@@ -10,6 +10,7 @@ import '../../theme/app_theme.dart';
 import 'dart:async';
 
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 class LocationProviderScreen extends StatefulWidget {
   const LocationProviderScreen({Key? key}) : super(key: key);
 
@@ -213,7 +214,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
           _isConnecting = false;
           _isConnected = false;
         });
-        _showError('Connection error: ${e.toString()}');
+        _showError(loggedErrorMessage('Could not connect to the receiver', e, tag: 'EMLID'));
       }
     }
   }
@@ -290,7 +291,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
               setState(() {
                 _isTesting = false;
               });
-              _showError('Error: ${error.toString()}');
+              _showError(loggedErrorMessage('GPS test failed', error, tag: 'GPS'));
             }
           },
         );
@@ -310,7 +311,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
         setState(() {
           _isTesting = false;
         });
-        _showError('Test failed: ${e.toString()}');
+        _showError(loggedErrorMessage('Test failed', e, tag: 'GPS'));
       }
     }
   }
@@ -330,16 +331,16 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
       final proceed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Ganti provider GPS?'),
+          title: const Text('Switch GPS provider?'),
           content: Text(warning),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Batal'),
+              child: const Text('Cancel'),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Ganti'),
+              child: const Text('Switch'),
             ),
           ],
         ),
@@ -360,7 +361,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showError('Failed to save settings: ${e.toString()}');
+        _showError(loggedErrorMessage('Could not save the settings', e, tag: 'GPS'));
       }
     }
   }
@@ -394,7 +395,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Izin Akses Lokasi',
+                'Location access',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
             ),
@@ -416,12 +417,12 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Fitur yang memerlukan izin ini:',
+                      'What this permission is used for:',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Menentukan posisi GPS perangkat untuk pengumpulan data survei lapangan.',
+                      'Finding the phone\'s GPS position to collect field survey data.',
                       style: TextStyle(fontSize: 13),
                     ),
                   ],
@@ -429,13 +430,13 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
               ),
               const SizedBox(height: 14),
               const Text(
-                'Data yang dikumpulkan:',
+                'Data collected:',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
               const SizedBox(height: 6),
-              _buildChecklistItem('Koordinat GPS (latitude & longitude)'),
-              _buildChecklistItem('Hanya saat aplikasi aktif di layar'),
-              _buildChecklistItem('Disimpan di perangkat, tidak dikirim ke server lain'),
+              _buildChecklistItem('GPS coordinates (latitude & longitude)'),
+              _buildChecklistItem('Only while the app is in use'),
+              _buildChecklistItem('Stored on this phone, not sent to any other server'),
               const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -448,12 +449,12 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Cara mencabut izin kapan saja:',
+                      'How to revoke it at any time:',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Pengaturan → Aplikasi → Terestria → Izin → Lokasi → Matikan',
+                      'Settings → Apps → Terestria → Permissions → Location → Don\'t allow',
                       style: TextStyle(fontSize: 12, color: Colors.black87),
                     ),
                   ],
@@ -465,11 +466,11 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Nanti saja'),
+            child: const Text('Not now'),
           ),
           ElevatedButton.icon(
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Izinkan'),
+            label: const Text('Allow'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,

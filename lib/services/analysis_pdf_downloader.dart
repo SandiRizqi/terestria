@@ -29,13 +29,13 @@ class AnalysisPdfDownloader {
     final fresh = await _reportService.fetchFileDetail(file.id);
     final url = fresh.downloadUrl;
     if (url.isEmpty) {
-      throw AnalysisDownloadException('File tidak memiliki URL unduhan.');
+      throw AnalysisDownloadException('This file has no download link.');
     }
 
     final response = await _client.get(Uri.parse(url));
     if (response.statusCode != 200) {
       throw AnalysisDownloadException(
-          'Gagal mengunduh file (${response.statusCode}).');
+          'Could not download the file (server error ${response.statusCode}).');
     }
 
     final dir = await _tempDirProvider();

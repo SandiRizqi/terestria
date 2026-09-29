@@ -350,7 +350,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Tracking tetap berjalan. Kelola dari banner "Tracking Aktif" di daftar project.'),
+                'Tracking keeps running. Manage it from the "Active tracking" banner on the home or projects screen.'),
             duration: Duration(seconds: 3),
           ),
         );

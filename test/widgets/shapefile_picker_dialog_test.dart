@@ -37,9 +37,9 @@ void main() {
     final result = <String?>[];
     await _open(tester, ['a', 'b'], result);
 
-    await tester.tap(find.text('Batal'));
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(find.text('Pilih shapefile'), findsNothing);
+    expect(find.text('Choose a shapefile'), findsNothing);
     expect(result, [null]);
   });
 }

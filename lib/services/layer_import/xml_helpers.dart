@@ -9,7 +9,7 @@ XmlDocument parseXmlOrThrow(String text, String label) {
   try {
     return XmlDocument.parse(text);
   } catch (e) {
-    throw LayerImportException('$label tidak valid: $e');
+    throw LayerImportException('Invalid $label file ($e)');
   }
 }
 

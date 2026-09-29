@@ -87,7 +87,7 @@ void main() {
     await tester.pumpWidget(_wrap(service));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Belum ada'), findsOneWidget);
+    expect(find.textContaining('yet'), findsOneWidget);
   });
 
   testWidgets('shows error + retry on failure', (tester) async {
@@ -104,8 +104,8 @@ void main() {
     await tester.pumpWidget(_wrap(service));
     await tester.pumpAndSettle();
 
-    expect(find.text('Coba lagi'), findsOneWidget);
-    await tester.tap(find.text('Coba lagi'));
+    expect(find.text('Try again'), findsOneWidget);
+    await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
 
     expect(find.text('PT NPN'), findsOneWidget);

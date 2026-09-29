@@ -65,7 +65,7 @@ Map<String, dynamic> gpxToGeoJson(String text) {
 
   if (features.isEmpty) {
     throw const LayerImportException(
-        'GPX tidak berisi waypoint, track, atau route yang valid');
+        'The GPX file has no valid waypoints, tracks or routes');
   }
   return {'type': 'FeatureCollection', 'features': features};
 }

@@ -35,7 +35,7 @@ class TrackingLogSummary {
     if (recording.isNotEmpty) {
       final sources = recording.map((s) => s.source).toSet();
       final parts = <String>[
-        '$minutes mnt',
+        '$minutes min',
         for (final src in TrackSource.values)
           if (sources.contains(src) || _feeds.containsKey(src))
             _feedText(src, _feeds[src]),

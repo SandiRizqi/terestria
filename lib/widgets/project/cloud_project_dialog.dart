@@ -7,6 +7,7 @@ import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 /// Dialog untuk menampilkan daftar projects dari cloud dan memilih mana yang akan ditambahkan
 class CloudProjectDialog extends StatefulWidget {
   const CloudProjectDialog({Key? key}) : super(key: key);
@@ -110,7 +111,7 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
       logDebug('Stack trace: $stackTrace', tag: 'CLOUD');
       
       setState(() {
-        _errorMessage = 'Error: $e';
+        _errorMessage = loggedErrorMessage('Could not load cloud projects', e, tag: 'PROJECT');
         _isLoading = false;
       });
     }
@@ -205,7 +206,7 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
         Navigator.pop(context);
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding projects: $e')),
+          SnackBar(content: Text(loggedErrorMessage('Could not add the projects', e, tag: 'PROJECT'))),
         );
       }
     }

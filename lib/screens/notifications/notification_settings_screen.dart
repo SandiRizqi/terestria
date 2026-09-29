@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../config/notification_topics.dart';
 import '../../services/notification_topic_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/ui_feedback.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -29,7 +30,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading settings: $e'),
+            content: Text(loggedErrorMessage('Could not load the notification settings', e, tag: 'NOTIF')),
             backgroundColor: Colors.red,
           ),
         );
@@ -54,14 +55,11 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       } else {
         await _topicService.unsubscribe(topic.id);
       }
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal mengubah notifikasi "${topic.label}": $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showErrorFeedback(
+            context, 'Could not change the "${topic.label}" notifications',
+            error: e, stack: st, tag: 'NOTIF');
       }
     } finally {
       if (mounted) {
@@ -93,7 +91,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: Text(
-                    'Pilih jenis notifikasi yang ingin Anda terima',
+                    'Choose which notifications you want to receive',
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey[600],
@@ -171,7 +169,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Perubahan akan langsung berlaku. Anda bisa mengubah pengaturan ini kapan saja.',
+                          'Changes apply immediately. You can change this at any time.',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[500],

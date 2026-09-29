@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import '../../utils/ui_feedback.dart';
 
 class PdfValidator {
   static const int maxPdfSizeMB = 200;
@@ -49,8 +50,9 @@ class PdfValidator {
       }
 
       return PdfValidationResult.success();
-    } catch (e) {
-      return PdfValidationResult.error('Error reading PDF: ${e.toString()}');
+    } catch (e, st) {
+      return PdfValidationResult.error(
+          loggedErrorMessage('Could not read the PDF', e, stack: st, tag: 'PDF'));
     }
   }
 

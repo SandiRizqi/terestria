@@ -13,7 +13,7 @@ import 'zip_helpers.dart';
 class MultipleShapefilesException extends LayerImportException {
   final List<String> names;
   const MultipleShapefilesException(this.names)
-      : super('Zip berisi beberapa shapefile — pilih salah satu');
+      : super('The zip contains several shapefiles — choose one');
 }
 
 /// Nama (path tanpa `.shp`) semua shapefile dalam zip, urut abjad. Berkas
@@ -34,16 +34,16 @@ List<String> listZipShapefiles(List<ArchiveFile> files) {
 /// (lihat [transformFromPrj]); `.cpg` menentukan encoding atribut.
 Map<String, dynamic> zippedShapefileToGeoJson(Uint8List zip,
     {String? shapefileName}) {
-  final files = decodeZipOrThrow(zip, 'Berkas .zip');
+  final files = decodeZipOrThrow(zip, 'The .zip file');
   final names = listZipShapefiles(files);
   if (names.isEmpty) {
     throw const LayerImportException(
-        'Zip tidak berisi shapefile (.shp). Untuk KML ber-zip gunakan .kmz');
+        'The zip has no shapefile (.shp). For zipped KML use .kmz');
   }
   final String base;
   if (shapefileName != null) {
     if (!names.contains(shapefileName)) {
-      throw LayerImportException('Shapefile "$shapefileName" tidak ada di zip');
+      throw LayerImportException('Shapefile "$shapefileName" is not in the zip');
     }
     base = shapefileName;
   } else if (names.length > 1) {
@@ -64,8 +64,8 @@ Map<String, dynamic> zippedShapefileToGeoJson(Uint8List zip,
   final dbf = part('dbf');
   if (dbf == null) {
     throw LayerImportException(
-        'Shapefile "${_short(base)}" tidak lengkap: berkas .dbf tidak ada di '
-        'zip (wajib .shp + .dbf, disarankan .shx + .prj)');
+        'Shapefile "${_short(base)}" is incomplete: the .dbf file is missing '
+        'from the zip (.shp + .dbf are required, .shx + .prj recommended)');
   }
   final prj = part('prj');
   final cpg = part('cpg');
@@ -104,7 +104,7 @@ void _checkLonLat(Map<String, dynamic> fc) {
       final lon = (c[0] as num).toDouble(), lat = (c[1] as num).toDouble();
       if (!lon.isFinite || !lat.isFinite || lon.abs() > 180 || lat.abs() > 90) {
         throw const LayerImportException(
-            'Koordinat shapefile di luar rentang lon/lat — periksa berkas .prj');
+            'Shapefile coordinates are outside the lon/lat range — check the .prj file');
       }
       return;
     }

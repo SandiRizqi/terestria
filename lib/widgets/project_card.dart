@@ -100,7 +100,7 @@ class _ProjectCardState extends State<ProjectCard>
               size: 11, color: color),
           const SizedBox(width: 2),
           Text(
-            pending ? 'BELUM DISIMPAN' : 'JEDA',
+            pending ? 'NOT SAVED' : 'PAUSED',
             style: TextStyle(
               color: color,
               fontSize: 10,

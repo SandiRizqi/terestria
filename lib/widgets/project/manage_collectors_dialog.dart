@@ -4,6 +4,7 @@ import '../../models/project_model.dart';
 import '../../services/collector_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/ui_feedback.dart';
 
 /// Dialog untuk melihat dan mengelola collectors suatu project.
 /// - Hanya created_by yang boleh add/remove collector.
@@ -98,7 +99,7 @@ class _ManageCollectorsDialogState extends State<ManageCollectorsDialog> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _searchError = 'Error searching users: $e';
+          _searchError = loggedErrorMessage('Could not search users', e, tag: 'PROJECT');
           _isSearching = false;
         });
       }

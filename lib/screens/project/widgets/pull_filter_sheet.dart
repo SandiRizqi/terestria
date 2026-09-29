@@ -82,7 +82,7 @@ class _PullFilterSheetState extends State<PullFilterSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Pilih field & nilai (cocok sebagian / contains). Kosongkan untuk menarik semua.',
+              'Pick a field and a value (partial match). Leave empty to download everything.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -121,7 +121,7 @@ class _PullFilterSheetState extends State<PullFilterSheet> {
                                 key: ValueKey('filter-value-$i'),
                                 controller: _rows[i].value,
                                 decoration: const InputDecoration(
-                                  labelText: 'Nilai',
+                                  labelText: 'Value',
                                   border: OutlineInputBorder(),
                                   contentPadding:
                                       EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -130,7 +130,7 @@ class _PullFilterSheetState extends State<PullFilterSheet> {
                             ),
                             IconButton(
                               key: ValueKey('filter-remove-$i'),
-                              tooltip: 'Hapus',
+                              tooltip: 'Remove',
                               icon: const Icon(Icons.remove_circle_outline),
                               onPressed: () => _removeRow(i),
                             ),
@@ -147,7 +147,7 @@ class _PullFilterSheetState extends State<PullFilterSheet> {
                 key: const ValueKey('pull-filter-add-row'),
                 onPressed: _addRow,
                 icon: const Icon(Icons.add),
-                label: const Text('Tambah filter'),
+                label: const Text('Add filter'),
               ),
             ),
             const SizedBox(height: 8),
@@ -155,7 +155,7 @@ class _PullFilterSheetState extends State<PullFilterSheet> {
               key: const ValueKey('pull-filter-submit'),
               onPressed: _submit,
               icon: const Icon(Icons.cloud_download_outlined),
-              label: const Text('Cek & Download'),
+              label: const Text('Check & download'),
             ),
           ],
         ),

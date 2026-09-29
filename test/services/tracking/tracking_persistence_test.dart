@@ -123,11 +123,11 @@ void main() {
       expect(trackingNotificationText(recording: 0, pending: 2), isNull);
     });
     test('hanya merekam', () {
-      expect(trackingNotificationText(recording: 1), 'Merekam 1 project');
+      expect(trackingNotificationText(recording: 1), 'Recording 1 project');
     });
     test('ringkasan per status', () {
       expect(trackingNotificationText(recording: 2, paused: 1, pending: 1),
-          'Merekam 2 project · 1 jeda · 1 belum disimpan');
+          'Recording 2 projects · 1 paused · 1 not saved');
     });
   });
 

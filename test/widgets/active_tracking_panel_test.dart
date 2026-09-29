@@ -39,17 +39,17 @@ void main() {
   group('helper tampilan', () {
     test('ringkasan banner per status', () {
       expect(activeTrackingBannerText(recording: 0), isNull);
-      expect(activeTrackingBannerText(recording: 2), '2 merekam');
+      expect(activeTrackingBannerText(recording: 2), '2 recording');
       expect(activeTrackingBannerText(recording: 1, paused: 1, pending: 2),
-          '1 merekam · 1 jeda · 2 belum disimpan');
+          '1 recording · 1 paused · 2 not saved');
       expect(activeTrackingBannerText(recording: 0, pending: 1),
-          '1 belum disimpan');
+          '1 not saved');
     });
 
     test('sessionStateLabel per status', () {
-      expect(sessionStateLabel(SessionState.recording), 'Merekam');
-      expect(sessionStateLabel(SessionState.paused), 'Jeda');
-      expect(sessionStateLabel(SessionState.pendingSave), 'Belum disimpan');
+      expect(sessionStateLabel(SessionState.recording), 'Recording');
+      expect(sessionStateLabel(SessionState.paused), 'Paused');
+      expect(sessionStateLabel(SessionState.pendingSave), 'Not saved');
     });
 
     test('formatElapsed', () {
@@ -66,9 +66,9 @@ void main() {
     test('lastFixAgo', () {
       final now = DateTime(2026, 1, 1, 8, 0, 30);
       expect(lastFixAgo(null, now), isNull);
-      expect(lastFixAgo(DateTime(2026, 1, 1, 8, 0, 28), now), 'baru saja');
-      expect(lastFixAgo(DateTime(2026, 1, 1, 8, 0, 0), now), '30 dtk lalu');
-      expect(lastFixAgo(DateTime(2026, 1, 1, 7, 57, 30), now), '3 mnt lalu');
+      expect(lastFixAgo(DateTime(2026, 1, 1, 8, 0, 28), now), 'just now');
+      expect(lastFixAgo(DateTime(2026, 1, 1, 8, 0, 0), now), '30 s ago');
+      expect(lastFixAgo(DateTime(2026, 1, 1, 7, 57, 30), now), '3 min ago');
     });
 
     test('urutan panel: merekam → jeda → belum disimpan', () {
@@ -86,13 +86,13 @@ void main() {
   testWidgets('banner merangkum status & hilang bila tak ada sesi',
       (tester) async {
     await tester.pumpWidget(_host(ActiveTrackingBanner(onTap: () {})));
-    expect(find.textContaining('merekam'), findsNothing);
+    expect(find.textContaining('recording'), findsNothing);
 
     mgr.start(_proj('a', 'Jalan A'));
     mgr.start(_proj('b', 'Blok B'));
     mgr.finish('b');
     await tester.pump();
-    expect(find.text('1 merekam · 1 belum disimpan'), findsOneWidget);
+    expect(find.text('1 recording · 1 not saved'), findsOneWidget);
     expect(find.textContaining('Jalan A'), findsOneWidget);
   });
 
@@ -129,7 +129,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('toggle-a')));
     await tester.pump();
     expect(mgr.sessionFor('a')!.state, SessionState.paused);
-    expect(find.text('Jeda'), findsOneWidget); // chip status ikut berubah
+    expect(find.text('Paused'), findsOneWidget); // chip status ikut berubah
 
     await tester.tap(find.byKey(const ValueKey('toggle-a')));
     await tester.pump();
@@ -149,7 +149,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(mgr.sessionFor('a')!.state, SessionState.paused);
-    expect(find.textContaining('Gagal menyalakan GPS'), findsOneWidget);
+    expect(find.textContaining('Could not start background GPS'), findsOneWidget);
   });
 
   testWidgets('draft "Belum disimpan" bisa dilanjutkan merekam',
@@ -160,8 +160,8 @@ void main() {
         onOpenProject: (_) {}, ensureRunning: () async => true)));
     await tester.pump();
 
-    expect(find.text('Belum disimpan'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Lanjutkan'), findsOneWidget);
+    expect(find.text('Not saved'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Resume'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('toggle-d')));
     await tester.pump();
@@ -208,7 +208,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('discard-z')));
     await tester.pumpAndSettle(); // dialog konfirmasi
-    await tester.tap(find.text('Buang'));
+    await tester.tap(find.text('Discard'));
     await tester.pumpAndSettle();
 
     expect(mgr.isActive('z'), isFalse);

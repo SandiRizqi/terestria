@@ -8,6 +8,6 @@ List<ArchiveFile> decodeZipOrThrow(List<int> bytes, String label) {
   try {
     return ZipDecoder().decodeBytes(bytes).files.where((f) => f.isFile).toList();
   } catch (e) {
-    throw LayerImportException('$label bukan berkas zip yang valid');
+    throw LayerImportException('$label is not a valid zip file');
   }
 }

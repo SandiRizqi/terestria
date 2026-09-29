@@ -127,14 +127,14 @@ void main() {
     await c.show(_overlay('hilang'));
     expect(c.spec, isNull);
     expect(c.loading, isFalse);
-    expect(problems.single, contains('tidak ditemukan'));
+    expect(problems.single, contains('was not found'));
   });
 
   test('decode gagal → tanpa overlay + pesan', () async {
     warmResult = false;
     await c.show(_overlay('a'));
     expect(c.spec, isNull);
-    expect(problems.single, contains('gagal dimuat'));
+    expect(problems.single, contains('could not be loaded'));
   });
 
   test('ganti ke basemap tile → overlay lama dilepas, tanpa pesan', () async {

@@ -32,6 +32,7 @@ import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
 import 'widgets/instruction_bar.dart';
 import 'widgets/step_list_sheet.dart';
+import '../../utils/ui_feedback.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -229,7 +230,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       if (!mounted) return;
       if (!ok) _showSnackBar('⚠️ Routing engine failed to load. Re-import routing file.');
     } catch (e) {
-      if (mounted) _showSnackBar('❌ Routing init error: $e');
+      if (mounted) _showSnackBar(loggedErrorMessage('Could not start offline routing', e, tag: 'NAV'));
     } finally {
       if (mounted) setState(() => _isInitializingRouter = false);
     }
@@ -266,7 +267,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         setState(() => _currentGps = loc);
       }
     } catch (e) {
-      if (mounted) _showSnackBar('⚠️ Location error: $e');
+      if (mounted) _showSnackBar(loggedErrorMessage('Could not get your location', e, tag: 'NAV'));
     } finally {
       if (mounted) setState(() => _isLoadingLocation = false);
     }
@@ -451,7 +452,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       // never during active navigation (would zoom out and break follow mode)
       if (fitBounds) _fitRouteBounds(result.latLngs);
     } catch (e) {
-      if (mounted) _showSnackBar('❌ Route error: $e');
+      if (mounted) _showSnackBar(loggedErrorMessage('Could not calculate the route', e, tag: 'NAV'));
     } finally {
       if (mounted) setState(() => _isCalculating = false);
     }
@@ -459,9 +460,9 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   String get _profileLabel {
     switch (_activeProfile) {
-      case 'car_recommended': return 'Rekomendasi';
-      case 'foot':            return 'Jalan kaki';
-      default:                return 'Tercepat';
+      case 'car_recommended': return 'Recommended';
+      case 'foot':            return 'Walking';
+      default:                return 'Fastest';
     }
   }
 
@@ -927,7 +928,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
               // Basemap jaringan jalan (on/off) — hanya berguna bila ada data.
               MapToolButton(
-                tooltip: 'Jaringan Jalan',
+                tooltip: 'Road network',
                 icon: Icons.alt_route,
                 active: roadLayerOn && roadTileProvider != null,
                 onPressed: toggleRoadLayer,
@@ -1671,7 +1672,7 @@ class _RouteTargetSheet extends StatelessWidget {
             ),
           ] else ...[
             // ── Mobil: pilih mode rute ──
-            Text('Mobil',
+            Text('Car',
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -1681,8 +1682,8 @@ class _RouteTargetSheet extends StatelessWidget {
               Expanded(
                 child: _RouteBtn(
                   icon:  Icons.recommend_rounded,
-                  label: 'Rekomendasi',
-                  sublabel: 'Utamakan jalan utama',
+                  label: 'Recommended',
+                  sublabel: 'Prefers main roads',
                   color: AppTheme.primaryGreen,
                   highlighted: true,
                   onTap: () => onRoute('car_recommended'),
@@ -1692,8 +1693,8 @@ class _RouteTargetSheet extends StatelessWidget {
               Expanded(
                 child: _RouteBtn(
                   icon:  Icons.bolt_rounded,
-                  label: 'Tercepat',
-                  sublabel: 'Waktu tempuh minimum',
+                  label: 'Fastest',
+                  sublabel: 'Shortest travel time',
                   color: AppTheme.darkGreen,
                   onTap: () => onRoute('car'),
                 ),
@@ -1705,7 +1706,7 @@ class _RouteTargetSheet extends StatelessWidget {
               width: double.infinity,
               child: _RouteBtn(
                 icon:  Icons.directions_walk_rounded,
-                label: 'Jalan kaki',
+                label: 'Walking',
                 color: AppTheme.accentGreen,
                 onTap: () => onRoute('foot'),
               ),

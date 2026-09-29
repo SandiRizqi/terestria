@@ -62,6 +62,14 @@ String friendlyErrorMessage(Object error) {
   return 'Something went wrong. Details were saved to the diagnostic log.';
 }
 
+/// Catat [error] ke log lalu kembalikan kalimat ramah "[what]. <sebab>" —
+/// untuk tempat yang menyusun SnackBar/dialog/status sendiri.
+String loggedErrorMessage(String what, Object error,
+    {StackTrace? stack, String tag = 'UI'}) {
+  logError(what, tag: tag, error: error, stack: stack);
+  return '$what. ${friendlyErrorMessage(error)}';
+}
+
 /// Catat [error] lalu tampilkan snackbar merah. [message] = konteks singkat
 /// ("Could not save the record"); penjelasan ramah ditambahkan otomatis.
 ///

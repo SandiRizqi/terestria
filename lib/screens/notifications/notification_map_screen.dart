@@ -36,6 +36,7 @@ import '../navigation/widgets/step_list_sheet.dart';
 
 import '../../utils/app_logger.dart';
 import '../../utils/share_origin.dart';
+import '../../utils/ui_feedback.dart';
 /// Fullscreen map viewer for notification GeoJSON data.
 /// Supports basemap switching, user GeoJSON layers, click-to-inspect,
 /// notification overlay, and GraphHopper turn-by-turn routing.
@@ -169,7 +170,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
     try {
       _notificationGeoJson = jsonDecode(widget.geoJsonData) as Map<String, dynamic>;
     } catch (e) {
-      _parseError = 'Failed to parse GeoJSON: $e';
+      _parseError = loggedErrorMessage('Could not read the map data of this notification', e, tag: 'NOTIF');
     }
 
     // Load basemap + layers + OSM state in parallel (all offline-safe)
@@ -359,7 +360,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
         _showSnackBar('⚠️ Routing engine failed to load. Try re-importing the routing file.');
       }
     } catch (e) {
-      if (mounted) _showSnackBar('❌ Routing init error: $e');
+      if (mounted) _showSnackBar(loggedErrorMessage('Could not start offline routing', e, tag: 'NAV'));
     } finally {
       if (mounted) setState(() => _isInitializingRouter = false);
     }
@@ -420,7 +421,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
 
       _fitRouteBounds(result.latLngs);
     } catch (e) {
-      if (mounted) _showSnackBar('❌ Route error: $e');
+      if (mounted) _showSnackBar(loggedErrorMessage('Could not calculate the route', e, tag: 'NAV'));
     } finally {
       if (mounted) setState(() => _isCalculating = false);
     }
@@ -1922,7 +1923,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
 
               // Basemap jaringan jalan (on/off) — hanya berguna bila ada data.
               MapToolButton(
-                tooltip: 'Jaringan Jalan',
+                tooltip: 'Road network',
                 icon: Icons.alt_route,
                 active: roadLayerOn && roadTileProvider != null,
                 onPressed: toggleRoadLayer,

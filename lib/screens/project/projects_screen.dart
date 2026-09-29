@@ -21,6 +21,7 @@ import '../../widgets/project/cloud_project_dialog.dart';
 import '../../theme/app_theme.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({Key? key}) : super(key: key);
 
@@ -84,7 +85,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       crashlytics.recordError(e, stack, reason: 'Project: loadProjects failed');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading projects: $e')),
+          SnackBar(content: Text(loggedErrorMessage('Could not load the projects', e, tag: 'PROJECT'))),
         );
       }
     }
@@ -247,7 +248,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error syncing from server: $e')),
+                Expanded(child: Text(loggedErrorMessage('Download from the server failed', e, tag: 'SYNC'))),
               ],
             ),
             backgroundColor: Colors.red,
@@ -291,7 +292,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             children: [
               Icon(Icons.cloud_done, color: Colors.white),
               SizedBox(width: 8),
-              Text('Semua project sudah tersinkron ke server.'),
+              Text('All projects are already on the server.'),
             ],
           ),
           backgroundColor: Colors.green,
@@ -388,13 +389,13 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 children: [
                   Icon(Icons.wifi_off, color: Colors.orange),
                   SizedBox(width: 8),
-                  Text('Sync Tertunda'),
+                  Text('Sync postponed'),
                 ],
               ),
               content: Text(
-                'Tidak ada koneksi ke server.\n\n'
-                '$successCount terkirim, $remaining belum. '
-                'Data tersimpan aman dan bisa disync lagi saat sinyal stabil.',
+                'No connection to the server.\n\n'
+                '$successCount uploaded, $remaining not yet. Your data is '
+                'safe on this phone and can be synced when the signal is stable.',
               ),
               actions: [
                 TextButton(
@@ -454,7 +455,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                       ),
                     )),
                     if (grouped.length > 5)
-                      Text('... dan ${grouped.length - 5} error lain'),
+                      Text('…and ${grouped.length - 5} more'),
                   ],
                 ),
               ),
@@ -498,7 +499,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                       ),
                     )),
                     if (grouped.length > 5)
-                      Text('... dan ${grouped.length - 5} error lain'),
+                      Text('…and ${grouped.length - 5} more'),
                   ],
                 ),
               ),
@@ -523,7 +524,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error syncing projects: $e')),
+                Expanded(child: Text(loggedErrorMessage('Could not upload the projects', e, tag: 'SYNC'))),
               ],
             ),
             backgroundColor: Colors.red,
@@ -567,7 +568,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         crashlytics.recordError(e, stack, reason: 'Project: deleteProject failed');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting project: $e')),
+            SnackBar(content: Text(loggedErrorMessage('Could not delete the project', e, tag: 'PROJECT'))),
           );
         }
       }
@@ -1064,7 +1065,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error: $e')),
+                Expanded(child: Text(loggedErrorMessage('Could not open the template picker', e, tag: 'PROJECT'))),
               ],
             ),
             backgroundColor: Colors.red,
@@ -1120,7 +1121,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error selecting file: $e')),
+                Expanded(child: Text(loggedErrorMessage('Could not select the file', e, tag: 'PROJECT'))),
               ],
             ),
             backgroundColor: Colors.red,
@@ -1190,7 +1191,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error importing template: $e')),
+                Expanded(child: Text(loggedErrorMessage('Could not import the template', e, tag: 'PROJECT'))),
               ],
             ),
             backgroundColor: Colors.red,

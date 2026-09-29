@@ -280,7 +280,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('📸 Foto berhasil dipulihkan'),
+              content: Text('📸 Photo recovered'),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 2),
             ),

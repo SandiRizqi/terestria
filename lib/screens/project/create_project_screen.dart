@@ -10,6 +10,7 @@ import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:async';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/ui_feedback.dart';
 
 class CreateProjectScreen extends StatefulWidget {
   final Project? project; // for editing
@@ -136,7 +137,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
       setState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving project: $e')),
+          SnackBar(content: Text(loggedErrorMessage('Could not save the project', e, tag: 'PROJECT'))),
         );
       }
     }
@@ -322,7 +323,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error syncing project: $e')),
+                Expanded(child: Text(loggedErrorMessage('Could not upload the project', e, tag: 'SYNC'))),
               ],
             ),
             backgroundColor: Colors.red,

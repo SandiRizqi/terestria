@@ -4,6 +4,7 @@ import '../../services/auth_service.dart';
 import '../../services/fcm_token_service.dart';
 import '../../models/user_model.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/ui_feedback.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -51,7 +52,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading profile: $e'),
+            content: Text(loggedErrorMessage('Could not load the profile', e, tag: 'PROFILE')),
             backgroundColor: Colors.red,
           ),
         );

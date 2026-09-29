@@ -111,12 +111,12 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
         title: const Row(children: [
           Icon(Icons.directions_off_rounded, color: Colors.orange),
           SizedBox(width: 8),
-          Expanded(child: Text('Navigasi Belum Tersedia')),
+          Expanded(child: Text('Navigation not available yet')),
         ]),
         content: const Text(
-          'Rute & navigasi offline saat ini hanya tersedia di Android.\n\n'
-          'Fitur lain tetap berfungsi normal di perangkat ini: peta, GPS, '
-          'kompas, alat ukur, dan pengumpulan data.',
+          'Offline routing & navigation are currently available on Android '
+          'only.\n\nEverything else works normally on this device: map, GPS, '
+          'compass, measuring tools and data collection.',
         ),
         actions: [
           ElevatedButton(
@@ -125,7 +125,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
               backgroundColor: AppTheme.primaryGreen,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Mengerti'),
+            child: const Text('Got it'),
           ),
         ],
       ),
@@ -275,7 +275,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text(
-                'Offline routing membutuhkan data jalan (.pbf).',
+                'Offline routing needs road data (.pbf).',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
               const SizedBox(height: 16),
@@ -344,7 +344,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Belum ada data jalan. Download dari server atau import file .pbf.',
+              'No road data yet. Download it from the server or import a .pbf file.',
               style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
             ),
           ),
@@ -408,7 +408,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
       _activeCard(
         icon: Icons.cloud_done_rounded,
         color: AppTheme.primaryGreen,
-        label: 'Aktif dari server',
+        label: 'Active (from server)',
         detail: road.name,
       ),
       const SizedBox(height: 12),
@@ -437,7 +437,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
               showSavedRoadsPicker();
             },
             icon: const Icon(Icons.swap_horiz_rounded, size: 16),
-            label: const Text('Ganti'),
+            label: const Text('Replace'),
             style: OutlinedButton.styleFrom(
                 foregroundColor: AppTheme.primaryGreen),
           ),
@@ -450,7 +450,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
               _deleteCloudRoad(road);
             },
             icon: const Icon(Icons.delete_outline_rounded, size: 16),
-            label: const Text('Hapus'),
+            label: const Text('Delete'),
             style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
           ),
         ),
@@ -464,7 +464,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
             downloadRoadsFromServer();
           },
           icon: const Icon(Icons.cloud_download_rounded, size: 16),
-          label: const Text('Download PT lain'),
+          label: const Text('Download another company'),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.grey.shade700,
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -519,7 +519,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
             downloadRoadsFromServer();
           },
           icon: const Icon(Icons.cloud_download_rounded, size: 16),
-          label: const Text('Beralih ke data server'),
+          label: const Text('Switch to server data'),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.grey.shade700,
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -628,8 +628,8 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
       builder: (_) => AlertDialog(
         title: const Text('Delete Road Data?'),
         content: Text(
-            'Data jalan "${road.name}" akan dihapus dari perangkat. Anda bisa '
-            'mengunduhnya lagi dari server kapan saja.'),
+            'Road data "${road.name}" will be removed from this device. You '
+            'can download it again from the server at any time.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

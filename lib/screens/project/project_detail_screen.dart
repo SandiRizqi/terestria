@@ -337,13 +337,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       case PullPreflightStatus.offline:
       case PullPreflightStatus.error:
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(pre.message ?? 'Preflight gagal.'),
+          content: Text(pre.message ?? 'Could not check the server.'),
           backgroundColor: Colors.red,
         ));
         return;
       case PullPreflightStatus.empty:
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Tidak ada data yang cocok dengan filter ini.'),
+          content: Text('No records on the server match this filter.'),
         ));
         return;
       case PullPreflightStatus.ready:
@@ -356,14 +356,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         title: const Text('Download data?'),
         content: Text(
           pre.warnLarge
-              ? '${pre.count} record akan diunduh (>1000). Ini bisa memakan '
-                  'waktu & kuota. Lanjutkan?'
-              : '${pre.count} record akan diunduh. Lanjutkan?',
+              ? '${pre.count} records will be downloaded (more than 1000). This '
+                  'can take a while and use a lot of data. Continue?'
+              : '${pre.count} records will be downloaded. Continue?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Batal'),
+            child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -478,7 +478,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Sync error: $e')),
+                Expanded(child: Text(loggedErrorMessage('Download from the server failed', e, tag: 'SYNC'))),
               ],
             ),
             backgroundColor: Colors.red,
@@ -976,7 +976,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting data: $e')),
+            SnackBar(content: Text(loggedErrorMessage('Could not delete the record', e, tag: 'PROJECT'))),
           );
         }
       }
@@ -1448,7 +1448,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                '${_filteredGeoDataList.length} dari ${_geoDataList.length} data',
+                '${_filteredGeoDataList.length} of ${_geoDataList.length} records',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.shade600,
@@ -1479,7 +1479,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     Icon(Icons.close_rounded, size: 13, color: Colors.red.shade600),
                     const SizedBox(width: 4),
                     Text(
-                      'Hapus filter',
+                      'Clear filters',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -1810,7 +1810,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             });
                           },
                           child: const Text(
-                            'Hapus Semua',
+                            'Clear all',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.red,
@@ -1834,14 +1834,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           // ── Date Range Filter ──
                           _buildFilterSectionLabel(
                             icon: Icons.calendar_today_rounded,
-                            label: 'Tanggal Pengambilan',
+                            label: 'Collection date',
                           ),
                           const SizedBox(height: 10),
                           Row(
                             children: [
                               Expanded(
                                 child: _buildDatePickerTile(
-                                  label: 'Dari',
+                                  label: 'From',
                                   date: localDateFilter?.start,
                                   onTap: () async {
                                     final picked = await showDatePicker(
@@ -1865,7 +1865,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _buildDatePickerTile(
-                                  label: 'Sampai',
+                                  label: 'To',
                                   date: localDateFilter?.end,
                                   onTap: () async {
                                     final picked = await showDatePicker(
@@ -1890,7 +1890,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 IconButton(
                                   icon: const Icon(Icons.close_rounded, size: 18, color: Colors.red),
                                   onPressed: () => setSheetState(() => localDateFilter = null),
-                                  tooltip: 'Hapus filter tanggal',
+                                  tooltip: 'Clear date filter',
                                   visualDensity: VisualDensity.compact,
                                 ),
                               ],
@@ -1927,7 +1927,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                           : const TextInputType.numberWithOptions(decimal: true),
                                       onChanged: (v) => localFieldFilters[field.label] = v,
                                       decoration: InputDecoration(
-                                        hintText: 'Cari di "${field.label}"...',
+                                        hintText: 'Search in "${field.label}"…',
                                         hintStyle: const TextStyle(fontSize: 13),
                                         isDense: true,
                                         contentPadding: const EdgeInsets.symmetric(
@@ -2014,9 +2014,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                     Row(
                                       children: ['', 'true', 'false'].map((val) {
                                         final labels = {
-                                          '': 'Semua',
-                                          'true': 'Ya ✓',
-                                          'false': 'Tidak ✗',
+                                          '': 'All',
+                                          'true': 'Yes ✓',
+                                          'false': 'No ✗',
                                         };
                                         final current =
                                             (localFieldFilters[field.label] ?? '').toString();
@@ -2066,7 +2066,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
                                   else if (field.type == FieldType.date)
                                     _buildDatePickerTile(
-                                      label: 'Pilih tanggal',
+                                      label: 'Pick a date',
                                       date: localFieldFilters[field.label] != null
                                           ? DateTime.tryParse(
                                               localFieldFilters[field.label].toString())
@@ -2116,7 +2116,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            child: const Text('Batal'),
+                            child: const Text('Cancel'),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -2148,7 +2148,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               ),
                             ),
                             child: const Text(
-                              'Terapkan Filter',
+                              'Apply filters',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
@@ -3399,7 +3399,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error exporting template: $e')),
+                Expanded(child: Text(loggedErrorMessage('Could not export the template', e, tag: 'EXPORT'))),
               ],
             ),
             backgroundColor: Colors.red,
@@ -3502,7 +3502,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Error saving file: $e')),
+                Expanded(child: Text(loggedErrorMessage('Could not save the file', e, tag: 'EXPORT'))),
               ],
             ),
             backgroundColor: Colors.red,

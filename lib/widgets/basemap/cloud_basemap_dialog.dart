@@ -5,6 +5,7 @@ import '../../services/cloud_basemap_service.dart';
 import '../../services/basemap_service.dart';
 import '../../theme/app_theme.dart';
 import 'package:uuid/uuid.dart';
+import '../../utils/ui_feedback.dart';
 
 /// Dialog untuk menampilkan daftar basemap dari cloud dan memilih mana yang akan ditambahkan
 class CloudBasemapDialog extends StatefulWidget {
@@ -83,7 +84,7 @@ class _CloudBasemapDialogState extends State<CloudBasemapDialog> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error: $e';
+        _errorMessage = loggedErrorMessage('Could not load cloud basemaps', e, tag: 'BASEMAP');
         _isLoading = false;
       });
     }
@@ -172,7 +173,7 @@ class _CloudBasemapDialogState extends State<CloudBasemapDialog> {
         Navigator.pop(context);
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding basemaps: $e')),
+          SnackBar(content: Text(loggedErrorMessage('Could not add the basemaps', e, tag: 'BASEMAP'))),
         );
       }
     }

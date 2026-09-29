@@ -10,6 +10,7 @@ import '../../services/layer_import/zipped_shapefile.dart';
 import '../../services/layer_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 import '../../widgets/layers/shapefile_picker_dialog.dart';
 
 class LayersScreen extends StatefulWidget {
@@ -76,7 +77,7 @@ class _LayersScreenState extends State<LayersScreen> {
       } catch (e, st) {
         logError('Impor layer "$fileName" gagal',
             tag: 'LAYER', error: e, stack: st);
-        _showError('Gagal membaca berkas: $e');
+        _showError('Could not read the file. ${friendlyErrorMessage(e)}');
         return;
       }
     }
@@ -120,7 +121,7 @@ class _LayersScreenState extends State<LayersScreen> {
         ));
       }
     } catch (e) {
-      _showError('Error saving layer: $e');
+      _showError(loggedErrorMessage('Could not save the layer', e, tag: 'LAYER'));
     }
   }
 
@@ -138,7 +139,7 @@ class _LayersScreenState extends State<LayersScreen> {
                 height: 22,
                 child: CircularProgressIndicator(strokeWidth: 2.5)),
             SizedBox(width: 16),
-            Expanded(child: Text('Memproses berkas…')),
+            Expanded(child: Text('Processing the file…')),
           ]),
         ),
       ),

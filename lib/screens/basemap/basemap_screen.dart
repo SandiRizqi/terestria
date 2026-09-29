@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/basemap_model.dart';
 import '../../services/basemap_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/ui_feedback.dart';
 
 class BasemapScreen extends StatefulWidget {
   const BasemapScreen({Key? key}) : super(key: key);
@@ -41,7 +42,7 @@ class _BasemapScreenState extends State<BasemapScreen> {
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading basemaps: $e')),
+          SnackBar(content: Text(loggedErrorMessage('Could not load the basemaps', e, tag: 'BASEMAP'))),
         );
       }
     }

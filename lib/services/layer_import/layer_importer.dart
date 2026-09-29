@@ -17,7 +17,7 @@ enum LayerFormat { geojson, gpx, kml, kmz, zippedShapefile }
 const int kMaxLayerImportBytes = 100 * 1024 * 1024;
 
 const String kSupportedLayerFormatsText =
-    'GeoJSON (.geojson/.json), Shapefile ber-zip (.zip), GPX (.gpx), '
+    'GeoJSON (.geojson/.json), zipped Shapefile (.zip), GPX (.gpx), '
     'KML (.kml/.kmz/.xml)';
 
 class LayerImportException implements Exception {
@@ -73,11 +73,11 @@ LayerFormat detectLayerFormat(String fileName, List<int> bytes) {
           return LayerFormat.kml;
       }
       throw const LayerImportException(
-          'Berkas XML ini bukan GPX atau KML. Format yang didukung: '
+          'This XML file is not GPX or KML. Supported formats: '
           '$kSupportedLayerFormatsText');
   }
   throw const LayerImportException(
-      'Format berkas tidak didukung. Format yang didukung: '
+      'This file format is not supported. Supported formats: '
       '$kSupportedLayerFormatsText');
 }
 
@@ -138,12 +138,12 @@ LayerImportResult _importInIsolate(_ImportRequest req) {
   try {
     size = file.lengthSync();
   } catch (e) {
-    throw LayerImportException('Berkas tidak bisa dibaca: $e');
+    throw LayerImportException('The file could not be read ($e)');
   }
   if (size > kMaxLayerImportBytes) {
     throw LayerImportException(
-        'Berkas terlalu besar (${(size / 1048576).toStringAsFixed(0)} MB, '
-        'maks ${kMaxLayerImportBytes ~/ 1048576} MB)');
+        'The file is too large (${(size / 1048576).toStringAsFixed(0)} MB, '
+        'maximum ${kMaxLayerImportBytes ~/ 1048576} MB)');
   }
   return convertLayerBytes(req.fileName, file.readAsBytesSync(),
       shapefileName: req.shapefileName);
@@ -165,7 +165,7 @@ LayerImportResult _result(
     LayerFormat format, String fileName, Map<String, dynamic> fc) {
   final features = fc['features'] as List;
   if (features.isEmpty) {
-    throw const LayerImportException('Berkas tidak berisi fitur/geometri');
+    throw const LayerImportException('The file has no features or geometry');
   }
   return LayerImportResult(
     format: format,
@@ -193,10 +193,10 @@ Map<String, dynamic> _parseGeoJson(Uint8List bytes) {
   try {
     decoded = jsonDecode(utf8.decode(bytes, allowMalformed: true));
   } catch (e) {
-    throw LayerImportException('GeoJSON tidak valid: $e');
+    throw LayerImportException('Invalid GeoJSON ($e)');
   }
   if (decoded is! Map<String, dynamic>) {
-    throw const LayerImportException('GeoJSON tidak valid: bukan objek');
+    throw const LayerImportException('Invalid GeoJSON: not a JSON object');
   }
   final type = decoded['type'];
   if (type == 'FeatureCollection' && decoded['features'] is List) {
@@ -217,5 +217,5 @@ Map<String, dynamic> _parseGeoJson(Uint8List bytes) {
     };
   }
   throw const LayerImportException(
-      'GeoJSON tidak valid: tidak ada FeatureCollection/Feature/geometri');
+      'Invalid GeoJSON: no FeatureCollection, Feature or geometry');
 }

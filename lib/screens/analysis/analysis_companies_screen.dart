@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
+import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart' show friendlyErrorMessage;
 import '../../models/analysis/analysis_company_model.dart';
 import '../../services/analysis_report_service.dart';
 import '../../theme/app_theme.dart';
@@ -127,8 +130,9 @@ class _AnalysisCompaniesScreenState extends State<AnalysisCompaniesScreen> {
   }
 
   String _friendlyError(Object e) {
+    logWarn('Analysis companies: loading failed', tag: 'ANALYSIS', error: e);
     if (e is AnalysisApiException) return e.message;
-    return 'Gagal memuat data. Periksa koneksi Anda.';
+    return 'Could not load the data. ${friendlyErrorMessage(e)}';
   }
 
   void _openCompany(AnalysisCompany company) {
@@ -179,7 +183,7 @@ class _AnalysisCompaniesScreenState extends State<AnalysisCompaniesScreen> {
         controller: _searchController,
         onChanged: _onSearchChanged,
         decoration: InputDecoration(
-          hintText: 'Cari PT (nama / kode)...',
+          hintText: 'Search companies (name / code)…',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
@@ -239,7 +243,7 @@ class _EmptyView extends StatelessWidget {
         const SizedBox(height: 12),
         const Center(
           child: Text(
-            'Belum ada PT untuk jenis ini',
+            'No companies for this type yet',
             style: TextStyle(fontSize: 15, color: Colors.grey),
           ),
         ),
@@ -276,7 +280,7 @@ class _ErrorView extends StatelessWidget {
           child: ElevatedButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label: const Text('Coba lagi'),
+            label: const Text('Try again'),
           ),
         ),
       ],

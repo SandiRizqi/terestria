@@ -61,7 +61,7 @@ class FCMTokenWidget extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Gunakan token ini untuk testing di Firebase Console',
+              'Use this token for testing in the Firebase Console',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey[600],

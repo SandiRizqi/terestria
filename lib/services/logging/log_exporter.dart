@@ -35,23 +35,23 @@ String buildSnapshotText({
   final list = sessions.toList();
   final b = StringBuffer()
     ..writeln('Snapshot ${now.toIso8601String()}')
-    ..writeln('Engine: ${engineActive ? 'aktif' : 'idle'}')
-    ..writeln('Service background: ${serviceRunning ? 'berjalan' : 'MATI'}')
-    ..writeln('Batas project bersamaan: $maxConcurrent')
+    ..writeln('Engine: ${engineActive ? 'active' : 'idle'}')
+    ..writeln('Background service: ${serviceRunning ? 'running' : 'STOPPED'}')
+    ..writeln('Max concurrent projects: $maxConcurrent')
     ..writeln()
-    ..writeln('Sesi (${list.length}):');
+    ..writeln('Sessions (${list.length}):');
   for (final s in list) {
     final last = s.points.isEmpty ? null : s.points.last.timestamp;
     final ago = last == null
-        ? 'belum ada titik'
-        : 'titik terakhir ${now.difference(last).inSeconds} dtk lalu';
-    b.writeln('- "${s.project.name}" ${s.state.name} sumber=${s.source.name} '
-        '${s.project.geometryType.name} titik=${s.pointCount} '
-        'mulai=${s.startedAt.toIso8601String()} $ago');
+        ? 'no points yet'
+        : 'last point ${now.difference(last).inSeconds} s ago';
+    b.writeln('- "${s.project.name}" ${s.state.name} source=${s.source.name} '
+        '${s.project.geometryType.name} points=${s.pointCount} '
+        'started=${s.startedAt.toIso8601String()} $ago');
   }
   b
     ..writeln()
-    ..writeln('Izin & perangkat:');
+    ..writeln('Permissions & device:');
   for (final e in status.entries) {
     b.writeln('- ${e.key}: ${e.value}');
   }
@@ -68,13 +68,13 @@ String buildInfoText({
   required Map<String, dynamic> gpsSettings,
 }) {
   final b = StringBuffer()
-    ..writeln('Terestria — log diagnostik')
-    ..writeln('Dibuat: ${now.toIso8601String()}')
+    ..writeln('Terestria — diagnostic log')
+    ..writeln('Created: ${now.toIso8601String()}')
     ..writeln('OS: $os $osVersion')
-    ..writeln('Provider GPS: $provider')
-    ..writeln('Versi DB: $dbVersion')
+    ..writeln('GPS provider: $provider')
+    ..writeln('DB version: $dbVersion')
     ..writeln()
-    ..writeln('Setelan GPS:');
+    ..writeln('GPS settings:');
   for (final e in gpsSettings.entries) {
     b.writeln('- ${e.key} = ${e.value}');
   }

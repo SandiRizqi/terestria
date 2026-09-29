@@ -7,7 +7,7 @@ Future<String?> showShapefilePicker(BuildContext context, List<String> names) {
   return showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Pilih shapefile'),
+      title: const Text('Choose a shapefile'),
       contentPadding: const EdgeInsets.only(top: 12, bottom: 8),
       content: SizedBox(
         width: double.maxFinite,
@@ -16,7 +16,7 @@ Future<String?> showShapefilePicker(BuildContext context, List<String> names) {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
-              child: Text('Zip berisi beberapa shapefile. Impor yang mana?'),
+              child: Text('This zip contains several shapefiles. Which one should be imported?'),
             ),
             for (final name in names)
               ListTile(
@@ -34,7 +34,7 @@ Future<String?> showShapefilePicker(BuildContext context, List<String> names) {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Batal'),
+          child: const Text('Cancel'),
         ),
       ],
     ),

@@ -13,14 +13,14 @@ typedef ImageWarmUp = Future<bool> Function(ImageProvider image);
 /// Pesan untuk user bila overlay PDF tak bisa ditampilkan; null = tak perlu.
 String? pdfOverlayProblemText(PdfOverlayIssue issue) => switch (issue) {
       PdfOverlayIssue.fileMissing =>
-        'Gambar peta PDF tidak ditemukan. Import ulang PDF ini dari Kelola Basemap.',
+        'The PDF map image was not found. Import this PDF again from Basemaps.',
       PdfOverlayIssue.invalidBounds =>
-        'Koordinat peta PDF tidak valid. Import ulang PDF ini.',
+        'The PDF map coordinates are not valid. Import this PDF again.',
       PdfOverlayIssue.notOverlay => null,
     };
 
 const _decodeFailedText =
-    'Gambar peta PDF gagal dimuat (berkas rusak atau memori HP penuh).';
+    'The PDF map image could not be loaded (damaged file or phone memory full).';
 
 /// Decode [image] ke cache gambar lebih dulu (seperti precacheImage, tanpa
 /// BuildContext). true bila berhasil.
@@ -155,7 +155,7 @@ class PdfOverlayController extends ChangeNotifier {
   static Future<String> _fileSizeText(PdfOverlaySpec spec) async {
     try {
       final mb = await spec.file.length() / (1024 * 1024);
-      return ', berkas ${mb.toStringAsFixed(1)} MB';
+      return ', file ${mb.toStringAsFixed(1)} MB';
     } catch (_) {
       return '';
     }

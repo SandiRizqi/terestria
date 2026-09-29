@@ -49,13 +49,13 @@ void main() {
 
   group('helper', () {
     test('diagnosticStatusLabel', () {
-      expect(diagnosticStatusLabel(null, now), 'Mati');
+      expect(diagnosticStatusLabel(null, now), 'Off');
       expect(diagnosticStatusLabel(now.add(const Duration(hours: 23, minutes: 30)), now),
-          'Aktif · 23 jam lagi');
+          'On · 23 h left');
       expect(diagnosticStatusLabel(now.add(const Duration(minutes: 45)), now),
-          'Aktif · 45 mnt lagi');
+          'On · 45 min left');
       expect(diagnosticStatusLabel(now.subtract(const Duration(minutes: 1)), now),
-          'Mati');
+          'Off');
     });
 
     test('formatBytes', () {
@@ -80,13 +80,13 @@ void main() {
     await tester.pumpWidget(host(a));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('3 berkas · 1.5 MB'), findsOneWidget);
-    expect(find.textContaining('Mati'), findsOneWidget);
+    expect(find.textContaining('3 files · 1.5 MB'), findsOneWidget);
+    expect(find.textContaining('Off'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('diagnostic-toggle')));
     await tester.pumpAndSettle();
     expect(a.until, now.add(const Duration(hours: 24)));
-    expect(find.textContaining('Aktif · 24 jam lagi'), findsOneWidget);
+    expect(find.textContaining('On · 24 h left'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('diagnostic-toggle')));
     await tester.pumpAndSettle();
@@ -120,7 +120,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('share-logs')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Gagal membagikan log'), findsOneWidget);
+    expect(find.textContaining('Could not share the logs'), findsOneWidget);
   });
 
   testWidgets('Hapus butuh konfirmasi lalu memperbarui ukuran',
@@ -131,16 +131,16 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('clear-logs')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Batal'));
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(a.clears, 0);
 
     await tester.tap(find.byKey(const ValueKey('clear-logs')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Hapus'));
+    await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(a.clears, 1);
-    expect(find.textContaining('0 berkas · 0 B'), findsOneWidget);
+    expect(find.textContaining('0 files · 0 B'), findsOneWidget);
   });
 
   testWidgets('lebar 360 dp tanpa overflow', (tester) async {

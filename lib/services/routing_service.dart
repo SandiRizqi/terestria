@@ -272,17 +272,17 @@ class RoutingService {
   /// Pakai road data yang sudah tersimpan (offline) → build engine, tanpa unduh.
   Future<RoadPrepareResult> activateDownloadedRoads(int id, {void Function(String)? onProgress}) async {
     if (!_routingSupported) {
-      return const RoadPrepareResult(RoadPrepareStatus.error, 'Routing tidak tersedia di perangkat ini');
+      return const RoadPrepareResult(RoadPrepareStatus.error, 'Routing is not available on this device');
     }
     final path = await _roadFilePath(id);
     if (!File(path).existsSync()) {
-      return const RoadPrepareResult(RoadPrepareStatus.empty, 'Data belum diunduh');
+      return const RoadPrepareResult(RoadPrepareStatus.empty, 'Road data has not been downloaded yet');
     }
     onProgress?.call('Building routing engine…');
     final ok = await _activate(path);
     return ok
-        ? const RoadPrepareResult(RoadPrepareStatus.ready, 'Routing siap digunakan')
-        : const RoadPrepareResult(RoadPrepareStatus.error, 'Gagal membangun routing engine');
+        ? const RoadPrepareResult(RoadPrepareStatus.ready, 'Routing is ready')
+        : const RoadPrepareResult(RoadPrepareStatus.error, 'Could not build the routing engine');
   }
 
   /// Hapus road data tersimpan sebuah company.
@@ -314,7 +314,7 @@ class RoutingService {
     void Function(String message)? onProgress,
   }) async {
     if (!_routingSupported) {
-      return const RoadPrepareResult(RoadPrepareStatus.error, 'Routing tidak tersedia di perangkat ini');
+      return const RoadPrepareResult(RoadPrepareStatus.error, 'Routing is not available on this device');
     }
     try {
       onProgress?.call('Downloading road data…');
@@ -322,10 +322,10 @@ class RoutingService {
 
       if (resp.statusCode == 404) {
         return const RoadPrepareResult(
-            RoadPrepareStatus.empty, 'Data jalan belum tersedia untuk company ini.');
+            RoadPrepareStatus.empty, 'Road data is not available for this company yet.');
       }
       if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) {
-        return RoadPrepareResult(RoadPrepareStatus.error, 'Gagal mengunduh (HTTP ${resp.statusCode})');
+        return RoadPrepareResult(RoadPrepareStatus.error, 'Download failed (server error ${resp.statusCode})');
       }
 
       // Simpan per-company: roads/roads_<id>.pbf
@@ -345,12 +345,16 @@ class RoutingService {
       onProgress?.call('Building routing engine…');
       final ok = await _activate(dest.path);
       if (!ok) {
-        return const RoadPrepareResult(RoadPrepareStatus.error, 'Gagal membangun routing engine');
+        return const RoadPrepareResult(RoadPrepareStatus.error, 'Could not build the routing engine');
       }
-      return const RoadPrepareResult(RoadPrepareStatus.ready, 'Routing siap digunakan');
-    } catch (e) {
-      logError('❌ RoutingService: downloadAndPrepareRoads — $e', tag: 'ROUTING');
-      return RoadPrepareResult(RoadPrepareStatus.error, 'Error: $e');
+      return const RoadPrepareResult(RoadPrepareStatus.ready, 'Routing is ready');
+    } catch (e, st) {
+      logError('RoutingService: downloadAndPrepareRoads failed',
+          tag: 'ROUTING', error: e, stack: st);
+      return RoadPrepareResult(RoadPrepareStatus.error,
+          e is SocketException || e is TimeoutException
+              ? 'No connection to the server. Try again with a better signal.'
+              : 'Could not prepare the road data. Details were saved to the diagnostic log.');
     }
   }
 

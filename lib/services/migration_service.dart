@@ -8,6 +8,7 @@ import 'photo_sync_service.dart';
 import 'crashlytics_service.dart';
 
 import '../utils/app_logger.dart';
+import '../utils/ui_feedback.dart';
 class MigrationService {
   static final MigrationService _instance = MigrationService._internal();
   factory MigrationService() => _instance;
@@ -184,10 +185,11 @@ class MigrationService {
         projectsCount: projectsCount,
         geoDataCount: geoDataCount,
       );
-    } catch (e) {
+    } catch (e, st) {
       return MigrationResult(
         success: false,
-        message: 'Migration failed: ${e.toString()}',
+        message: loggedErrorMessage('Data migration failed', e,
+            stack: st, tag: 'MIGRATION'),
         projectsCount: 0,
         geoDataCount: 0,
       );

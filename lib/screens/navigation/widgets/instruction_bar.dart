@@ -33,8 +33,8 @@ class InstructionBar extends StatelessWidget {
       return _Banner(
         icon: Icons.refresh_rounded,
         color: Colors.orange.shade800,
-        action: 'Keluar jalur',
-        street: 'Menghitung ulang rute…',
+        action: 'Off route',
+        street: 'Recalculating…',
         distStr: '',
         following: null,
       );
@@ -60,8 +60,8 @@ class InstructionBar extends StatelessWidget {
   }
 
   String _formatDistance(double meters) {
-    if (meters <= 0) return 'Sekarang';
-    if (meters <= 30) return 'Sekarang';
+    if (meters <= 0) return 'Now';
+    if (meters <= 30) return 'Now';
     if (meters < 1000) {
       // Round to a friendly step (10 m) like turn-by-turn apps.
       final rounded = (meters / 10).round() * 10;
@@ -186,7 +186,7 @@ class _Banner extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    'Lalu',
+                    'Then',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 12,

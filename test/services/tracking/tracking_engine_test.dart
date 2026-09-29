@@ -226,7 +226,7 @@ void main() {
       m.finish('b');
       await settle();
 
-      expect(labels.last, 'Merekam 1 project · 1 belum disimpan');
+      expect(labels.last, 'Recording 1 project · 1 not saved');
       // Titik baru tak mengirim label ulang.
       final before = labels.length;
       m.addPointToActiveSessions(_gp(2));
@@ -241,7 +241,7 @@ void main() {
       e.tick();
       await settle();
       expect(labels.length, before + 1);
-      expect(labels.last, 'Merekam 1 project');
+      expect(labels.last, 'Recording 1 project');
     });
 
     test('sesi log GPS dibuka saat mulai merekam & ditutup saat berhenti',

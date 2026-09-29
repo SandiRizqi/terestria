@@ -33,15 +33,15 @@ class NotificationTopic {
 const List<NotificationTopic> defaultNotificationTopics = [
   NotificationTopic(
     id: 'general',
-    label: 'Umum',
-    description: 'Notifikasi umum dan pengumuman penting',
+    label: 'General',
+    description: 'General notifications and important announcements',
     icon: Icons.campaign_outlined,
     isDefault: true,
   ),
   NotificationTopic(
     id: 'updates',
-    label: 'Update Aplikasi',
-    description: 'Info update dan fitur baru aplikasi',
+    label: 'App updates',
+    description: 'New versions and features of the app',
     icon: Icons.system_update_outlined,
     isDefault: true,
   ),

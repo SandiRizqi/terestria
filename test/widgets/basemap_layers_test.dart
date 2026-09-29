@@ -143,10 +143,10 @@ void main() {
     await tester.pumpWidget(const MaterialApp(
       home: Scaffold(body: Stack(children: [PdfOverlayLoadingChip()])),
     ));
-    expect(find.text('Memuat peta PDF…'), findsOneWidget);
+    expect(find.text('Loading PDF map…'), findsOneWidget);
     expect(
         find.ancestor(
-            of: find.text('Memuat peta PDF…'),
+            of: find.text('Loading PDF map…'),
             matching: find.byType(IgnorePointer)),
         findsWidgets);
     expect(tester.takeException(), isNull);

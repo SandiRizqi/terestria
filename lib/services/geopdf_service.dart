@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:printing/printing.dart';
 
 import '../utils/app_logger.dart';
+import '../utils/ui_feedback.dart';
 /// Service untuk processing GeoPDF files menggunakan native PDF renderer.
 /// Tidak memerlukan Python atau PyMuPDF.
 class GeoPdfService {
@@ -258,8 +259,8 @@ class GeoPdfService {
         logWarn('⚠️ No georeferencing data found in PDF', tag: 'PDF');
         return {
           'success': false,
-          'message': 'Tidak ada data georeferencing dalam PDF. '
-              'Masukkan koordinat batas secara manual.',
+          'message': 'This PDF has no georeferencing data. '
+              'Enter the corner coordinates manually.',
         };
       }
 
@@ -451,8 +452,8 @@ class GeoPdfService {
         return {
           'success': false,
           'error': 'No georeferencing data found. Please provide coordinates manually.',
-          'message': 'PDF ini tidak mengandung data georeferencing. '
-              'Masukkan koordinat batas secara manual.',
+          'message': 'This PDF has no georeferencing data. '
+              'Enter the corner coordinates manually.',
         };
       }
 
@@ -484,11 +485,12 @@ class GeoPdfService {
             '@ ${dpi ?? 200} DPI - Mobile optimized)',
         'image_size_mb': (await File(overlayImage).length()) / (1024 * 1024),
       };
-    } catch (e) {
+    } catch (e, st) {
       return {
         'success': false,
         'error': e.toString(),
-        'message': 'GeoPDF processing failed: $e',
+        'message': loggedErrorMessage('GeoPDF processing failed', e,
+            stack: st, tag: 'PDF'),
       };
     }
   }

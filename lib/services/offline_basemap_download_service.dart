@@ -6,6 +6,7 @@ import 'tile_download_manager.dart';
 import 'tile_cache_sqlite_service.dart';
 
 import '../utils/app_logger.dart';
+import '../utils/ui_feedback.dart';
 /// Service untuk mengelola bulk download tiles untuk offline use
 class OfflineBasemapDownloadService {
   static final OfflineBasemapDownloadService _instance = OfflineBasemapDownloadService._internal();
@@ -222,7 +223,7 @@ class OfflineBasemapDownloadService {
       logError('❌ Download error: $e', tag: 'BASEMAP');
       logDebug('Stack trace: $stackTrace', tag: 'BASEMAP');
       _isDownloading = false;
-      onError?.call('Download failed: $e');
+      onError?.call('Download failed. ${friendlyErrorMessage(e)}');
     }
   }
 

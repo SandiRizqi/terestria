@@ -13,9 +13,9 @@ import 'attribute_form_sheet.dart';
 
 /// Label status sesi untuk UI.
 String sessionStateLabel(SessionState state) => switch (state) {
-      SessionState.recording => 'Merekam',
-      SessionState.paused => 'Jeda',
-      SessionState.pendingSave => 'Belum disimpan',
+      SessionState.recording => 'Recording',
+      SessionState.paused => 'Paused',
+      SessionState.pendingSave => 'Not saved',
     };
 
 Color sessionStateColor(SessionState state) => switch (state) {
@@ -24,16 +24,16 @@ Color sessionStateColor(SessionState state) => switch (state) {
       SessionState.pendingSave => AppTheme.primaryBlue,
     };
 
-/// Ringkasan banner, mis. "2 merekam · 1 belum disimpan"; null bila kosong.
+/// Ringkasan banner, mis. "2 recording · 1 not saved"; null bila kosong.
 String? activeTrackingBannerText({
   required int recording,
   int paused = 0,
   int pending = 0,
 }) {
   final parts = [
-    if (recording > 0) '$recording merekam',
-    if (paused > 0) '$paused jeda',
-    if (pending > 0) '$pending belum disimpan',
+    if (recording > 0) '$recording recording',
+    if (paused > 0) '$paused paused',
+    if (pending > 0) '$pending not saved',
   ];
   return parts.isEmpty ? null : parts.join(' · ');
 }
@@ -50,14 +50,14 @@ String formatDistance(double meters) => meters < 1000
     ? '${meters.toStringAsFixed(0)} m'
     : '${(meters / 1000).toStringAsFixed(2)} km';
 
-/// "baru saja" / "30 dtk lalu" / "3 mnt lalu" — null bila belum ada titik.
+/// "just now" / "30 s ago" / "3 min ago" — null bila belum ada titik.
 String? lastFixAgo(DateTime? last, DateTime now) {
   if (last == null) return null;
   final d = now.difference(last);
-  if (d.inSeconds < 5) return 'baru saja';
-  if (d.inMinutes < 1) return '${d.inSeconds} dtk lalu';
-  if (d.inHours < 1) return '${d.inMinutes} mnt lalu';
-  return '${d.inHours} jam lalu';
+  if (d.inSeconds < 5) return 'just now';
+  if (d.inMinutes < 1) return '${d.inSeconds} s ago';
+  if (d.inHours < 1) return '${d.inMinutes} min ago';
+  return '${d.inHours} h ago';
 }
 
 /// Urutan panel: merekam → jeda → belum disimpan; terbaru di atas.
@@ -155,7 +155,7 @@ class ActiveTrackingBanner extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const Text('Kelola',
+                    const Text('Manage',
                         style: TextStyle(
                             color: AppTheme.textSecondary,
                             fontSize: 12,
@@ -306,7 +306,7 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
       _manager.pause(s.projectId);
     }
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Gagal menyalakan GPS background. Cek izin lokasi.'),
+      content: Text('Could not start background GPS. Check the location permission.'),
       backgroundColor: AppTheme.errorColor,
     ));
   }
@@ -324,7 +324,7 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
     _manager.stop(s.projectId);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Data "${s.project.name}" tersimpan'),
+        content: Text('Record saved in "${s.project.name}"'),
         backgroundColor: AppTheme.successColor,
       ));
     }
@@ -336,18 +336,18 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Buang sesi tracking?'),
+        title: const Text('Discard this track?'),
         content: Text(
-            '${s.pointCount} titik "${s.project.name}" yang belum disimpan akan hilang.'),
+            '${s.pointCount} unsaved points of "${s.project.name}" will be lost.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
+            child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
-            child: const Text('Buang'),
+            child: const Text('Discard'),
           ),
         ],
       ),
@@ -391,7 +391,7 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Tracking Aktif (${sessions.length})',
+                  Text('Active tracking (${sessions.length})',
                       style: const TextStyle(
                           fontSize: 17, fontWeight: FontWeight.w700)),
                   if (summary != null) ...[
@@ -412,10 +412,10 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
                     Icon(Icons.route_outlined,
                         size: 36, color: AppTheme.textSecondary),
                     SizedBox(height: 8),
-                    Text('Tidak ada project yang sedang tracking.',
+                    Text('No project is tracking right now.',
                         textAlign: TextAlign.center),
                     SizedBox(height: 4),
-                    Text('Mulai tracking dari halaman data collector project.',
+                    Text('Start tracking from a project\'s data collection screen.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             fontSize: 12, color: AppTheme.textSecondary)),
@@ -518,9 +518,9 @@ class _SessionCard extends StatelessWidget {
                   icon: s.source == TrackSource.emlid
                       ? Icons.satellite_alt_outlined
                       : Icons.smartphone,
-                  text: s.source == TrackSource.emlid ? 'RTK' : 'GPS HP',
+                  text: s.source == TrackSource.emlid ? 'RTK' : 'Phone GPS',
                 ),
-                _Metric(icon: Icons.scatter_plot_outlined, text: '${s.pointCount} titik'),
+                _Metric(icon: Icons.scatter_plot_outlined, text: '${s.pointCount} point${s.pointCount == 1 ? '' : 's'}'),
                 _Metric(
                     icon: Icons.straighten, text: formatDistance(s.distanceMeters)),
                 _Metric(
@@ -548,18 +548,18 @@ class _SessionCard extends StatelessWidget {
                               : Icons.play_arrow_rounded,
                           size: 18),
                       const SizedBox(width: 4),
-                      Text(s.isRecording ? 'Jeda' : 'Lanjutkan'),
+                      Text(s.isRecording ? 'Pause' : 'Resume'),
                     ],
                   ),
                 ),
                 TextButton(
                   key: ValueKey('open-$id'),
                   onPressed: onOpen,
-                  child: const Text('Buka'),
+                  child: const Text('Open'),
                 ),
                 IconButton(
                   key: ValueKey('discard-$id'),
-                  tooltip: 'Buang',
+                  tooltip: 'Discard',
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.delete_outline_rounded,
                       size: 20, color: AppTheme.errorColor),
@@ -570,7 +570,7 @@ class _SessionCard extends StatelessWidget {
                   onPressed: onSave,
                   icon: Icon(s.pendingSave ? Icons.save_outlined : Icons.stop_rounded,
                       size: 16),
-                  label: Text(s.pendingSave ? 'Simpan' : 'Stop & Simpan'),
+                  label: Text(s.pendingSave ? 'Save' : 'Stop & save'),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppTheme.primaryGreen,
                     visualDensity: VisualDensity.compact,

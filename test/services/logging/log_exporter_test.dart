@@ -38,11 +38,11 @@ void main() {
       serviceRunning: false,
       status: {'permission_locationAlways': 'PermissionStatus.denied'},
     );
-    expect(text, contains('Engine: aktif'));
-    expect(text, contains('Service background: MATI'));
-    expect(text, contains('"Jalan A" recording sumber=phone polygon titik=1'));
-    expect(text, contains('titik terakhir 5 dtk lalu'));
-    expect(text, contains('"Blok B" pendingSave sumber=emlid'));
+    expect(text, contains('Engine: active'));
+    expect(text, contains('Background service: STOPPED'));
+    expect(text, contains('"Jalan A" recording source=phone polygon points=1'));
+    expect(text, contains('last point 5 s ago'));
+    expect(text, contains('"Blok B" pendingSave source=emlid'));
     expect(text, contains('permission_locationAlways: PermissionStatus.denied'));
   });
 
@@ -56,8 +56,8 @@ void main() {
       gpsSettings: {'distanceFilterMeters': 2.0, 'trackingIntervalMs': 1000},
     );
     expect(text, contains('OS: android 14 (API 34)'));
-    expect(text, contains('Provider GPS: phone'));
-    expect(text, contains('Versi DB: 5'));
+    expect(text, contains('GPS provider: phone'));
+    expect(text, contains('DB version: 5'));
     expect(text, contains('distanceFilterMeters = 2.0'));
   });
 

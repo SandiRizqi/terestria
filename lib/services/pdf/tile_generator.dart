@@ -7,6 +7,7 @@ import 'pdf_georef_extractor.dart';
 import '../tile_cache_sqlite_service.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 class TileGeneratorConfig {
   final int? minZoom;
   final int? maxZoom;
@@ -103,7 +104,7 @@ class TileGenerator {
 
       onProgress(1.0, 'Complete!');
     } catch (e) {
-      onProgress(-1.0, 'Error: ${e.toString()}');
+      onProgress(-1.0, 'Failed. ${friendlyErrorMessage(e)}');
       rethrow;
     }
   }

@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart' show friendlyErrorMessage;
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/analysis/analysis_file_model.dart';
@@ -149,8 +152,9 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
   }
 
   String _friendlyError(Object e) {
+    logWarn('Analysis files: loading failed', tag: 'ANALYSIS', error: e);
     if (e is AnalysisApiException) return e.message;
-    return 'Gagal memuat data. Periksa koneksi Anda.';
+    return 'Could not load the data. ${friendlyErrorMessage(e)}';
   }
 
   /// Unduh PDF file → proses jadi overlay basemap → simpan. Butuh online.
@@ -159,13 +163,13 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
     final online = await ConnectivityService().checkConnection();
     if (!mounted) return;
     if (!online) {
-      _showSnack('Perlu koneksi internet untuk menambahkan basemap',
+      _showSnack('An internet connection is needed to add a basemap.',
           isError: true);
       return;
     }
 
     final name = analysisBasemapName(widget.projectName, file.title);
-    final status = ValueNotifier<String>('Mengunduh PDF...');
+    final status = ValueNotifier<String>('Downloading PDF…');
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -185,7 +189,7 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
         pdfPath: pdfPath,
         pdfStatus: PdfProcessingStatus.processing,
         processingProgress: 0.0,
-        processingMessage: 'Memproses...',
+        processingMessage: 'Processing…',
         createdAt: DateTime.now(),
       );
       await _basemapService.saveBasemap(base);
@@ -199,7 +203,7 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
 
       if (!mounted) return;
       Navigator.pop(context); // tutup dialog progress
-      _showSnack('Basemap "$name" berhasil ditambahkan');
+      _showSnack('Basemap "$name" added');
     } on TimeoutException catch (e) {
       await _cleanupFailed(basemapId);
       if (!mounted) return;
@@ -221,12 +225,12 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
     final online = await ConnectivityService().checkConnection();
     if (!mounted) return;
     if (!online) {
-      _showSnack('Perlu koneksi internet untuk membagikan file',
+      _showSnack('An internet connection is needed to share the file.',
           isError: true);
       return;
     }
 
-    final status = ValueNotifier<String>('Menyiapkan file...');
+    final status = ValueNotifier<String>('Preparing the file…');
     var dialogOpen = true;
     void closeDialog() {
       if (dialogOpen && mounted) {
@@ -267,9 +271,10 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
   }
 
   String _shareError(Object e) {
+    logWarn('Analysis files: sharing failed', tag: 'ANALYSIS', error: e);
     if (e is AnalysisDownloadException) return e.message;
     if (e is AnalysisApiException) return e.message;
-    return 'Gagal membagikan file: $e';
+    return 'Could not share the file. ${friendlyErrorMessage(e)}';
   }
 
   /// Hapus record processing bila proses gagal (agar tidak jadi sampah).
@@ -283,10 +288,11 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
   }
 
   String _addBasemapError(Object e) {
+    logWarn('Analysis files: adding basemap failed', tag: 'ANALYSIS', error: e);
     if (e is AnalysisDownloadException) return e.message;
     if (e is PdfBasemapImportException) return e.message;
     if (e is AnalysisApiException) return e.message;
-    return 'Gagal menambahkan basemap: $e';
+    return 'Could not add the basemap. ${friendlyErrorMessage(e)}';
   }
 
   void _showSnack(String message, {bool isError = false}) {
@@ -331,7 +337,7 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
         controller: _searchController,
         onChanged: _onSearchChanged,
         decoration: InputDecoration(
-          hintText: 'Cari file (judul / blok)...',
+          hintText: 'Search files (title / block)…',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
@@ -392,7 +398,7 @@ class _EmptyView extends StatelessWidget {
         const SizedBox(height: 12),
         const Center(
           child: Text(
-            'Belum ada file untuk PT ini',
+            'No files for this company yet',
             style: TextStyle(fontSize: 15, color: Colors.grey),
           ),
         ),
@@ -475,7 +481,7 @@ class _ErrorView extends StatelessWidget {
           child: ElevatedButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label: const Text('Coba lagi'),
+            label: const Text('Try again'),
           ),
         ),
       ],

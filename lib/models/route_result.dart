@@ -109,19 +109,19 @@ class RouteInstruction {
   /// Localized direction label mapped from sign
   String get directionLabel {
     switch (sign) {
-      case TurnSign.uTurn:             return 'Putar Balik';
-      case TurnSign.keepLeft:          return 'Jaga Kiri';
-      case TurnSign.turnSharpLeft:     return 'Belok Tajam Kiri';
-      case TurnSign.turnLeft:          return 'Belok Kiri';
-      case TurnSign.turnSlightLeft:    return 'Sedikit ke Kiri';
-      case TurnSign.continueOnStreet:  return 'Lurus';
-      case TurnSign.turnSlightRight:   return 'Sedikit ke Kanan';
-      case TurnSign.turnRight:         return 'Belok Kanan';
-      case TurnSign.turnSharpRight:    return 'Belok Tajam Kanan';
-      case TurnSign.finish:            return 'Tiba di Tujuan';
-      case TurnSign.reachedVia:        return 'Melewati Waypoint';
-      case TurnSign.keepRight:         return 'Jaga Kanan';
-      default:                         return text.isNotEmpty ? text : 'Lanjutkan';
+      case TurnSign.uTurn:             return 'Make a U-turn';
+      case TurnSign.keepLeft:          return 'Keep left';
+      case TurnSign.turnSharpLeft:     return 'Sharp left';
+      case TurnSign.turnLeft:          return 'Turn left';
+      case TurnSign.turnSlightLeft:    return 'Slight left';
+      case TurnSign.continueOnStreet:  return 'Continue straight';
+      case TurnSign.turnSlightRight:   return 'Slight right';
+      case TurnSign.turnRight:         return 'Turn right';
+      case TurnSign.turnSharpRight:    return 'Sharp right';
+      case TurnSign.finish:            return 'Arrive at destination';
+      case TurnSign.reachedVia:        return 'Pass the waypoint';
+      case TurnSign.keepRight:         return 'Keep right';
+      default:                         return text.isNotEmpty ? text : 'Continue';
     }
   }
 }
@@ -209,8 +209,8 @@ class RouteResult {
 
   String get formattedTime {
     final minutes = time ~/ 60000;
-    if (minutes < 60) return '$minutes menit';
-    return '${minutes ~/ 60}j ${minutes % 60}m';
+    if (minutes < 60) return '$minutes min';
+    return '${minutes ~/ 60} h ${minutes % 60} min';
   }
 
   /// Remaining distance from a given point index (meters)

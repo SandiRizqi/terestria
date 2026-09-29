@@ -20,6 +20,7 @@ import '../../services/connectivity_service.dart';
 import '../../widgets/basemap/cloud_basemap_dialog.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 class BasemapManagementScreen extends StatefulWidget {
   const BasemapManagementScreen({Key? key}) : super(key: key);
 
@@ -258,7 +259,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         if (isShowingDialog) {
           Navigator.of(context).popUntil((route) => route.isFirst || !route.navigator!.canPop());
         }
-        _showError('Error: ${e.toString()}');
+        _showError(friendlyErrorMessage(e));
       }
     }
   }
@@ -362,7 +363,8 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
     } catch (e, stackTrace) {
       logError('❌ Processing error: $e', tag: 'BASEMAP');
       logDebug('Stack trace: $stackTrace', tag: 'BASEMAP');
-      await _markPdfFailed(basemapId, basemap, '❌ Error: ${e.toString()}');
+      await _markPdfFailed(
+          basemapId, basemap, 'Processing failed. ${friendlyErrorMessage(e)}');
     }
   }
 

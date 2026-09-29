@@ -42,11 +42,11 @@ Map<String, dynamic> shapefileToGeoJson({
 List<Map<String, dynamic>?> readShpGeometries(Uint8List shp,
     {CoordTransform? transform}) {
   if (shp.length < 100) {
-    throw const LayerImportException('Berkas .shp rusak (terlalu pendek)');
+    throw const LayerImportException('The .shp file is damaged (too short)');
   }
   final bd = ByteData.sublistView(shp);
   if (bd.getInt32(0, Endian.big) != 9994) {
-    throw const LayerImportException('Berkas .shp tidak valid');
+    throw const LayerImportException('The .shp file is not valid');
   }
   final tf = transform ?? (double x, double y) => [x, y];
 
@@ -57,7 +57,7 @@ List<Map<String, dynamic>?> readShpGeometries(Uint8List shp,
     final start = pos + 8;
     if (len < 4 || start + len > shp.length) {
       throw const LayerImportException(
-          'Berkas .shp terpotong / rusak (record tak lengkap)');
+          'The .shp file is truncated or damaged (incomplete record)');
     }
     out.add(_record(ByteData.sublistView(shp, start, start + len), tf));
     pos = start + len;

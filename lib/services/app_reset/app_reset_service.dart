@@ -140,13 +140,13 @@ List<AppResetStep> standardResetSteps() => [
 /// boleh menggagalkan reset bagian lain.
 Future<void> _resetAccountState() async {
   final parts = <String, Future<void> Function()>{
-    'token FCM tercatat': () async => FCMTokenService().forgetRegisteredToken(),
-    'graf routing': () async => RoutingService().resetForLogout(),
-    'auth token FCM': () async => FirebaseMessagingService().clearAuthToken(),
-    'topic notifikasi': () => NotificationTopicService()
+    'registered FCM token': () async => FCMTokenService().forgetRegisteredToken(),
+    'routing graph': () async => RoutingService().resetForLogout(),
+    'FCM auth token': () async => FirebaseMessagingService().clearAuthToken(),
+    'notification topics': () => NotificationTopicService()
         .resetForLogout()
         .timeout(const Duration(seconds: 8)),
-    'user Crashlytics': () => CrashlyticsService.instance.clearUser(),
+    'Crashlytics user': () => CrashlyticsService.instance.clearUser(),
   };
   await _runParts(parts);
 }
@@ -184,7 +184,7 @@ Future<void> _runParts(Map<String, Future<void> Function()> parts) async {
       logWarn('Reset ${e.key} gagal: $err', tag: 'RESET');
     }
   }
-  if (failed.isNotEmpty) throw StateError('gagal: ${failed.join(', ')}');
+  if (failed.isNotEmpty) throw StateError('failed: ${failed.join(', ')}');
 }
 
 /// Hapus isi [dir] (bukan folder-nya). [only] membatasi ke nama entri

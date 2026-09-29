@@ -55,12 +55,12 @@ class _BasemapSelectorSheetState extends State<BasemapSelectorSheet> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'Pilih Basemap',
+                  'Choose basemap',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 TextButton.icon(
                   icon: const Icon(Icons.settings_rounded, size: 16),
-                  label: const Text('Kelola'),
+                  label: const Text('Manage'),
                   style: TextButton.styleFrom(
                     foregroundColor: AppTheme.primaryGreen,
                     visualDensity: VisualDensity.compact,
@@ -90,7 +90,7 @@ class _BasemapSelectorSheetState extends State<BasemapSelectorSheet> {
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
                   child: Text(
-                    'Belum ada basemap tersedia.\nTambahkan melalui tombol "Kelola".',
+                    'No basemaps yet.\nAdd one with the "Manage" button.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
                   ),

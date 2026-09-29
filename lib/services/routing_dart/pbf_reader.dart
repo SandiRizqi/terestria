@@ -124,7 +124,7 @@ Uint8List _inflateBlob(Uint8List b, int start, int end) {
         r.skip(tag & 7);
     }
   }
-  throw OsmPbfException('Blob tanpa raw/zlib_data');
+  throw OsmPbfException('Blob without raw/zlib_data');
 }
 
 // ─── PrimitiveBlock ──────────────────────────────────────────────────────────
@@ -324,7 +324,7 @@ class _Proto {
     var shift = 0;
     var result = 0;
     while (true) {
-      if (pos >= end) throw OsmPbfException('varint melewati batas');
+      if (pos >= end) throw OsmPbfException('varint past the end of the buffer');
       final byte = b[pos++];
       result |= (byte & 0x7f) << shift;
       if ((byte & 0x80) == 0) break;
@@ -338,7 +338,7 @@ class _Proto {
     final len = readVarint();
     final s = pos;
     final e = pos + len;
-    if (e > end) throw OsmPbfException('length-delimited melewati batas');
+    if (e > end) throw OsmPbfException('length-delimited field past the end of the buffer');
     pos = e;
     return [s, e];
   }
@@ -375,8 +375,8 @@ class _Proto {
         pos += 4;
         break;
       default:
-        throw OsmPbfException('wire type tak didukung: $wireType');
+        throw OsmPbfException('unsupported wire type: $wireType');
     }
-    if (pos > end) throw OsmPbfException('skip melewati batas');
+    if (pos > end) throw OsmPbfException('skip past the end of the buffer');
   }
 }

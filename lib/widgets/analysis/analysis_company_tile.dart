@@ -55,14 +55,14 @@ class AnalysisCompanyTile extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       company.compGroup.isNotEmpty
-                          ? '${company.compGroup} • ${company.fileCount} file'
-                          : '${company.fileCount} file',
+                          ? '${company.compGroup} • ${company.fileCount} file${company.fileCount == 1 ? '' : 's'}'
+                          : '${company.fileCount} file${company.fileCount == 1 ? '' : 's'}',
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                     if (updated.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'Diperbarui $updated',
+                        'Updated $updated',
                         style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                       ),
                     ],

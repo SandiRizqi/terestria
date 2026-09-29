@@ -11,7 +11,7 @@ import 'layer_importer.dart';
 /// dicoba UTF-8 lalu Latin-1 bila bukan UTF-8 valid.
 List<Map<String, dynamic>?> readDbf(Uint8List bytes, {String? cpg}) {
   if (bytes.length < 33) {
-    throw const LayerImportException('Berkas .dbf rusak (terlalu pendek)');
+    throw const LayerImportException('The .dbf file is damaged (too short)');
   }
   final bd = ByteData.sublistView(bytes);
   final count = bd.getUint32(4, Endian.little);
@@ -31,7 +31,7 @@ List<Map<String, dynamic>?> readDbf(Uint8List bytes, {String? cpg}) {
     offset += f.length;
   }
   if (fields.isEmpty || recordLen <= 0) {
-    throw const LayerImportException('Berkas .dbf tidak berisi kolom');
+    throw const LayerImportException('The .dbf file has no columns');
   }
 
   final rows = <Map<String, dynamic>?>[];
