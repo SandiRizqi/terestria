@@ -105,9 +105,10 @@ class PhotoSyncService {
       : _apiService = apiService ?? ApiService();
 
   /// Batas jumlah upload foto yang berjalan bersamaan dalam satu record.
-  /// Cukup untuk mempercepat record berfoto banyak tanpa membanjiri jaringan
-  /// lapangan atau memicu rate-limit OSS.
-  static const int maxConcurrentUploads = 3;
+  /// Dua cukup untuk mempercepat record berfoto banyak; lebih dari itu
+  /// membagi bandwidth sinyal lapangan yang sempit sehingga setiap upload
+  /// lebih lambat dan lebih mudah timeout.
+  static const int maxConcurrentUploads = 2;
 
   /// Kembalikan daftar foto pada [formData] yang belum ter-upload ke OSS,
   /// yaitu item foto dengan `serverKey == null` dan `localPath` bukan URL http.
@@ -176,10 +177,13 @@ class PhotoSyncService {
         return null;
       }
 
-      // Upload file
+      // Upload file — batas waktu mengikuti ukuran file (foto besar di
+      // sinyal lemah tak lagi pasti gagal di 120 dtk).
+      final size = await file.length();
       final response = await _apiService.uploadFile(
         '${ApiConfig.baseUrl}/uploadfile/',
         file,
+        timeout: ApiConfig.uploadTimeoutFor(size),
       );
 
       if (response != null && response['success'] == true) {
@@ -189,10 +193,12 @@ class PhotoSyncService {
         };
       }
 
-      logWarn('Upload failed: $response', tag: 'SYNC');
+      logWarn('Photo upload rejected for ${localPath.split('/').last}: '
+          '$response', tag: 'SYNC');
       return null;
-    } catch (e) {
-      logWarn('Error uploading photo: $e', tag: 'SYNC');
+    } catch (e, st) {
+      logWarn('Error uploading photo ${localPath.split('/').last}',
+          tag: 'SYNC', error: e, stack: st);
       return null;
     }
   }

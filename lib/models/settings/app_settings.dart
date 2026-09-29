@@ -80,7 +80,7 @@ class AppSettings {
     this.lineWidth = 3.0,
     this.polygonOpacity = 0.3,
     this.darkMode = false,
-    this.photoWatermark = true,
+    this.photoWatermark = false,
     this.maxConcurrentTracking = minConcurrentTracking,
   });
 

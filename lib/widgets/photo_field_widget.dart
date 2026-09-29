@@ -1,5 +1,9 @@
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -10,7 +14,34 @@ import 'package:geoform_app/config/api_config.dart';
 import 'package:geoform_app/services/crashlytics_service.dart';
 import 'package:geoform_app/services/settings_service.dart';
 
+import '../models/geo_data_model.dart';
+import '../services/device_health_service.dart';
 import '../utils/app_logger.dart';
+import '../utils/ui_feedback.dart';
+
+/// Data untuk encode JPEG di isolate (lihat [_encodeJpegRgba]).
+class _JpegJob {
+  final int width;
+  final int height;
+  final Uint8List rgba;
+  final int quality;
+  const _JpegJob(this.width, this.height, this.rgba, this.quality);
+}
+
+/// Encode piksel RGBA → JPEG. Top-level agar bisa dijalankan via `compute`
+/// (encode 1920×1080 memakan ratusan ms — jangan di thread UI).
+Uint8List _encodeJpegRgba(_JpegJob job) {
+  final image = img.Image.fromBytes(
+    width: job.width,
+    height: job.height,
+    bytes: job.rgba.buffer,
+    bytesOffset: job.rgba.offsetInBytes,
+    numChannels: 4,
+    order: img.ChannelOrder.rgba,
+  );
+  return img.encodeJpg(image, quality: job.quality);
+}
+
 /// Photo metadata for form data
 class PhotoData {
   final String name;
@@ -80,6 +111,9 @@ class PhotoFieldWidget extends StatefulWidget {
   final double? latitude;
   final double? longitude;
 
+  /// Posisi terkini saat shutter ditekan (diutamakan untuk watermark).
+  final GeoPoint? Function()? locationProvider;
+
   // ── Static flag so DataCollectionScreen knows not to restart streams ──
   // while the camera is open (P2 fix)
   static bool isCameraActive = false;
@@ -96,6 +130,7 @@ class PhotoFieldWidget extends StatefulWidget {
     this.username,
     this.latitude,
     this.longitude,
+    this.locationProvider,
   }) : super(key: key);
 
   @override
@@ -302,7 +337,26 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       await photoDir.create(recursive: true);
     }
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final newPath = '${photoDir.path}/IMG_$timestamp.png';
+
+    // Tanpa watermark: salin file kamera apa adanya (JPEG ±300–600 KB, EXIF
+    // utuh). Dulu selalu di-encode ulang ke PNG (±5–10× lebih besar) sehingga
+    // upload di sinyal lemah terus timeout.
+    if (!SettingsService().settings.photoWatermark) {
+      final dot = tempPath.lastIndexOf('.');
+      final ext = dot >= 0 && tempPath.length - dot <= 5
+          ? tempPath.substring(dot).toLowerCase()
+          : '.jpg';
+      final copied =
+          await File(tempPath).copy('${photoDir.path}/IMG_$timestamp$ext');
+      logDebug('✅ Photo saved: ${copied.path}', tag: 'PHOTO');
+      return copied.path;
+    }
+
+    final newPath = '${photoDir.path}/IMG_$timestamp.jpg';
+    // Posisi saat shutter ditekan (bukan saat form dibuka).
+    final loc = widget.locationProvider?.call();
+    final latitude = loc?.latitude ?? widget.latitude;
+    final longitude = loc?.longitude ?? widget.longitude;
 
     // Decode source image
     final bytes = await File(tempPath).readAsBytes();
@@ -324,10 +378,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       // Draw original image
       canvas.drawImage(original, Offset.zero, Paint());
 
-      // Watermark opsional — hanya distempel bila diaktifkan di Settings
-      // (default nonaktif). Bila nonaktif, foto tetap di-encode ulang ke PNG
-      // di jalur yang sama tanpa kartu watermark.
-      if (SettingsService().settings.photoWatermark) {
+      // Watermark (diaktifkan di Settings) — jalur tanpa watermark sudah
+      // kembali lebih awal dengan menyalin file asli.
+      {
       // ─────────────────────────────────────────────────────────
       // Premium watermark card (bottom-left) with Terestria logo
       // ─────────────────────────────────────────────────────────
@@ -476,9 +529,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
 
       // Metadata rows: label (green) + value (white).
       final rows = <List<String>>[
-        ['Lat', fmtLat(widget.latitude)],
-        ['Lng', fmtLng(widget.longitude)],
-        ['Waktu', '$dateStr  $timeStr'],
+        ['Lat', fmtLat(latitude)],
+        ['Lng', fmtLng(longitude)],
+        ['Time', '$dateStr  $timeStr'],
         ['Surveyor',
             '${widget.username ?? 'Unknown'}   ·   ID ${_deviceId ?? 'N/A'}'],
       ];
@@ -490,7 +543,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
             weight: FontWeight.w600, maxWidth: cardW - pad * 2 - labelW);
         cy += lineH;
       }
-      } // end if(photoWatermark)
+      } // end watermark
 
       // ── Render & export ──
       final picture = recorder.endRecording();
@@ -501,12 +554,19 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
 
       try {
         final byteData =
-            await finalImage.toByteData(format: ui.ImageByteFormat.png);
-        await File(newPath)
-            .writeAsBytes(byteData!.buffer.asUint8List());
-        logDebug('✅ Photo saved'
-            '${SettingsService().settings.photoWatermark ? ' with watermark' : ''}'
-            ': $newPath', tag: 'PHOTO');
+            await finalImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (byteData == null) {
+          throw StateError('Could not read watermarked image pixels');
+        }
+        // JPEG (bukan PNG) & encode di isolate agar UI tak tersendat.
+        final jpeg = await compute(
+          _encodeJpegRgba,
+          _JpegJob(finalImage.width, finalImage.height,
+              byteData.buffer.asUint8List(), 88),
+        );
+        await File(newPath).writeAsBytes(jpeg, flush: true);
+        logDebug('✅ Photo saved with watermark: $newPath '
+            '(${(jpeg.length / 1024).round()} KB)', tag: 'PHOTO');
         return newPath;
       } finally {
         finalImage.dispose();
@@ -529,6 +589,10 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       );
       return;
     }
+
+    // Penyimpanan hampir penuh → foto bisa gagal disimpan; tanya dulu.
+    if (!await confirmStorageFor(context, action: 'Taking photos')) return;
+    if (!mounted) return;
 
     try {
       // P2: Set flags BEFORE opening camera
@@ -582,9 +646,8 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       crashlytics.recordError(e, stack, reason: 'Photo: takePhoto failed');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error taking photo: $e')),
-        );
+        showErrorFeedback(context, 'Could not take the photo',
+            error: e, stack: stack, tag: 'PHOTO', log: false);
       }
     }
   }
@@ -602,6 +665,10 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       );
       return;
     }
+
+    // Penyimpanan hampir penuh → foto bisa gagal disimpan; tanya dulu.
+    if (!await confirmStorageFor(context, action: 'Adding photos')) return;
+    if (!mounted) return;
 
     try {
       // P2: flag for gallery too (gallery picker can also cause lifecycle changes)
@@ -652,9 +719,8 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       crashlytics.recordError(e, stack, reason: 'Photo: pickFromGallery failed');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error picking photo: $e')),
-        );
+        showErrorFeedback(context, 'Could not add the photo',
+            error: e, stack: stack, tag: 'PHOTO', log: false);
       }
     }
   }
