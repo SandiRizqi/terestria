@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:geoform_app/theme/app_theme.dart';
 import 'dart:io';
@@ -24,6 +25,8 @@ import '../../services/project_template_service.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
+import '../../services/export/geo_export.dart';
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
 
@@ -495,92 +498,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
 
-  /// Convert GeoData ke GeoJSON Feature Collection.
-  /// Mengambil dari [_filteredGeoDataList] supaya export ikut filter aktif.
-  Map<String, dynamic> _exportAsGeoJSON() {
-    List<Map<String, dynamic>> features = [];
-
-    for (var geoData in _filteredGeoDataList) {
-      // Determine geometry type and coordinates based on project geometry type
-      String geometryType;
-      dynamic coordinates;
-      
-      if (_currentProject.geometryType == GeometryType.point) {
-        geometryType = 'Point';
-        if (geoData.points.isNotEmpty) {
-          final point = geoData.points.first;
-          coordinates = [point.longitude, point.latitude];
-          if (point.altitude != null) {
-            coordinates.add(point.altitude);
-          }
-        } else {
-          coordinates = [0.0, 0.0]; // Default jika tidak ada point
-        }
-      } else if (_currentProject.geometryType == GeometryType.line) {
-        geometryType = 'LineString';
-        coordinates = geoData.points.map((point) {
-          List<double> coord = [point.longitude, point.latitude];
-          if (point.altitude != null) {
-            coord.add(point.altitude!);
-          }
-          return coord;
-        }).toList();
-      } else { // Polygon
-        geometryType = 'Polygon';
-        // GeoJSON Polygon requires array of LinearRings (first is exterior, rest are holes)
-        // Each LinearRing must be closed (first point = last point)
-        List<List<double>> ring = geoData.points.map((point) {
-          List<double> coord = [point.longitude, point.latitude];
-          if (point.altitude != null) {
-            coord.add(point.altitude!);
-          }
-          return coord;
-        }).toList();
-        
-        // Close the ring if not already closed
-        if (ring.isNotEmpty && ring.first != ring.last) {
-          ring.add(ring.first);
-        }
-        
-        coordinates = [ring]; // Wrap in array for Polygon format
-      }
-      
-      // Create properties from formData
-      Map<String, dynamic> properties = {
-        'id': geoData.id,
-        'createdAt': geoData.createdAt.toIso8601String(),
-        'updatedAt': geoData.updatedAt.toIso8601String(),
-        'isSynced': geoData.isSynced,
-      };
-      
-      // Add form data to properties
-      properties.addAll(geoData.formData);
-      
-      // Create GeoJSON feature
-      features.add({
-        'type': 'Feature',
-        'geometry': {
-          'type': geometryType,
-          'coordinates': coordinates,
-        },
-        'properties': properties,
-      });
-    }
-    
-    // Create GeoJSON Feature Collection
-    return {
-      'type': 'FeatureCollection',
-      'name': _currentProject.name,
-      'crs': {
-        'type': 'name',
-        'properties': {
-          'name': 'urn:ogc:def:crs:OGC:1.3:CRS84'
-        }
-      },
-      'features': features,
-    };
-  }
-
   /// Tampilkan bottom sheet pilihan format export (GeoJSON / CSV).
   Future<void> _exportData() async {
     final exportCount = _filteredGeoDataList.length;
@@ -588,16 +505,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
     if (_geoDataList.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(children: [
-              Icon(Icons.warning, color: Colors.white),
-              SizedBox(width: 8),
-              Text('Tidak ada data untuk diekspor'),
-            ]),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        showInfoFeedback(context, 'There is no data to export yet.',
+            warning: true);
       }
       return;
     }
@@ -639,8 +548,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               const SizedBox(height: 4),
               Text(
                 isFiltered
-                    ? '$exportCount record (dari filter aktif)'
-                    : '$exportCount record (semua data)',
+                    ? '$exportCount records (current filter)'
+                    : '$exportCount records (all data)',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
 
@@ -653,7 +562,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 icon: Icons.location_on_rounded,
                 iconColor: Colors.blue.shade700,
                 title: 'GeoJSON',
-                subtitle: 'Format standar geospasial — bisa dibuka di QGIS, ArcGIS, dll.',
+                subtitle: 'Standard GIS format — opens in QGIS, ArcGIS, etc.',
                 onTap: () {
                   Navigator.pop(ctx);
                   _doExportGeoJSON();
@@ -667,7 +576,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 icon: Icons.table_chart_rounded,
                 iconColor: Colors.green.shade700,
                 title: 'CSV',
-                subtitle: 'Tabular — bisa dibuka di Excel, Google Sheets, dll.',
+                subtitle: 'Table — opens in Excel, Google Sheets, etc.',
                 onTap: () {
                   Navigator.pop(ctx);
                   _doExportCSV();
@@ -731,222 +640,115 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
-  /// Jalankan export GeoJSON ke file
+  /// Simpan hasil ekspor lewat dialog file sistem. `false` bila dibatalkan.
+  Future<bool> _saveExportFile({
+    required String content,
+    required String extension,
+    required List<String> allowedExtensions,
+    required String dialogTitle,
+  }) async {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final projectName = _currentProject.name
+        .replaceAll(RegExp(r'[^\w\s-]'), '')
+        .replaceAll(' ', '_');
+    final fileName = '${projectName}_$timestamp.$extension';
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: dialogTitle,
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: allowedExtensions,
+        bytes: Uint8List.fromList(utf8.encode(content)),
+      );
+      return path != null;
+    }
+    var path = await FilePicker.platform.saveFile(
+      dialogTitle: dialogTitle,
+      fileName: fileName,
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions,
+    );
+    if (path == null) return false;
+    final lower = path.toLowerCase();
+    if (!allowedExtensions.any((e) => lower.endsWith('.$e'))) {
+      path += '.$extension';
+    }
+    await File(path).writeAsString(content, flush: true);
+    return true;
+  }
+
+  /// Export GeoJSON (ikut filter aktif). Record tanpa geometri valid
+  /// dilewati & dilaporkan — dulu diekspor ke [0,0] ("Null Island").
   Future<void> _doExportGeoJSON() async {
+    final records = List<GeoData>.of(_filteredGeoDataList);
+    final project = _currentProject;
     try {
-      final geoJsonData = _exportAsGeoJSON();
-      final jsonString = const JsonEncoder.withIndent('  ').convert(geoJsonData);
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final projectName = _currentProject.name
-          .replaceAll(RegExp(r'[^\w\s-]'), '')
-          .replaceAll(' ', '_');
-      final fileName = '${projectName}_$timestamp.geojson';
-      final bytes = Uint8List.fromList(utf8.encode(jsonString));
-
-      String? outputPath;
-      if (Platform.isAndroid || Platform.isIOS) {
-        outputPath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Simpan GeoJSON',
-          fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: ['geojson', 'json'],
-          bytes: bytes,
-        );
-      } else {
-        outputPath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Simpan GeoJSON',
-          fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: ['geojson', 'json'],
-        );
-        if (outputPath != null) {
-          if (!outputPath.toLowerCase().endsWith('.geojson') &&
-              !outputPath.toLowerCase().endsWith('.json')) {
-            outputPath += '.geojson';
-          }
-          await File(outputPath).writeAsString(jsonString);
-        }
+      // Encode di isolate: ribuan titik track bisa membekukan UI.
+      final (json, features, skipped) = await compute(_encodeGeoJsonExport,
+          (project: project, records: records));
+      if (!mounted) return;
+      if (features == 0) {
+        showInfoFeedback(
+            context,
+            'Nothing to export: none of the ${records.length} records has '
+            'a valid geometry.',
+            warning: true);
+        return;
       }
-
-      if (outputPath == null || !mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'GeoJSON tersimpan — ${_filteredGeoDataList.length} features',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ]),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
-        ),
+      final saved = await _saveExportFile(
+        content: json,
+        extension: 'geojson',
+        allowedExtensions: const ['geojson', 'json'],
+        dialogTitle: 'Save GeoJSON',
       );
-    } catch (e) {
+      if (!saved) return;
+      logInfo(
+          'Exported GeoJSON "${project.name}": $features features'
+          '${skipped.isEmpty ? '' : ', skipped ${skipped.length} without '
+              'geometry: ${skipped.take(10).join(', ')}'}',
+          tag: 'EXPORT');
+      if (!mounted) return;
+      showInfoFeedback(
+        context,
+        skipped.isEmpty
+            ? 'GeoJSON saved — $features features'
+            : 'GeoJSON saved — $features features. ${skipped.length} '
+                'record(s) without a valid geometry were skipped.',
+        success: skipped.isEmpty,
+        warning: skipped.isNotEmpty,
+      );
+    } catch (e, st) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal export GeoJSON: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showErrorFeedback(context, 'Could not export GeoJSON',
+            error: e, stack: st, tag: 'EXPORT');
       }
     }
   }
 
-  /// Build CSV string dari _filteredGeoDataList.
-  ///
-  /// Kolom:
-  ///   id, latitude, longitude, altitude, point_count,
-  ///   created_at, collected_by,
-  ///   [label field 1], [label field 2], ...
-  ///
-  /// Field photo: ditulis sebagai jumlah foto (misal "2 photos").
-  /// Nilai yang mengandung koma atau newline dibungkus tanda kutip ganda.
-  String _buildCSV() {
-    // Field non-photo untuk kolom dinamis
-    final dynamicFields = _currentProject.formFields
-        .where((f) => f.type != FieldType.photo)
-        .toList();
-
-    // Photo fields (untuk menghitung jumlah foto)
-    final photoFields = _currentProject.formFields
-        .where((f) => f.type == FieldType.photo)
-        .toList();
-
-    // Helper: escape nilai CSV
-    String csvEscape(dynamic value) {
-      if (value == null) return '';
-      final str = value.toString();
-      if (str.contains(',') || str.contains('"') || str.contains('\n')) {
-        return '"${str.replaceAll('"', '""')}"';
-      }
-      return str;
-    }
-
-    // Header row
-    final headerParts = <String>[
-      'id',
-      'latitude',
-      'longitude',
-      'altitude',
-      'point_count',
-      'created_at',
-      'collected_by',
-      ...dynamicFields.map((f) => csvEscape(f.label)),
-      ...photoFields.map((f) => csvEscape('${f.label}_jumlah_foto')),
-    ];
-    final buffer = StringBuffer();
-    buffer.writeln(headerParts.join(','));
-
-    // Data rows
-    for (final geoData in _filteredGeoDataList) {
-      // Koordinat — ambil titik pertama untuk lat/lon/alt
-      double? lat, lon, alt;
-      if (geoData.points.isNotEmpty) {
-        final first = geoData.points.first;
-        lat = first.latitude;
-        lon = first.longitude;
-        alt = first.altitude;
-      }
-
-      final row = <String>[
-        csvEscape(geoData.id),
-        csvEscape(lat),
-        csvEscape(lon),
-        csvEscape(alt),
-        csvEscape(geoData.points.length),
-        csvEscape(geoData.createdAt.toIso8601String()),
-        csvEscape(geoData.collectedBy ?? ''),
-        // Nilai dinamis
-        ...dynamicFields.map((f) {
-          final val = geoData.formData[f.label];
-          if (f.type == FieldType.checkbox) {
-            return csvEscape(val == true || val.toString().toLowerCase() == 'true'
-                ? 'Ya'
-                : 'Tidak');
-          }
-          return csvEscape(val);
-        }),
-        // Jumlah foto per photo field
-        ...photoFields.map((f) {
-          final val = geoData.formData[f.label];
-          if (val is List) return csvEscape(val.length);
-          if (val != null && val.toString().isNotEmpty) return '1';
-          return '0';
-        }),
-      ];
-      buffer.writeln(row.join(','));
-    }
-
-    return buffer.toString();
-  }
-
-  /// Jalankan export CSV ke file
+  /// Export CSV (ikut filter aktif).
   Future<void> _doExportCSV() async {
+    final records = List<GeoData>.of(_filteredGeoDataList);
+    final project = _currentProject;
     try {
-      final csvString = _buildCSV();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final projectName = _currentProject.name
-          .replaceAll(RegExp(r'[^\w\s-]'), '')
-          .replaceAll(' ', '_');
-      final fileName = '${projectName}_$timestamp.csv';
-      final bytes = Uint8List.fromList(utf8.encode(csvString));
-
-      String? outputPath;
-      if (Platform.isAndroid || Platform.isIOS) {
-        outputPath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Simpan CSV',
-          fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: ['csv'],
-          bytes: bytes,
-        );
-      } else {
-        outputPath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Simpan CSV',
-          fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: ['csv'],
-        );
-        if (outputPath != null) {
-          if (!outputPath.toLowerCase().endsWith('.csv')) {
-            outputPath += '.csv';
-          }
-          await File(outputPath).writeAsString(csvString);
-        }
-      }
-
-      if (outputPath == null || !mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'CSV tersimpan — ${_filteredGeoDataList.length} baris',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ]),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
-        ),
+      final csv = await compute(
+          _encodeCsvExport, (project: project, records: records));
+      final saved = await _saveExportFile(
+        content: csv,
+        extension: 'csv',
+        allowedExtensions: const ['csv'],
+        dialogTitle: 'Save CSV',
       );
-    } catch (e) {
+      if (!saved) return;
+      logInfo('Exported CSV "${project.name}": ${records.length} rows',
+          tag: 'EXPORT');
+      if (!mounted) return;
+      showInfoFeedback(context, 'CSV saved — ${records.length} rows',
+          success: true);
+    } catch (e, st) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal export CSV: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showErrorFeedback(context, 'Could not export CSV',
+            error: e, stack: st, tag: 'EXPORT');
       }
     }
   }
@@ -4004,3 +3806,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 }
+
+typedef _ExportJob = ({Project project, List<GeoData> records});
+
+/// Entry point isolate ekspor GeoJSON → (json, jumlah fitur, id dilewati).
+(String, int, List<String>) _encodeGeoJsonExport(_ExportJob job) {
+  final export = GeoExport.geoJson(job.project, job.records);
+  return (export.encode(), export.featureCount, export.skippedIds);
+}
+
+/// Entry point isolate ekspor CSV.
+String _encodeCsvExport(_ExportJob job) =>
+    GeoExport.csv(job.project, job.records);

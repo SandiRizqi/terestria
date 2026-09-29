@@ -7,6 +7,12 @@ class ApiConfig {
   static const String bundleName = 'io.github.sandirizqi.terestria';
 
   static const String appVersion = '4.4.2';
+
+  /// User-Agent untuk unduhan tile: nama app, versi, dan kontak (kebijakan
+  /// tile OpenStreetMap mewajibkan UA spesifik yang bisa dihubungi).
+  static const String tileUserAgent =
+      'Terestria/$appVersion ($bundleName; +https://github.com/SandiRizqi/terestria)';
+
   // Endpoints
   static const String syncDataEndpoint = '/mobile/geodata/';
   static const String syncProjectEndpoint = '/mobile/projects/';

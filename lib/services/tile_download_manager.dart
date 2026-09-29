@@ -98,10 +98,9 @@ class TileDownloadManager {
       final response = await _httpClient.get(
         Uri.parse(task.url),
         headers: {
-          // Identitas app yang jelas (kebijakan tile server menolak UA
-          // generik — dulu 'GeoformApp/1.0').
-          'User-Agent':
-              'Terestria/${ApiConfig.appVersion} (${ApiConfig.bundleName})',
+          // Identitas app + kontak yang jelas (kebijakan tile server
+          // menolak UA generik — dulu 'GeoformApp/1.0').
+          'User-Agent': ApiConfig.tileUserAgent,
         },
       ).timeout(_downloadTimeout);
       
