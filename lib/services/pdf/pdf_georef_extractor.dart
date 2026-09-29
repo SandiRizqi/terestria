@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
 
+import '../../utils/app_logger.dart';
 /// Model untuk menyimpan informasi georeferencing dari PDF
 class PdfGeoreferencing {
   final double minLat;
@@ -177,11 +178,11 @@ class PdfGeorefExtractor {
         }
       }
       
-      print('⚠️ Could not extract georeferencing from PDF');
+      logWarn('⚠️ Could not extract georeferencing from PDF', tag: 'PDF');
       return null;
       
     } catch (e) {
-      print('❌ Error extracting georeferencing: $e');
+      logError('❌ Error extracting georeferencing: $e', tag: 'PDF');
       return null;
     }
   }
@@ -237,7 +238,7 @@ class PdfGeorefExtractor {
         return {'width': width, 'height': height};
       }
     } catch (e) {
-      print('Could not extract page dimensions: $e');
+      logWarn('Could not extract page dimensions: $e', tag: 'PDF');
     }
     
     // Default dimensions (A4 at 72 DPI)

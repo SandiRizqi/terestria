@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../utils/app_logger.dart';
 /// Overlay Image Provider for GeoPDF basemaps
 /// This displays the entire PDF as a single georeferenced image
 class GeoPdfOverlayImageProvider extends ImageProvider<GeoPdfOverlayImageProvider> {
@@ -53,7 +54,7 @@ class GeoPdfOverlayImageProvider extends ImageProvider<GeoPdfOverlayImageProvide
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       return decode(buffer);
     } catch (e) {
-      print('Error loading overlay image: $e');
+      logWarn('Error loading overlay image: $e', tag: 'PDF');
       rethrow;
     }
   }

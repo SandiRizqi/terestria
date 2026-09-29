@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import '../screens/basemap/cache_management_screen.dart';
 
+import '../utils/app_logger.dart';
 /// SQLite-based Tile Cache Service - JAUH LEBIH CEPAT dari Hive!
 /// Performance: 10-50x lebih cepat untuk operasi read/write tile
 class TileCacheSqliteService {
@@ -32,7 +33,7 @@ class TileCacheSqliteService {
       final oldestDb = _databaseCache[oldestKey];
       if (oldestDb != null && oldestDb.isOpen) {
         await oldestDb.close();
-        print('🔒 Closed database $oldestKey to maintain connection limit');
+        logDebug('🔒 Closed database $oldestKey to maintain connection limit', tag: 'TILE');
       }
       _databaseCache.remove(oldestKey);
     }
@@ -44,7 +45,7 @@ class TileCacheSqliteService {
     final dbDir = Directory(path.dirname(dbPath));
     if (!await dbDir.exists()) {
       await dbDir.create(recursive: true);
-      print('✓ Created cache directory: ${dbDir.path}');
+      logDebug('✓ Created cache directory: ${dbDir.path}', tag: 'TILE');
     }
 
     // Open database with optimizations
@@ -74,9 +75,9 @@ class TileCacheSqliteService {
       await database.rawQuery('PRAGMA synchronous=NORMAL');
       await database.rawQuery('PRAGMA cache_size=10000');
       await database.rawQuery('PRAGMA temp_store=MEMORY');
-      print('✓ Database optimizations enabled for $basemapId');
+      logDebug('✓ Database optimizations enabled for $basemapId', tag: 'TILE');
     } catch (e) {
-      print('⚠️ Warning: Could not enable all optimizations: $e');
+      logWarn('⚠️ Warning: Could not enable all optimizations: $e', tag: 'TILE');
       // Continue anyway - database will still work
     }
 
@@ -110,10 +111,10 @@ class TileCacheSqliteService {
       
       // Only log first few tiles to avoid spam
       if (tileKey.split('_')[0] == '13' && int.parse(tileKey.split('_')[1]) <= 1) {
-        print('💾 Tile saved: $basemapId/$tileKey (${tileData.length} bytes)');
+        logDebug('💾 Tile saved: $basemapId/$tileKey (${tileData.length} bytes)', tag: 'TILE');
       }
     } catch (e) {
-      print('❌ Error saving tile $basemapId z=$z,x=$x,y=$y: $e');
+      logDebug('❌ Error saving tile $basemapId z=$z,x=$x,y=$y: $e', tag: 'TILE');
       // Don't rethrow - we want to continue even if save fails
     }
   }
@@ -148,7 +149,7 @@ class TileCacheSqliteService {
       // print('⚠️ Cache MISS: $basemapId/$tileKey');
       return null;
     } catch (e) {
-      print('❌ Error getting tile $basemapId/$z/$x/$y: $e');
+      logDebug('❌ Error getting tile $basemapId/$z/$x/$y: $e', tag: 'TILE');
       return null;
     }
   }
@@ -232,7 +233,7 @@ class TileCacheSqliteService {
         isShared: false,
       );
     } catch (e) {
-      print('Error getting cache info: $e');
+      logWarn('Error getting cache info: $e', tag: 'TILE');
       return CacheInfo(
         sizeInBytes: 0,
         tileCount: 0,
@@ -274,7 +275,7 @@ class TileCacheSqliteService {
         lastModified: lastModified,
       );
     } catch (e) {
-      print('Error getting PDF cache info: $e');
+      logWarn('Error getting PDF cache info: $e', tag: 'TILE');
       return CacheInfo(sizeInBytes: 0, tileCount: 0, lastModified: null);
     }
   }
@@ -289,9 +290,9 @@ class TileCacheSqliteService {
       final db = await _getDatabase(basemapId);
       await db.rawDelete('DELETE FROM tiles');
       
-      print('✓ Cache cleared for $basemapId');
+      logDebug('✓ Cache cleared for $basemapId', tag: 'TILE');
     } catch (e) {
-      print('Error clearing cache: $e');
+      logWarn('Error clearing cache: $e', tag: 'TILE');
       rethrow;
     }
   }
@@ -316,13 +317,13 @@ class TileCacheSqliteService {
       await for (var entity in tilesDir.list()) {
         if (entity is File && entity.path.endsWith('.db')) {
           await entity.delete();
-          print('Deleted: ${path.basename(entity.path)}');
+          logDebug('Deleted: ${path.basename(entity.path)}', tag: 'TILE');
         }
       }
 
-      print('✓ All TMS cache cleared');
+      logDebug('✓ All TMS cache cleared', tag: 'TILE');
     } catch (e) {
-      print('Error clearing all cache: $e');
+      logWarn('Error clearing all cache: $e', tag: 'TILE');
       rethrow;
     }
   }
@@ -347,7 +348,7 @@ class TileCacheSqliteService {
 
       return totalSize;
     } catch (e) {
-      print('Error getting total cache size: $e');
+      logWarn('Error getting total cache size: $e', tag: 'TILE');
       return 0;
     }
   }
@@ -388,9 +389,9 @@ class TileCacheSqliteService {
         [cutoffTime],
       );
       
-      print('Cleaned $deleted old tiles from $basemapId');
+      logDebug('Cleaned $deleted old tiles from $basemapId', tag: 'TILE');
     } catch (e) {
-      print('Error cleaning old tiles: $e');
+      logWarn('Error cleaning old tiles: $e', tag: 'TILE');
     }
   }
 
@@ -401,17 +402,17 @@ class TileCacheSqliteService {
       final directory = await getApplicationSupportDirectory();
       final tilesDir = Directory(path.join(directory.path, 'MapTiles'));
       
-      print('\n========== SQLITE CACHE DEBUG ==========');
-      print('Cache directory: ${tilesDir.path}');
-      print('Directory exists: ${await tilesDir.exists()}');
+      logDebug('\n========== SQLITE CACHE DEBUG ==========', tag: 'TILE');
+      logDebug('Cache directory: ${tilesDir.path}', tag: 'TILE');
+      logDebug('Directory exists: ${await tilesDir.exists()}', tag: 'TILE');
       
       if (!await tilesDir.exists()) {
-        print('Cache directory does not exist yet.');
-        print('========================================\n');
+        logDebug('Cache directory does not exist yet.', tag: 'TILE');
+        logDebug('========================================\n', tag: 'TILE');
         return;
       }
       
-      print('\nDatabase files:');
+      logDebug('\nDatabase files:', tag: 'TILE');
       int totalSize = 0;
       int fileCount = 0;
       
@@ -420,16 +421,16 @@ class TileCacheSqliteService {
           final stat = await entity.stat();
           final fileName = path.basename(entity.path);
           final sizeKb = (stat.size / 1024).toStringAsFixed(2);
-          print('  - $fileName: $sizeKb KB');
+          logDebug('  - $fileName: $sizeKb KB', tag: 'TILE');
           totalSize += stat.size;
           fileCount++;
         }
       }
       
-      print('\nTotal: $fileCount files, ${(totalSize / (1024 * 1024)).toStringAsFixed(2)} MB');
-      print('========================================\n');
+      logDebug('\nTotal: $fileCount files, ${(totalSize / (1024 * 1024)).toStringAsFixed(2)} MB', tag: 'TILE');
+      logDebug('========================================\n', tag: 'TILE');
     } catch (e) {
-      print('Error debugging cache: $e');
+      logWarn('Error debugging cache: $e', tag: 'TILE');
     }
   }
 }

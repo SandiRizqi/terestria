@@ -1,6 +1,7 @@
 import '../models/cloud_basemap_model.dart';
 import 'api_service.dart';
 
+import '../utils/app_logger.dart';
 /// Service untuk mengambil daftar basemap dari cloud
 class CloudBasemapService {
   final ApiService _apiService = ApiService();
@@ -20,11 +21,11 @@ class CloudBasemapService {
         final parsed = _apiService.parseResponse(response);
         return CloudBasemapResponse.fromJson(parsed);
       } else {
-        print('Failed to fetch cloud basemaps: ${response.statusCode}');
+        logWarn('Failed to fetch cloud basemaps: ${response.statusCode}', tag: 'BASEMAP');
         return null;
       }
     } catch (e) {
-      print('Error fetching cloud basemaps: $e');
+      logWarn('Error fetching cloud basemaps: $e', tag: 'BASEMAP');
       return null;
     }
   }

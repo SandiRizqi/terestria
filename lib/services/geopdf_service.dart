@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:printing/printing.dart';
 
+import '../utils/app_logger.dart';
 /// Service untuk processing GeoPDF files menggunakan native PDF renderer.
 /// Tidak memerlukan Python atau PyMuPDF.
 class GeoPdfService {
@@ -91,12 +92,12 @@ class GeoPdfService {
     final fullMinLat = minLat - bottomFrac         * latPerPageUnit;
     final fullMaxLat = maxLat + (1.0 - topFrac)   * latPerPageUnit;
 
-    print('🗺️ Bounds expanded neatline → full-page:');
-    print('   Neatline → lat:[$minLat..$maxLat]  lon:[$minLon..$maxLon]');
-    print('   FullPage → lat:[${fullMinLat.toStringAsFixed(6)}..${fullMaxLat.toStringAsFixed(6)}]'
-          '  lon:[${fullMinLon.toStringAsFixed(6)}..${fullMaxLon.toStringAsFixed(6)}]');
-    print('   VP fracs → L=${leftFrac.toStringAsFixed(5)} R=${rightFrac.toStringAsFixed(5)}'
-          ' B=${bottomFrac.toStringAsFixed(5)} T=${topFrac.toStringAsFixed(5)}');
+    logDebug('🗺️ Bounds expanded neatline → full-page:', tag: 'PDF');
+    logDebug('   Neatline → lat:[$minLat..$maxLat]  lon:[$minLon..$maxLon]', tag: 'PDF');
+    logDebug('   FullPage → lat:[${fullMinLat.toStringAsFixed(6)}..${fullMaxLat.toStringAsFixed(6)}]'
+          '  lon:[${fullMinLon.toStringAsFixed(6)}..${fullMaxLon.toStringAsFixed(6)}]', tag: 'PDF');
+    logDebug('   VP fracs → L=${leftFrac.toStringAsFixed(5)} R=${rightFrac.toStringAsFixed(5)}'
+          ' B=${bottomFrac.toStringAsFixed(5)} T=${topFrac.toStringAsFixed(5)}', tag: 'PDF');
 
     return {
       'min_lat': fullMinLat,
@@ -121,10 +122,10 @@ class GeoPdfService {
         'file_path': pdfPath,
         'file_size': bytes.length,
       };
-      print('📄 PDF Metadata extracted: $metadata');
+      logDebug('📄 PDF Metadata extracted: $metadata', tag: 'PDF');
       return metadata;
     } catch (e) {
-      print('❌ extractMetadata error: $e');
+      logError('❌ extractMetadata error: $e', tag: 'PDF');
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -175,20 +176,20 @@ class GeoPdfService {
 
         if (aOut && !bOut) {
           lons = a; lats = b;
-          print('📐 GPTS-8: lon-lat format (a out of lat range)');
+          logDebug('📐 GPTS-8: lon-lat format (a out of lat range)', tag: 'PDF');
         } else if (!aOut && bOut) {
           lats = a; lons = b;
-          print('📐 GPTS-8: lat-lon format (b out of lat range)');
+          logDebug('📐 GPTS-8: lat-lon format (b out of lat range)', tag: 'PDF');
         } else {
           // Kedua dalam ±90: nilai abs lebih besar = longitude
           final avgA = a.map((v) => v.abs()).reduce((x, y) => x + y) / 4;
           final avgB = b.map((v) => v.abs()).reduce((x, y) => x + y) / 4;
           if (avgA > avgB) {
             lons = a; lats = b;
-            print('📐 GPTS-8: lon-lat (heuristic avgA=$avgA > avgB=$avgB)');
+            logDebug('📐 GPTS-8: lon-lat (heuristic avgA=$avgA > avgB=$avgB)', tag: 'PDF');
           } else {
             lats = a; lons = b;
-            print('📐 GPTS-8: lat-lon (heuristic avgB=$avgB >= avgA=$avgA)');
+            logDebug('📐 GPTS-8: lat-lon (heuristic avgB=$avgB >= avgA=$avgA)', tag: 'PDF');
           }
         }
 
@@ -198,7 +199,7 @@ class GeoPdfService {
           'min_lon': lons.reduce(math.min),
           'max_lon': lons.reduce(math.max),
         };
-        print('✅ GPTS-8 neatline bounds: $bounds');
+        logDebug('✅ GPTS-8 neatline bounds: $bounds', tag: 'PDF');
       }
 
       // ─── Pattern 2: BBox geografis ────────────────────────────────────────
@@ -211,7 +212,7 @@ class GeoPdfService {
         for (final bm in bboxPat.allMatches(content)) {
           final v = List.generate(4, (i) => double.parse(bm.group(i + 1)!));
           if (v.any((x) => x.abs() > 180)) {
-            print('⏩ BBox skipped (bukan geo coords): $v');
+            logDebug('⏩ BBox skipped (bukan geo coords): $v', tag: 'PDF');
             continue;
           }
           bounds = {
@@ -220,7 +221,7 @@ class GeoPdfService {
             'min_lon': math.min(v[0], v[2]),
             'max_lon': math.max(v[0], v[2]),
           };
-          print('✅ BBox geo bounds: $bounds');
+          logDebug('✅ BBox geo bounds: $bounds', tag: 'PDF');
           break;
         }
       }
@@ -249,12 +250,12 @@ class GeoPdfService {
                   'min_lon': math.min(g[1], g[3]),
                   'max_lon': math.max(g[1], g[3]),
                 };
-          print('✅ Measure/GPTS-4 bounds: $bounds');
+          logDebug('✅ Measure/GPTS-4 bounds: $bounds', tag: 'PDF');
         }
       }
 
       if (bounds == null) {
-        print('⚠️ No georeferencing data found in PDF');
+        logWarn('⚠️ No georeferencing data found in PDF', tag: 'PDF');
         return {
           'success': false,
           'message': 'Tidak ada data georeferencing dalam PDF. '
@@ -272,23 +273,23 @@ class GeoPdfService {
       bool needSwap = false;
       if (minLat.abs() > 90 || maxLat.abs() > 90) {
         needSwap = true;
-        print('⚠️ Lat out of range → swapping');
+        logWarn('⚠️ Lat out of range → swapping', tag: 'PDF');
       } else if (minLon.abs() <= 90 && maxLon.abs() <= 90) {
         final avgAbsLat = (minLat.abs() + maxLat.abs()) / 2;
         final avgAbsLon = (minLon.abs() + maxLon.abs()) / 2;
         if (avgAbsLat > avgAbsLon) {
           needSwap = true;
-          print('⚠️ Lat magnitude > Lon magnitude → swapping');
+          logWarn('⚠️ Lat magnitude > Lon magnitude → swapping', tag: 'PDF');
         }
       }
       if (needSwap) {
         final tmpMin = minLat; final tmpMax = maxLat;
         bounds['min_lat'] = minLon; bounds['max_lat'] = maxLon;
         bounds['min_lon'] = tmpMin; bounds['max_lon'] = tmpMax;
-        print('✅ After swap: $bounds');
+        logDebug('✅ After swap: $bounds', tag: 'PDF');
       }
 
-      print('✅ Final neatline coordinates: $bounds');
+      logDebug('✅ Final neatline coordinates: $bounds', tag: 'PDF');
       return {
         'success': true,
         'bounds': bounds,
@@ -296,7 +297,7 @@ class GeoPdfService {
         '_raw_content': content,
       };
     } catch (e) {
-      print('❌ extractCoordinates error: $e');
+      logError('❌ extractCoordinates error: $e', tag: 'PDF');
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -332,7 +333,7 @@ class GeoPdfService {
       final pngBytes  = await pageImage.toPng();
       await File(outputPath).writeAsBytes(pngBytes);
 
-      print('✅ PDF → image: ${pageImage.width}x${pageImage.height} @ ${dpi ?? 200} DPI');
+      logDebug('✅ PDF → image: ${pageImage.width}x${pageImage.height} @ ${dpi ?? 200} DPI', tag: 'PDF');
       return {
         'success': true,
         'image_path': outputPath,
@@ -341,7 +342,7 @@ class GeoPdfService {
         'dpi': dpi ?? 200,
       };
     } catch (e, st) {
-      print('❌ pdfToImage error: $e\n$st');
+      logError('❌ pdfToImage error: $e\n$st', tag: 'PDF');
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -382,7 +383,7 @@ class GeoPdfService {
       if (manualMinLat != null && manualMinLon != null &&
           manualMaxLat != null && manualMaxLon != null) {
         // Manual bounds: langsung pakai, tidak perlu expand
-        print('📍 Using manual bounds (bypass auto-extract + expansion)');
+        logDebug('📍 Using manual bounds (bypass auto-extract + expansion)', tag: 'PDF');
         bounds = {
           'min_lat': manualMinLat,
           'min_lon': manualMinLon,
@@ -433,13 +434,13 @@ class GeoPdfService {
               );
               expanded = true;
             } else {
-              print('⚠️ VP BBox tidak valid '
+              logWarn('⚠️ VP BBox tidak valid '
                     '(vpW=$vpW vpH=$vpH pageW=$pageW pageH=$pageH) '
-                    '→ pakai neatline bounds tanpa ekspansi');
+                    '→ pakai neatline bounds tanpa ekspansi', tag: 'PDF');
             }
           } else {
-            print('⚠️ MediaBox/VP tidak ditemukan '
-                  '→ pakai neatline bounds tanpa ekspansi');
+            logWarn('⚠️ MediaBox/VP tidak ditemukan '
+                  '→ pakai neatline bounds tanpa ekspansi', tag: 'PDF');
           }
         }
 

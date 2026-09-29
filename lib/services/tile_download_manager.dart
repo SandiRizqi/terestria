@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
+import '../utils/app_logger.dart';
 /// Manager untuk mengelola concurrent tile downloads dengan priority queue
 /// dan retry mechanism
 class TileDownloadManager {
@@ -106,7 +107,7 @@ class TileDownloadManager {
         // Success!
         _successCount++;
         if (task.retryCount > 0) {
-          print('✅ Tile z=${task.z}, x=${task.x}, y=${task.y} downloaded after ${task.retryCount} retries (${bytes.length} bytes)');
+          logDebug('✅ Tile z=${task.z}, x=${task.x}, y=${task.y} downloaded after ${task.retryCount} retries (${bytes.length} bytes)', tag: 'TILE');
         }
         
         task.completer.complete(bytes);
@@ -149,7 +150,7 @@ class TileDownloadManager {
       
       final delay = retryDelay ?? Duration(milliseconds: _retryDelay.inMilliseconds * task.retryCount);
       
-      print('⚠️ $errorType for tile z=${task.z}, x=${task.x}, y=${task.y} - Retry ${task.retryCount}/$_maxRetries in ${delay.inMilliseconds}ms');
+      logDebug('⚠️ $errorType for tile z=${task.z}, x=${task.x}, y=${task.y} - Retry ${task.retryCount}/$_maxRetries in ${delay.inMilliseconds}ms', tag: 'TILE');
       
       await Future.delayed(delay);
       
@@ -164,9 +165,9 @@ class TileDownloadManager {
       _failCount++;
       
       if (task.retryCount >= _maxRetries) {
-        print('❌ Download failed for tile z=${task.z}, x=${task.x}, y=${task.y} after ${task.retryCount} retries: $errorType');
+        logDebug('❌ Download failed for tile z=${task.z}, x=${task.x}, y=${task.y} after ${task.retryCount} retries: $errorType', tag: 'TILE');
       } else {
-        print('❌ Download failed for tile z=${task.z}, x=${task.x}, y=${task.y}: $errorType (not retriable)');
+        logDebug('❌ Download failed for tile z=${task.z}, x=${task.x}, y=${task.y}: $errorType (not retriable)', tag: 'TILE');
       }
       
       task.completer.complete(null);

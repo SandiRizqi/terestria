@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import '../tile_cache_sqlite_service.dart';
 import '../tile_download_manager.dart';
 
+import '../../utils/app_logger.dart';
 /// Custom TileProvider with SQLite cache + offline parent-tile fallback.
 ///
 /// Load order:
@@ -160,7 +161,7 @@ class _SqliteTileImage extends ImageProvider<_SqliteTileImage> {
       return await _tryParentFallback(z, x, y, decode) ??
           await _createPlaceholder(decode);
     } catch (e) {
-      debugPrint('❌ Tile error z=$z,x=$x,y=$y: $e');
+      logDebug('❌ Tile error z=$z,x=$x,y=$y: $e', tag: 'TILE');
       return await _tryParentFallback(z, x, y, decode) ??
           await _createPlaceholder(decode);
     }
@@ -179,7 +180,7 @@ class _SqliteTileImage extends ImageProvider<_SqliteTileImage> {
       if (parent == null) return null;
       return await _cropParentTile(parent.data, parent.zoomDelta, x, y, decode);
     } catch (e) {
-      debugPrint('⚠️ Parent fallback failed z=$z,x=$x,y=$y: $e');
+      logDebug('⚠️ Parent fallback failed z=$z,x=$x,y=$y: $e', tag: 'TILE');
       return null;
     }
   }

@@ -7,6 +7,7 @@ import '../services/offline_basemap_download_service.dart';
 import '../theme/app_theme.dart';
 import '../models/basemap_model.dart';
 
+import '../utils/app_logger.dart';
 class OfflineDownloadDialog extends StatefulWidget {
   final LatLngBounds visibleBounds;
   final Basemap currentBasemap;
@@ -65,7 +66,7 @@ class _OfflineDownloadDialogState extends State<OfflineDownloadDialog> {
         });
       }
     } catch (e) {
-      debugPrint('Error calculating size: $e');
+      logWarn('Error calculating size: $e', tag: 'BASEMAP');
       if (mounted) {
         setState(() {
           _estimatedSizeMB = null;

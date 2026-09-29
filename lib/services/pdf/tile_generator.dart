@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'pdf_georef_extractor.dart';
 import '../tile_cache_sqlite_service.dart';
 
+import '../../utils/app_logger.dart';
 class TileGeneratorConfig {
   final int? minZoom;
   final int? maxZoom;
@@ -64,7 +65,7 @@ class TileGenerator {
         }
       }
 
-      print('✓ PDF Extent: ${georef.toString()}');
+      logDebug('✓ PDF Extent: ${georef.toString()}', tag: 'PDF');
 
       // Calculate optimal zoom levels
       final zoomLevels = georef.calculateOptimalZoomLevels();
@@ -72,7 +73,7 @@ class TileGenerator {
       final maxZoom = config.maxZoom ?? zoomLevels['maxZoom']!;
       final baseZoom = zoomLevels['baseZoom']!;
 
-      print('✓ Zoom levels: min=$minZoom, base=$baseZoom, max=$maxZoom');
+      logDebug('✓ Zoom levels: min=$minZoom, base=$baseZoom, max=$maxZoom', tag: 'PDF');
 
       onProgress(0.1, 'Rendering PDF at ${config.dpi} DPI...');
 
@@ -86,7 +87,7 @@ class TileGenerator {
 
       if (image == null) throw Exception('Failed to decode image');
 
-      print('✓ Image size: ${image.width}x${image.height}');
+      logDebug('✓ Image size: ${image.width}x${image.height}', tag: 'PDF');
 
       onProgress(0.3, 'Generating tiles for extent only...');
 
@@ -125,7 +126,7 @@ class TileGenerator {
       totalTiles += tiles['count']!;
     }
 
-    print('✓ Total tiles to generate: $totalTiles');
+    logDebug('✓ Total tiles to generate: $totalTiles', tag: 'PDF');
 
     int processed = 0;
 
@@ -148,7 +149,7 @@ class TileGenerator {
         _TileProcessParams(image, zoom, baseZoom, tileSize),
       );
 
-      print('✓ Zoom $zoom: Image scaled to ${scaledImage.width}x${scaledImage.height}');
+      logDebug('✓ Zoom $zoom: Image scaled to ${scaledImage.width}x${scaledImage.height}', tag: 'PDF');
 
       // Calculate which part of the scaled image corresponds to the tile range
       final worldTilesAtZoom = math.pow(2, zoom);
@@ -293,9 +294,9 @@ class TileGenerator {
   Future<void> deleteTiles(String basemapId) async {
     try {
       await _tileCacheService.clearCache(basemapId);
-      print('✓ Tiles deleted for $basemapId');
+      logDebug('✓ Tiles deleted for $basemapId', tag: 'PDF');
     } catch (e) {
-      print('❌ Error deleting tiles: $e');
+      logError('❌ Error deleting tiles: $e', tag: 'PDF');
     }
   }
 

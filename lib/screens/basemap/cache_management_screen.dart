@@ -6,6 +6,7 @@ import '../../services/tile_cache_sqlite_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 
+import '../../utils/app_logger.dart';
 class CacheManagementScreen extends StatefulWidget {
   const CacheManagementScreen({Key? key}) : super(key: key);
 
@@ -44,17 +45,17 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       int totalSize = 0;
       int totalTiles = 0;
       
-      print('Loading cache data for ${basemaps.length} basemaps...');
+      logDebug('Loading cache data for ${basemaps.length} basemaps...', tag: 'TILE');
       
       for (var basemap in basemaps) {
         final info = await _getCacheInfo(basemap);
         cacheMap[basemap.id] = info;
         totalSize += info.sizeInBytes;
         totalTiles += info.tileCount;
-        print('${basemap.name}: ${_formatSize(info.sizeInBytes)}, ${info.tileCount} tiles');
+        logDebug('${basemap.name}: ${_formatSize(info.sizeInBytes)}, ${info.tileCount} tiles', tag: 'TILE');
       }
       
-      print('Total cache: ${_formatSize(totalSize)}, $totalTiles tiles');
+      logDebug('Total cache: ${_formatSize(totalSize)}, $totalTiles tiles', tag: 'TILE');
       
       if (mounted) {
         setState(() {
@@ -66,7 +67,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
         });
       }
     } catch (e) {
-      print('Error loading cache data: $e');
+      logWarn('Error loading cache data: $e', tag: 'TILE');
       if (mounted) {
         setState(() => _isLoading = false);
         _showError('Failed to load cache data: $e');
@@ -81,7 +82,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
         isPdfBasemap: basemap.isPdfBasemap,
       );
     } catch (e) {
-      print('Error getting cache info for ${basemap.name}: $e');
+      logWarn('Error getting cache info for ${basemap.name}: $e', tag: 'TILE');
       return CacheInfo(
         sizeInBytes: 0,
         tileCount: 0,

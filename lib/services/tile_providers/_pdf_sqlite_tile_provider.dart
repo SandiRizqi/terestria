@@ -5,6 +5,7 @@ import '../tile_cache_sqlite_service.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 
+import '../../utils/app_logger.dart';
 /// Tile Provider untuk PDF Basemap yang menggunakan SQLite cache
 class PdfSqliteTileProvider extends TileProvider {
   final String basemapId;
@@ -89,7 +90,7 @@ class PdfSqliteImageProvider extends ImageProvider<PdfSqliteImageProvider> {
       final buffer = await ui.ImmutableBuffer.fromUint8List(transparentPng);
       return decode(buffer);
     } catch (e) {
-      print('Error loading PDF tile $basemapId/$z/$x/$y: $e');
+      logDebug('Error loading PDF tile $basemapId/$z/$x/$y: $e', tag: 'PDF');
       final transparentPng = _createTransparentPng();
       final buffer = await ui.ImmutableBuffer.fromUint8List(transparentPng);
       return decode(buffer);

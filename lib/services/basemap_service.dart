@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/basemap_model.dart';
 import 'crashlytics_service.dart';
 
+import '../utils/app_logger.dart';
 class BasemapService {
   static const String _basemapsKey = 'basemaps';
   static const String _selectedBasemapKey = 'selected_basemap';
@@ -17,22 +18,22 @@ class BasemapService {
       try {
         final List<dynamic> decoded = jsonDecode(basemapsJson);
         customBasemaps = decoded.map((json) => Basemap.fromJson(json)).toList();
-        print('📦 Loaded ${customBasemaps.length} custom/PDF basemaps from storage');
+        logDebug('📦 Loaded ${customBasemaps.length} custom/PDF basemaps from storage', tag: 'BASEMAP');
         
         // Debug: Print each basemap
         for (var basemap in customBasemaps) {
-          print('   - ${basemap.name} (${basemap.type})');
+          logDebug('   - ${basemap.name} (${basemap.type})', tag: 'BASEMAP');
           if (basemap.type == BasemapType.pdf) {
-            print('     useOverlayMode: ${basemap.useOverlayMode}');
-            print('     pdfOverlayImagePath: ${basemap.pdfOverlayImagePath}');
-            print('     hasPdfGeoreferencing: ${basemap.hasPdfGeoreferencing}');
+            logDebug('     useOverlayMode: ${basemap.useOverlayMode}', tag: 'BASEMAP');
+            logDebug('     pdfOverlayImagePath: ${basemap.pdfOverlayImagePath}', tag: 'BASEMAP');
+            logDebug('     hasPdfGeoreferencing: ${basemap.hasPdfGeoreferencing}', tag: 'BASEMAP');
             if (basemap.hasPdfGeoreferencing) {
-              print('     Bounds: [${basemap.pdfMinLat}, ${basemap.pdfMinLon}] to [${basemap.pdfMaxLat}, ${basemap.pdfMaxLon}]');
+              logDebug('     Bounds: [${basemap.pdfMinLat}, ${basemap.pdfMinLon}] to [${basemap.pdfMaxLat}, ${basemap.pdfMaxLon}]', tag: 'BASEMAP');
             }
           }
         }
       } catch (e, stack) {
-        print('❌ Error loading basemaps: $e');
+        logError('❌ Error loading basemaps: $e', tag: 'BASEMAP');
         crashlytics.recordError(e, stack, reason: 'Map: Error loading basemaps');
       }
     }
@@ -42,7 +43,7 @@ class BasemapService {
 
   // Save custom or PDF basemap
   Future<void> saveBasemap(Basemap basemap) async {
-    print('💾 Saving basemap: ${basemap.name} (${basemap.type})');
+    logDebug('💾 Saving basemap: ${basemap.name} (${basemap.type})', tag: 'BASEMAP');
     
     final prefs = await SharedPreferences.getInstance();
     final basemaps = await getBasemaps();
@@ -55,16 +56,16 @@ class BasemapService {
     // Check if basemap already exists
     final index = customBasemaps.indexWhere((b) => b.id == basemap.id);
     if (index >= 0) {
-      print('   Updating existing basemap at index $index');
+      logDebug('   Updating existing basemap at index $index', tag: 'BASEMAP');
       customBasemaps[index] = basemap;
     } else {
-      print('   Adding new basemap');
+      logDebug('   Adding new basemap', tag: 'BASEMAP');
       customBasemaps.add(basemap);
     }
     
     final basemapsJson = jsonEncode(customBasemaps.map((b) => b.toJson()).toList());
     await prefs.setString(_basemapsKey, basemapsJson);
-    print('✅ Basemap saved successfully');
+    logDebug('✅ Basemap saved successfully', tag: 'BASEMAP');
   }
 
   // Delete custom or PDF basemap
@@ -87,31 +88,31 @@ class BasemapService {
     
     final basemaps = await getBasemaps();
     
-    print('🗺️ Getting selected basemap...');
-    print('   Selected ID: $selectedId');
-    print('   Available basemaps: ${basemaps.length}');
+    logDebug('🗺️ Getting selected basemap...', tag: 'BASEMAP');
+    logDebug('   Selected ID: $selectedId', tag: 'BASEMAP');
+    logDebug('   Available basemaps: ${basemaps.length}', tag: 'BASEMAP');
     
     if (selectedId != null) {
       final basemap = basemaps.where((b) => b.id == selectedId).firstOrNull;
       if (basemap != null) {
-        print('   ✅ Found selected basemap: ${basemap.name} (${basemap.type})');
+        logDebug('   ✅ Found selected basemap: ${basemap.name} (${basemap.type})', tag: 'BASEMAP');
         if (basemap.type == BasemapType.pdf) {
-          print('      useOverlayMode: ${basemap.useOverlayMode}');
-          print('      pdfOverlayImagePath: ${basemap.pdfOverlayImagePath}');
-          print('      hasPdfGeoreferencing: ${basemap.hasPdfGeoreferencing}');
+          logDebug('      useOverlayMode: ${basemap.useOverlayMode}', tag: 'BASEMAP');
+          logDebug('      pdfOverlayImagePath: ${basemap.pdfOverlayImagePath}', tag: 'BASEMAP');
+          logDebug('      hasPdfGeoreferencing: ${basemap.hasPdfGeoreferencing}', tag: 'BASEMAP');
         }
         return basemap;
       }
     }
     
     // Return default basemap
-    print('   ⚠️ No valid selection, returning default basemap');
+    logWarn('   ⚠️ No valid selection, returning default basemap', tag: 'BASEMAP');
     return basemaps.firstWhere((b) => b.isDefault);
   }
 
   // Set selected basemap
   Future<void> setSelectedBasemap(String id) async {
-    print('📌 Setting selected basemap to: $id');
+    logDebug('📌 Setting selected basemap to: $id', tag: 'BASEMAP');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_selectedBasemapKey, id);
   }

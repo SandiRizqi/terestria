@@ -19,6 +19,7 @@ import '../../services/settings_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../widgets/basemap/cloud_basemap_dialog.dart';
 
+import '../../utils/app_logger.dart';
 class BasemapManagementScreen extends StatefulWidget {
   const BasemapManagementScreen({Key? key}) : super(key: key);
 
@@ -243,7 +244,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       _processPdfBasemapWithOverlay(basemapId, filePath);
 
     } on TimeoutException catch (e) {
-      debugPrint('❌ Timeout error: $e');
+      logError('❌ Timeout error: $e', tag: 'BASEMAP');
       if (mounted) {
         if (isShowingDialog) {
           Navigator.of(context).popUntil((route) => route.isFirst || !route.navigator!.canPop());
@@ -251,8 +252,8 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         _showError('Operation timed out: ${e.message}');
       }
     } catch (e, stackTrace) {
-      debugPrint('❌ Error adding PDF basemap: $e');
-      debugPrint('Stack trace: $stackTrace');
+      logError('❌ Error adding PDF basemap: $e', tag: 'BASEMAP');
+      logDebug('Stack trace: $stackTrace', tag: 'BASEMAP');
       if (mounted) {
         if (isShowingDialog) {
           Navigator.of(context).popUntil((route) => route.isFirst || !route.navigator!.canPop());
@@ -306,7 +307,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
       basemap = (await _basemapService.getBasemaps())
           .firstWhere((b) => b.id == basemapId);
     } catch (e) {
-      debugPrint('⚠️ Basemap not found: $basemapId');
+      logWarn('⚠️ Basemap not found: $basemapId', tag: 'BASEMAP');
       return; // Basemap was deleted, stop processing
     }
 
@@ -336,7 +337,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
               );
             }
           } catch (e) {
-            debugPrint('⚠️ Progress update error: $e');
+            logWarn('⚠️ Progress update error: $e', tag: 'BASEMAP');
             // Don't throw, just log - basemap might have been deleted
           }
         },
@@ -347,7 +348,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         (await _basemapService.getBasemaps())
             .firstWhere((b) => b.id == basemapId);
       } catch (e) {
-        debugPrint('⚠️ Basemap not found at completion: $basemapId');
+        logWarn('⚠️ Basemap not found at completion: $basemapId', tag: 'BASEMAP');
         return; // Basemap was deleted, stop processing
       }
 
@@ -356,11 +357,11 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         _loadBasemaps();
       }
     } on TimeoutException catch (e) {
-      debugPrint('❌ Processing timeout: $e');
+      logError('❌ Processing timeout: $e', tag: 'BASEMAP');
       await _markPdfFailed(basemapId, basemap, '❌ Timeout: ${e.message}');
     } catch (e, stackTrace) {
-      debugPrint('❌ Processing error: $e');
-      debugPrint('Stack trace: $stackTrace');
+      logError('❌ Processing error: $e', tag: 'BASEMAP');
+      logDebug('Stack trace: $stackTrace', tag: 'BASEMAP');
       await _markPdfFailed(basemapId, basemap, '❌ Error: ${e.toString()}');
     }
   }
@@ -386,7 +387,7 @@ class _BasemapManagementScreenState extends State<BasemapManagementScreen> {
         _loadBasemaps();
       }
     } catch (saveError) {
-      debugPrint('❌ Failed to save failure state: $saveError');
+      logError('❌ Failed to save failure state: $saveError', tag: 'BASEMAP');
     }
   }
 

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import '../utils/lat_lng_bounds.dart';
 import 'tile_download_manager.dart';
 import 'tile_cache_sqlite_service.dart';
 
+import '../utils/app_logger.dart';
 /// Service untuk mengelola bulk download tiles untuk offline use
 class OfflineBasemapDownloadService {
   static final OfflineBasemapDownloadService _instance = OfflineBasemapDownloadService._internal();
@@ -70,7 +70,7 @@ class OfflineBasemapDownloadService {
       urlTemplate: urlTemplate,
     );
     
-    debugPrint('📊 Estimated average tile size: ${avgTileSizeKB.toStringAsFixed(2)} KB');
+    logDebug('📊 Estimated average tile size: ${avgTileSizeKB.toStringAsFixed(2)} KB', tag: 'BASEMAP');
     return (tileCount * avgTileSizeKB) / 1024; // Convert to MB
   }
 
@@ -86,7 +86,7 @@ class OfflineBasemapDownloadService {
       final allTiles = _getTilesForBounds(bounds, zoom);
       
       if (allTiles.isEmpty) {
-        debugPrint('⚠️ No tiles found for sampling, using default 15KB');
+        logWarn('⚠️ No tiles found for sampling, using default 15KB', tag: 'BASEMAP');
         return 15.0; // Default fallback
       }
       
@@ -103,7 +103,7 @@ class OfflineBasemapDownloadService {
         availableIndices.remove(randomIndex);
       }
       
-      debugPrint('🎲 Sampling $samplesToTake random tiles from ${allTiles.length} total tiles...');
+      logDebug('🎲 Sampling $samplesToTake random tiles from ${allTiles.length} total tiles...', tag: 'BASEMAP');
       
       // Download sample tiles and measure their sizes
       final downloadManager = TileDownloadManager();
@@ -126,15 +126,15 @@ class OfflineBasemapDownloadService {
           
           if (bytes != null && bytes.isNotEmpty) {
             tileSizes.add(bytes.length);
-            debugPrint('   📦 Tile z=${tile.z},x=${tile.x},y=${tile.y}: ${(bytes.length / 1024).toStringAsFixed(2)} KB');
+            logDebug('   📦 Tile z=${tile.z},x=${tile.x},y=${tile.y}: ${(bytes.length / 1024).toStringAsFixed(2)} KB', tag: 'BASEMAP');
           }
         } catch (e) {
-          debugPrint('   ⚠️ Failed to sample tile z=${tile.z},x=${tile.x},y=${tile.y}: $e');
+          logWarn('   ⚠️ Failed to sample tile z=${tile.z},x=${tile.x},y=${tile.y}: $e', tag: 'BASEMAP');
         }
       }
       
       if (tileSizes.isEmpty) {
-        debugPrint('⚠️ No tiles successfully sampled, using default 15KB');
+        logWarn('⚠️ No tiles successfully sampled, using default 15KB', tag: 'BASEMAP');
         return 15.0; // Default fallback
       }
       
@@ -142,11 +142,11 @@ class OfflineBasemapDownloadService {
       final avgBytes = tileSizes.reduce((a, b) => a + b) / tileSizes.length;
       final avgKB = avgBytes / 1024;
       
-      debugPrint('✅ Sampled ${tileSizes.length} tiles, average size: ${avgKB.toStringAsFixed(2)} KB');
+      logDebug('✅ Sampled ${tileSizes.length} tiles, average size: ${avgKB.toStringAsFixed(2)} KB', tag: 'BASEMAP');
       return avgKB;
       
     } catch (e) {
-      debugPrint('❌ Error sampling tile sizes: $e');
+      logError('❌ Error sampling tile sizes: $e', tag: 'BASEMAP');
       return 15.0; // Default fallback
     }
   }
@@ -186,20 +186,20 @@ class OfflineBasemapDownloadService {
         maxZoom: maxZoom,
       );
 
-      debugPrint('🚀 Starting offline download: $_totalTiles tiles (zoom $minZoom-$maxZoom)');
+      logDebug('🚀 Starting offline download: $_totalTiles tiles (zoom $minZoom-$maxZoom)', tag: 'BASEMAP');
       _updateProgress(0, 'Preparing download...');
 
       // Download tiles level by level
       for (int z = minZoom; z <= maxZoom; z++) {
         if (_isCancelled) {
-          debugPrint('❌ Download cancelled by user');
+          logError('❌ Download cancelled by user', tag: 'BASEMAP');
           _isDownloading = false;
           onCancelled?.call();
           return;
         }
 
         final tiles = _getTilesForBounds(bounds, z);
-        debugPrint('📥 Downloading zoom level $z: ${tiles.length} tiles');
+        logDebug('📥 Downloading zoom level $z: ${tiles.length} tiles', tag: 'BASEMAP');
         
         await _downloadZoomLevel(
           basemapId: basemapId,
@@ -211,7 +211,7 @@ class OfflineBasemapDownloadService {
 
       // Download complete
       _isDownloading = false;
-      debugPrint('✅ Download complete! Downloaded: $_downloadedTiles, Failed: $_failedTiles');
+      logWarn('✅ Download complete! Downloaded: $_downloadedTiles, Failed: $_failedTiles', tag: 'BASEMAP');
       _updateProgress(1.0, 'Download complete! ($_downloadedTiles tiles)');
       
       // Small delay to show completion message
@@ -219,8 +219,8 @@ class OfflineBasemapDownloadService {
       onComplete?.call();
 
     } catch (e, stackTrace) {
-      debugPrint('❌ Download error: $e');
-      debugPrint('Stack trace: $stackTrace');
+      logError('❌ Download error: $e', tag: 'BASEMAP');
+      logDebug('Stack trace: $stackTrace', tag: 'BASEMAP');
       _isDownloading = false;
       onError?.call('Download failed: $e');
     }
@@ -311,7 +311,7 @@ class OfflineBasemapDownloadService {
         _failedTiles++;
       }
     } catch (e) {
-      debugPrint('❌ Error downloading tile z=${tile.z},x=${tile.x},y=${tile.y}: $e');
+      logError('❌ Error downloading tile z=${tile.z},x=${tile.x},y=${tile.y}: $e', tag: 'BASEMAP');
       _failedTiles++;
     }
   }
@@ -359,7 +359,7 @@ class OfflineBasemapDownloadService {
   /// Cancel current download
   void cancelDownload() {
     if (_isDownloading) {
-      debugPrint('🛑 Cancelling download...');
+      logDebug('🛑 Cancelling download...', tag: 'BASEMAP');
       _isCancelled = true;
     }
   }
