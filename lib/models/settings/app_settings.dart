@@ -61,6 +61,13 @@ class AppSettings {
   /// Default nonaktif — foto disimpan apa adanya.
   final bool photoWatermark;
 
+  /// Layar tetap menyala selama tracking (hanya saat app terbuka). Default
+  /// mati — layar adalah konsumen baterai terbesar; service GPS tak butuh ini.
+  final bool keepScreenOnWhileTracking;
+
+  /// Unggah data tertunda otomatis saat koneksi kembali (app terbuka).
+  final bool autoSyncWhenOnline;
+
   /// Batas project yang boleh tracking bersamaan (multi-project). Default 3,
   /// dapat disetel user dalam rentang [minConcurrentTracking]..[maxConcurrentTrackingLimit].
   final int maxConcurrentTracking;
@@ -81,6 +88,8 @@ class AppSettings {
     this.polygonOpacity = 0.3,
     this.darkMode = false,
     this.photoWatermark = false,
+    this.keepScreenOnWhileTracking = false,
+    this.autoSyncWhenOnline = false,
     this.maxConcurrentTracking = minConcurrentTracking,
   });
 
@@ -100,6 +109,8 @@ class AppSettings {
     double? polygonOpacity,
     bool? darkMode,
     bool? photoWatermark,
+    bool? keepScreenOnWhileTracking,
+    bool? autoSyncWhenOnline,
     int? maxConcurrentTracking,
   }) {
     return AppSettings(
@@ -114,6 +125,9 @@ class AppSettings {
       polygonOpacity: polygonOpacity ?? this.polygonOpacity,
       darkMode: darkMode ?? this.darkMode,
       photoWatermark: photoWatermark ?? this.photoWatermark,
+      keepScreenOnWhileTracking:
+          keepScreenOnWhileTracking ?? this.keepScreenOnWhileTracking,
+      autoSyncWhenOnline: autoSyncWhenOnline ?? this.autoSyncWhenOnline,
       maxConcurrentTracking:
           maxConcurrentTracking ?? this.maxConcurrentTracking,
     );
@@ -133,6 +147,8 @@ class AppSettings {
       'polygonOpacity': polygonOpacity,
       'darkMode': darkMode,
       'photoWatermark': photoWatermark,
+      'keepScreenOnWhileTracking': keepScreenOnWhileTracking,
+      'autoSyncWhenOnline': autoSyncWhenOnline,
       'maxConcurrentTracking': maxConcurrentTracking,
     };
   }
@@ -157,6 +173,8 @@ class AppSettings {
       polygonOpacity: (json['polygonOpacity'] ?? 0.3).toDouble(),
       darkMode: json['darkMode'] ?? false,
       photoWatermark: json['photoWatermark'] ?? false,
+      keepScreenOnWhileTracking: json['keepScreenOnWhileTracking'] == true,
+      autoSyncWhenOnline: json['autoSyncWhenOnline'] == true,
       maxConcurrentTracking: ((json['maxConcurrentTracking'] ?? minConcurrentTracking) as int)
           .clamp(minConcurrentTracking, maxConcurrentTrackingLimit),
     );

@@ -90,7 +90,9 @@ class TrackingSessionManager extends ChangeNotifier {
   void ingest(GeoPoint point, {TrackSource source = TrackSource.phone}) {
     if (!point.recordable) return;
     if (_sessions.isEmpty) return;
-    addPointToActiveSessions(point, source: source);
+    // Jalur menyimpan koordinat mentah bila tersedia (smoothing hanya untuk
+    // marker) — sudut batas tak "terpotong" oleh lag Kalman.
+    addPointToActiveSessions(point.forRecording(), source: source);
   }
 
   /// Sesi merekam yang memakai sumber SELAIN [source] — untuk memperingatkan

@@ -48,6 +48,7 @@ class GpsSettings {
   final double stationaryAccuracyFactor;
   final bool warmupRequireGoodFix;
   final double kalmanQMetersPerSecond;
+  final bool recordRawPositions;
 
   const GpsSettings({
     required this.maxAccuracyMeters,
@@ -68,6 +69,7 @@ class GpsSettings {
     required this.stationaryAccuracyFactor,
     required this.warmupRequireGoodFix,
     required this.kalmanQMetersPerSecond,
+    this.recordRawPositions = LocationConfig.recordRawPositions,
   });
 
   /// Default dari konstanta terpusat [LocationConfig].
@@ -91,6 +93,7 @@ class GpsSettings {
         stationaryAccuracyFactor: LocationConfig.stationaryAccuracyFactor,
         warmupRequireGoodFix: LocationConfig.warmupRequireGoodFix,
         kalmanQMetersPerSecond: LocationConfig.kalmanQMetersPerSecond,
+        recordRawPositions: LocationConfig.recordRawPositions,
       );
 
   GpsSettings copyWith({
@@ -112,6 +115,7 @@ class GpsSettings {
     double? stationaryAccuracyFactor,
     bool? warmupRequireGoodFix,
     double? kalmanQMetersPerSecond,
+    bool? recordRawPositions,
   }) =>
       GpsSettings(
         maxAccuracyMeters: maxAccuracyMeters ?? this.maxAccuracyMeters,
@@ -144,6 +148,7 @@ class GpsSettings {
             warmupRequireGoodFix ?? this.warmupRequireGoodFix,
         kalmanQMetersPerSecond:
             kalmanQMetersPerSecond ?? this.kalmanQMetersPerSecond,
+        recordRawPositions: recordRawPositions ?? this.recordRawPositions,
       );
 
   Map<String, dynamic> toJson() => {
@@ -165,6 +170,7 @@ class GpsSettings {
         'stationaryAccuracyFactor': stationaryAccuracyFactor,
         'warmupRequireGoodFix': warmupRequireGoodFix,
         'kalmanQMetersPerSecond': kalmanQMetersPerSecond,
+        'recordRawPositions': recordRawPositions,
       };
 
   /// Baca dari JSON; field yang hilang memakai default, semua nilai di-clamp
@@ -226,6 +232,8 @@ class GpsSettings {
       kalmanQMetersPerSecond: _clampD(
           dbl('kalmanQMetersPerSecond', d.kalmanQMetersPerSecond),
           kalmanQMin, kalmanQMax),
+      recordRawPositions:
+          (j['recordRawPositions'] as bool?) ?? d.recordRawPositions,
     );
   }
 
@@ -249,6 +257,7 @@ class GpsSettings {
             LocationConfig.stationarySpeedThresholdMps,
         kalmanReportedAccuracyFloorFactor:
             LocationConfig.kalmanReportedAccuracyFloorFactor,
+        recordRawPositions: recordRawPositions,
       );
 
   static double _clampD(double v, double min, double max) =>

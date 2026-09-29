@@ -76,6 +76,14 @@ class SettingsService extends ChangeNotifier {
     await saveSettings(_settings.copyWith(photoWatermark: enabled));
   }
 
+  Future<void> updateKeepScreenOnWhileTracking(bool enabled) async {
+    await saveSettings(_settings.copyWith(keepScreenOnWhileTracking: enabled));
+  }
+
+  Future<void> updateAutoSyncWhenOnline(bool enabled) async {
+    await saveSettings(_settings.copyWith(autoSyncWhenOnline: enabled));
+  }
+
   // Update batas project tracking bersamaan (clamp 3..7)
   Future<void> updateMaxConcurrentTracking(int value) async {
     final clamped = value.clamp(

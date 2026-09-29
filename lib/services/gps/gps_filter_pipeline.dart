@@ -26,6 +26,10 @@ class GpsFilterConfig {
   final double stationarySpeedThresholdMps;
   final double kalmanReportedAccuracyFloorFactor;
 
+  /// Rekam koordinat mentah (bukan hasil Kalman) — lihat
+  /// [LocationConfig.recordRawPositions].
+  final bool recordRawPositions;
+
   const GpsFilterConfig({
     required this.maxAccuracyMeters,
     required this.goodFixThresholdMeters,
@@ -42,6 +46,7 @@ class GpsFilterConfig {
     required this.kalmanQMetersPerSecond,
     required this.stationarySpeedThresholdMps,
     required this.kalmanReportedAccuracyFloorFactor,
+    this.recordRawPositions = LocationConfig.recordRawPositions,
   });
 
   /// Konfigurasi dari nilai default terpusat [LocationConfig].
@@ -64,6 +69,7 @@ class GpsFilterConfig {
             LocationConfig.stationarySpeedThresholdMps,
         kalmanReportedAccuracyFloorFactor:
             LocationConfig.kalmanReportedAccuracyFloorFactor,
+        recordRawPositions: LocationConfig.recordRawPositions,
       );
 }
 
@@ -215,6 +221,7 @@ class GpsFilterPipeline {
         math.max(kStd, config.kalmanReportedAccuracyFloorFactor * acc);
     final double reportedAcc = floored.isFinite ? floored : acc;
 
+    final keepRaw = recordable && config.recordRawPositions;
     return GeoPoint(
       latitude: _round(kLat),
       longitude: _round(kLon),
@@ -223,6 +230,9 @@ class GpsFilterPipeline {
       speed: speedRounded,
       timestamp: timestamp,
       recordable: recordable,
+      rawLatitude: keepRaw ? _round(latitude) : null,
+      rawLongitude: keepRaw ? _round(longitude) : null,
+      rawAccuracy: keepRaw ? acc : null,
     );
   }
 

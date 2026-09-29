@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'dart:io';
 import '../../models/settings/app_settings.dart';
+import '../../services/background/background_tracking_service.dart';
 import '../../services/settings_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/settings/diagnostic_log_section.dart';
@@ -159,20 +160,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: AppTheme.getCardDecoration,
-              child: _buildSliderTile(
-                title: 'Max Concurrent Tracking',
-                subtitle:
-                    'Berapa project boleh tracking bersamaan (${_settings.maxConcurrentTracking} project)',
-                value: _settings.maxConcurrentTracking.toDouble(),
-                min: AppSettings.minConcurrentTracking.toDouble(),
-                max: AppSettings.maxConcurrentTrackingLimit.toDouble(),
-                divisions: AppSettings.maxConcurrentTrackingLimit -
-                    AppSettings.minConcurrentTracking,
-                onChanged: (value) async {
-                  await _settingsService
-                      .updateMaxConcurrentTracking(value.round());
-                  setState(() => _settings = _settingsService.settings);
-                },
+              child: Column(
+                children: [
+                  _buildSliderTile(
+                    title: 'Max Concurrent Tracking',
+                    subtitle:
+                        'How many projects can track at the same time (${_settings.maxConcurrentTracking})',
+                    value: _settings.maxConcurrentTracking.toDouble(),
+                    min: AppSettings.minConcurrentTracking.toDouble(),
+                    max: AppSettings.maxConcurrentTrackingLimit.toDouble(),
+                    divisions: AppSettings.maxConcurrentTrackingLimit -
+                        AppSettings.minConcurrentTracking,
+                    onChanged: (value) async {
+                      await _settingsService
+                          .updateMaxConcurrentTracking(value.round());
+                      setState(() => _settings = _settingsService.settings);
+                    },
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _buildToggleTile(
+                    icon: Icons.light_mode_rounded,
+                    color: Colors.amber.shade800,
+                    title: 'Keep screen on while tracking',
+                    subtitle: _settings.keepScreenOnWhileTracking
+                        ? 'Screen stays on while Terestria is open (uses more battery)'
+                        : 'Screen turns off normally; tracking continues',
+                    value: _settings.keepScreenOnWhileTracking,
+                    onChanged: (v) async {
+                      await _settingsService.updateKeepScreenOnWhileTracking(v);
+                      // Berlaku langsung bila tracking sedang berjalan.
+                      await BackgroundTrackingService()
+                          .applyScreenWakePreference();
+                    },
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _buildToggleTile(
+                    icon: Icons.cloud_sync_rounded,
+                    color: Colors.blue,
+                    title: 'Auto-sync when online',
+                    subtitle: _settings.autoSyncWhenOnline
+                        ? 'Pending records upload automatically when a connection is available'
+                        : 'Upload manually with the Sync button',
+                    value: _settings.autoSyncWhenOnline,
+                    onChanged: (v) =>
+                        _settingsService.updateAutoSyncWhenOnline(v),
+                  ),
+                ],
               ),
             ),
 
@@ -415,12 +448,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: const Icon(Icons.dark_mode_rounded, color: Colors.indigo, size: 20),
       ),
       title: const Text('Dark Mode', style: TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(_settings.darkMode ? 'Tema gelap aktif' : 'Tema terang aktif'),
+      subtitle: Text(_settings.darkMode ? 'Dark theme on' : 'Light theme on'),
       value: _settings.darkMode,
       activeColor: AppTheme.primaryColor,
       onChanged: (value) async {
         await _settingsService.updateDarkMode(value);
         setState(() => _settings = _settingsService.settings);
+      },
+    );
+  }
+
+  Widget _buildToggleTile({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required Future<void> Function(bool) onChanged,
+  }) {
+    return SwitchListTile(
+      secondary: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle),
+      value: value,
+      activeColor: AppTheme.primaryColor,
+      onChanged: (v) async {
+        await onChanged(v);
+        if (mounted) setState(() => _settings = _settingsService.settings);
       },
     );
   }
@@ -436,11 +497,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: const Icon(Icons.branding_watermark_rounded,
             color: Colors.teal, size: 20),
       ),
-      title: const Text('Watermark Foto',
+      title: const Text('Photo watermark',
           style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(_settings.photoWatermark
-          ? 'Foto distempel logo + info GPS/waktu'
-          : 'Foto disimpan tanpa watermark'),
+          ? 'Photos are stamped with the logo + GPS/time info'
+          : 'Photos are saved as taken (smaller files)'),
       value: _settings.photoWatermark,
       activeColor: AppTheme.primaryColor,
       onChanged: (value) async {

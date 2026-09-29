@@ -82,6 +82,13 @@ class LocationConfig {
   /// cold-start di awal track.
   static const bool warmupRequireGoodFix = true;
 
+  // ─── Koordinat yang direkam ─────────────────────────────────────────────
+  /// Bila true: titik jalur menyimpan koordinat MENTAH yang lolos gerbang
+  /// (akurasi/outlier/diam); Kalman hanya untuk marker di layar. Kalman
+  /// posisi-saja tertinggal ±2 m saat berjalan dan belasan meter di kendaraan,
+  /// sehingga sudut batas "terpotong" bila hasil smoothing yang direkam.
+  static const bool recordRawPositions = true;
+
   // ─── Kalman smoothing (pengganti EMA) ───────────────────────────────────
   /// Process-noise Kalman (meter/detik): seberapa cepat posisi boleh berubah
   /// tanpa dimodelkan. Besar = lebih responsif (kurang halus); kecil = lebih

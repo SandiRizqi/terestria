@@ -10,6 +10,7 @@ import '../../models/geo_data_model.dart';
 import 'notification_service.dart';
 import 'permission_service.dart';
 import '../gps_settings_service.dart';
+import '../settings_service.dart';
 import '../gps/gps_filter_pipeline.dart';
 import '../logging/log_setup.dart';
 import '../../utils/app_logger.dart';
@@ -62,7 +63,27 @@ class BackgroundTrackingService {
   Stream<GeoPoint> get locationStream => _locationStreamController.stream;
   
   bool get isRunning => _isRunning;
-  
+
+  /// Terapkan setelan "Keep screen on while tracking" saat itu juga (dipanggil
+  /// dari Settings) — tak perlu menunggu tracking berikutnya.
+  Future<void> applyScreenWakePreference() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final keepOn = _isRunning &&
+          SettingsService().settings.keepScreenOnWhileTracking;
+      if (keepOn) {
+        await WakelockPlus.enable();
+      } else {
+        await WakelockPlus.disable();
+      }
+      logInfo('Screen wakelock ${keepOn ? 'on' : 'off'} (setting changed)',
+          tag: 'SERVICE');
+    } catch (e, st) {
+      logError('Could not apply the screen wakelock setting',
+          error: e, stack: st, tag: 'SERVICE');
+    }
+  }
+
   /// Initialize background service
   Future<void> initialize() async {
     if (_isInitialized) {
@@ -137,6 +158,9 @@ class BackgroundTrackingService {
             ),
             // Teruskan flag agar konsumen (screen) merekam hanya bila layak.
             recordable: event['recordable'] as bool? ?? true,
+            rawLatitude: (event['rawLatitude'] as num?)?.toDouble(),
+            rawLongitude: (event['rawLongitude'] as num?)?.toDouble(),
+            rawAccuracy: (event['rawAccuracy'] as num?)?.toDouble(),
           );
           
           logDebug('📥 RECEIVED FROM BACKGROUND:');
@@ -273,10 +297,13 @@ class BackgroundTrackingService {
 
       logDebug('✅ Location permission verified: $permission');
 
-      // Enable wakelock untuk menjaga tracking aktif
-      if (Platform.isAndroid) {
+      // Layar tetap menyala hanya bila user memilihnya di Settings. Service
+      // lokasi (foreground service) tetap merekam dengan layar mati; dulu
+      // layar selalu dipaksa menyala dan menguras baterai di lapangan.
+      if (Platform.isAndroid &&
+          SettingsService().settings.keepScreenOnWhileTracking) {
         await WakelockPlus.enable();
-        logDebug('🔋 WakeLock enabled');
+        logDebug('🔋 Screen wakelock enabled (setting)');
       }
 
       // iOS: background tracking ditangani oleh flutter_background_service.
@@ -630,6 +657,13 @@ class BackgroundTrackingService {
             'speed': speedKmh,
             'timestamp': position.timestamp.millisecondsSinceEpoch,
             'recordable': processed.recordable,
+            // Koordinat mentah untuk titik jalur (lihat GeoPoint.forRecording).
+            if (processed.rawLatitude != null)
+              'rawLatitude': processed.rawLatitude,
+            if (processed.rawLongitude != null)
+              'rawLongitude': processed.rawLongitude,
+            if (processed.rawAccuracy != null)
+              'rawAccuracy': processed.rawAccuracy,
           };
 
           logDebug('📤 SENDING TO FOREGROUND: $locationMap');

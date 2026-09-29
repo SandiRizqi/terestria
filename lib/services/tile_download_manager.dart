@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../config/api_config.dart';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
@@ -97,7 +98,10 @@ class TileDownloadManager {
       final response = await _httpClient.get(
         Uri.parse(task.url),
         headers: {
-          'User-Agent': 'GeoformApp/1.0',
+          // Identitas app yang jelas (kebijakan tile server menolak UA
+          // generik — dulu 'GeoformApp/1.0').
+          'User-Agent':
+              'Terestria/${ApiConfig.appVersion} (${ApiConfig.bundleName})',
         },
       ).timeout(_downloadTimeout);
       

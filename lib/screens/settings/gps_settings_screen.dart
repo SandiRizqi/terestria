@@ -161,6 +161,16 @@ class _GpsSettingsScreenState extends State<GpsSettingsScreen> {
                         _save(_s.copyWith(acceptAllUntilGoodFix: v)),
                   ),
                   SwitchListTile(
+                    title: const Text('Record raw positions'),
+                    subtitle: const Text(
+                        'Save unsmoothed GPS positions in tracks (sharper corners). '
+                        'Smoothing is still used for the map marker.'),
+                    value: _s.recordRawPositions,
+                    activeColor: AppTheme.primaryGreen,
+                    onChanged: (v) =>
+                        _save(_s.copyWith(recordRawPositions: v)),
+                  ),
+                  SwitchListTile(
                     title: const Text('Record only after good fix'),
                     subtitle: const Text(
                         'Warm-up: start recording the track after the first good fix'),

@@ -17,6 +17,13 @@ class GeoPoint {
   /// SENGAJA tidak masuk [toJson]/[fromJson] — hanya relevan saat live.
   final bool recordable;
 
+  /// Koordinat & akurasi MENTAH (sebelum smoothing Kalman) — runtime saja,
+  /// tidak disimpan. Bila ada, [forRecording] memakai nilai ini untuk titik
+  /// jalur; [latitude]/[longitude] (smoothing) untuk marker di layar.
+  final double? rawLatitude;
+  final double? rawLongitude;
+  final double? rawAccuracy;
+
   GeoPoint({
     required this.latitude,
     required this.longitude,
@@ -27,7 +34,27 @@ class GeoPoint {
     this.fixQuality,
     this.satelliteCount,
     this.recordable = true,
+    this.rawLatitude,
+    this.rawLongitude,
+    this.rawAccuracy,
   });
+
+  /// Titik untuk DIREKAM ke jalur: koordinat mentah bila tersedia (tanpa
+  /// lag smoothing), tanpa field runtime.
+  GeoPoint forRecording() {
+    if (rawLatitude == null || rawLongitude == null) return this;
+    return GeoPoint(
+      latitude: rawLatitude!,
+      longitude: rawLongitude!,
+      altitude: altitude,
+      accuracy: rawAccuracy ?? accuracy,
+      speed: speed,
+      timestamp: timestamp,
+      fixQuality: fixQuality,
+      satelliteCount: satelliteCount,
+      recordable: recordable,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -81,6 +108,9 @@ class GeoPoint {
       fixQuality: fixQuality ?? this.fixQuality,
       satelliteCount: satelliteCount ?? this.satelliteCount,
       recordable: recordable ?? this.recordable,
+      rawLatitude: rawLatitude,
+      rawLongitude: rawLongitude,
+      rawAccuracy: rawAccuracy,
     );
   }
 

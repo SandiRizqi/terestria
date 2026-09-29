@@ -115,4 +115,45 @@ void main() {
     expect(out!.accuracy, greaterThanOrEqualTo(7.0)); // lantai 0.7 × 10
     expect(out.accuracy, lessThanOrEqualTo(10.0));
   });
+
+  test('titik recordable membawa koordinat mentah untuk direkam', () {
+    final p = GpsFilterPipeline(cfg());
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 1, timestamp: t0);
+    final out = p.process(
+        latitude: 0.0001, longitude: 0, accuracy: 5, speed: 1.4, timestamp: at(1));
+    expect(out!.recordable, isTrue);
+    // Marker = Kalman (tertinggal), rekaman = mentah (tanpa lag).
+    expect(out.latitude, lessThan(0.0001));
+    final rec = out.forRecording();
+    expect(rec.latitude, closeTo(0.0001, 1e-9));
+    expect(rec.accuracy, 5);
+    expect(rec.rawLatitude, isNull, reason: 'field runtime tak ikut direkam');
+  });
+
+  test('opsi recordRawPositions=false → rekaman memakai hasil Kalman', () {
+    final base = cfg();
+    final p = GpsFilterPipeline(GpsFilterConfig(
+      maxAccuracyMeters: base.maxAccuracyMeters,
+      goodFixThresholdMeters: base.goodFixThresholdMeters,
+      acceptAllUntilGoodFix: base.acceptAllUntilGoodFix,
+      poorAccuracyDropsBeforeRelax: base.poorAccuracyDropsBeforeRelax,
+      relaxedAccuracyMultiplier: base.relaxedAccuracyMultiplier,
+      maxRealisticSpeedKmh: base.maxRealisticSpeedKmh,
+      staticNoiseThresholdMeters: base.staticNoiseThresholdMeters,
+      staticNoiseWindowMs: base.staticNoiseWindowMs,
+      coordinateRoundFactor: base.coordinateRoundFactor,
+      outlierAccuracyK: base.outlierAccuracyK,
+      stationaryAccuracyFactor: base.stationaryAccuracyFactor,
+      warmupRequireGoodFix: base.warmupRequireGoodFix,
+      kalmanQMetersPerSecond: base.kalmanQMetersPerSecond,
+      stationarySpeedThresholdMps: base.stationarySpeedThresholdMps,
+      kalmanReportedAccuracyFloorFactor: base.kalmanReportedAccuracyFloorFactor,
+      recordRawPositions: false,
+    ));
+    p.process(latitude: 0, longitude: 0, accuracy: 5, speed: 1, timestamp: t0);
+    final out = p.process(
+        latitude: 0.0001, longitude: 0, accuracy: 5, speed: 1.4, timestamp: at(1));
+    expect(out!.rawLatitude, isNull);
+    expect(out.forRecording().latitude, out.latitude);
+  });
 }

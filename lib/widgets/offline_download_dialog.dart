@@ -7,6 +7,7 @@ import '../services/offline_basemap_download_service.dart';
 import '../theme/app_theme.dart';
 import '../models/basemap_model.dart';
 
+import '../services/device_health_service.dart';
 import '../utils/app_logger.dart';
 class OfflineDownloadDialog extends StatefulWidget {
   final LatLngBounds visibleBounds;
@@ -99,6 +100,28 @@ class _OfflineDownloadDialogState extends State<OfflineDownloadDialog> {
       _showError('This basemap does not support offline download');
       return;
     }
+
+    // Kebijakan tile OSM melarang unduhan massal untuk offline; server bisa
+    // memblokir app → peta kosong di lapangan. Beri tahu sebelum lanjut.
+    if (widget.currentBasemap.urlTemplate.contains('tile.openstreetmap.org')) {
+      final proceed = await _showConfirmDialog(
+        'OpenStreetMap tile policy',
+        'The public OpenStreetMap tile servers do not allow bulk downloads '
+            'for offline use. Large downloads may be blocked, which can leave '
+            'the map blank in the field.\n\nFor offline work, prefer a '
+            'company/satellite basemap or a PDF map. Continue anyway?',
+      );
+      if (proceed != true) return;
+      logWarn('Offline download from OSM public tiles '
+          '($_estimatedTileCount tiles)', tag: 'BASEMAP');
+    }
+
+    // Ruang penyimpanan hampir penuh → unduhan bisa gagal di tengah jalan.
+    if (!mounted) return;
+    if (!await confirmStorageFor(context, action: 'Downloading offline maps')) {
+      return;
+    }
+    if (!mounted) return;
 
     // Confirm large downloads
     if (_estimatedTileCount > 10000) {
