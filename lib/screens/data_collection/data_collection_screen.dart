@@ -158,6 +158,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   // P2+P3: Zoom tracking & culling debounce
   double _currentZoom = 15.0;
+  bool _followMe = false;
   Timer? _cullingDebounce;
 
   // GeoJSON Layers
@@ -1501,6 +1502,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         _markerTargetLatLng = newLatLng;
         _currentLocation = location;
         _markerAnimController.forward(from: 0);
+        if (_followMe) {
+          try {
+            _mapController.move(newLatLng, _mapController.camera.zoom);
+          } catch (_) {
+            // Peta belum siap (frame pertama) — fix berikutnya mencoba lagi.
+          }
+        }
       },
       onError: (Object error, StackTrace st) {
         logError('Location stream error', tag: 'COLLECT', error: error, stack: st);
@@ -1515,6 +1523,28 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     
     logDebug('✅ Stream listener setup complete', tag: 'COLLECT');
     logDebug('═══════════════════════════════════════', tag: 'COLLECT');
+  }
+
+  /// Mode ikuti: peta dipusatkan ke posisi GPS setiap fix. Mati sendiri
+  /// saat peta digeser, sehingga "Add point" di crosshair tetap bisa dipakai
+  /// untuk digitasi dari basemap.
+  void _toggleFollowMe() {
+    if (_followMe) {
+      setState(() => _followMe = false);
+      return;
+    }
+    final loc = _currentLocation;
+    if (loc == null) {
+      showInfoFeedback(context, 'Waiting for a GPS fix…',
+          duration: const Duration(seconds: 2));
+      return;
+    }
+    _mapController.move(
+      LatLng(loc.latitude, loc.longitude),
+      _mapController.camera.zoom, // pertahankan zoom, jangan zoom out
+    );
+    HapticFeedback.selectionClick();
+    setState(() => _followMe = true);
   }
 
   void _toggleTracking() {
@@ -3364,6 +3394,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     },
                     onPositionChanged: (position, hasGesture) {
                       _currentZoom = position.zoom;
+                      // Peta digeser user → mode ikuti berhenti (crosshair
+                      // kembali untuk digitasi manual).
+                      if (hasGesture && _followMe) {
+                        setState(() => _followMe = false);
+                      }
                       // Notifier, bukan setState: label koordinat crosshair
                       // saja yang ikut berubah tiap frame geser peta.
                       _centerNotifier.value = position.center;
@@ -3749,25 +3784,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             onPressed: _showBasemapSelector,
           ),
 
-          // Zoom to User Location
+          // Lokasi saya + mode ikuti: peta mengikuti posisi GPS (crosshair =
+          // posisi sekarang) sampai peta digeser; ketuk lagi untuk berhenti.
           MapToolButton(
-            tooltip: 'My Location',
-            icon: Icons.my_location,
-            onPressed: () {
-              if (_currentLocation != null) {
-                _mapController.move(
-                  LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
-                  _mapController.camera.zoom, // preserve current zoom, never zoom out
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Location not available'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
+            tooltip: _followMe
+                ? 'Following your location (tap to stop)'
+                : 'My location',
+            icon: _followMe ? Icons.gps_fixed_rounded : Icons.my_location,
+            active: _followMe,
+            onPressed: _toggleFollowMe,
           ),
         ],
       ),

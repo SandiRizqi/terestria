@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
+
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
+import '../../services/geometry_edit.dart';
+import '../../services/settings_service.dart';
 import '../../services/storage_service.dart';
-import '../../widgets/dynamic_form.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
+import '../../widgets/dynamic_form.dart';
+import '../../widgets/map/tools/measure_math.dart';
+import 'geometry_editor_screen.dart';
 
+/// Edit atribut DAN geometri record (koreksi vertex lewat crosshair) — dulu
+/// hanya atribut, sehingga titik yang salah harus dihapus & diambil ulang di
+/// lokasi.
 class EditGeoDataScreen extends StatefulWidget {
   final GeoData geoData;
   final Project project;
@@ -22,308 +33,359 @@ class EditGeoDataScreen extends StatefulWidget {
 class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
   final StorageService _storageService = StorageService();
   final _formKey = GlobalKey<FormState>();
+  final DynamicFormController _formController = DynamicFormController();
   late Map<String, dynamic> _formData;
+  late List<GeoPoint> _points;
   bool _isSaving = false;
+
+  bool get _geometryChanged =>
+      !GeometryEditSession.samePositions(_points, widget.geoData.points);
 
   @override
   void initState() {
     super.initState();
-    // Initialize dengan data yang sudah ada
     _formData = Map<String, dynamic>.from(widget.geoData.formData);
+    _points = List.of(widget.geoData.points);
+  }
+
+  Future<void> _editGeometry() async {
+    final result = await Navigator.push<List<GeoPoint>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GeometryEditorScreen(
+          type: widget.project.geometryType,
+          points: _points,
+        ),
+      ),
+    );
+    if (result != null && mounted) setState(() => _points = result);
   }
 
   Future<void> _saveChanges() async {
-    // Validate form
-    final isValid = _formKey.currentState!.validate();
-    
-    if (!isValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.warning, color: Colors.white),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Please fill in all required fields correctly.',
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.orange[700],
-          duration: const Duration(seconds: 3),
-        ),
+    // onSaved DynamicForm mengisi _formData.
+    _formKey.currentState?.save();
+    final formValid = _formKey.currentState?.validate() ?? true;
+    final issues = formFieldIssues(widget.project.formFields, _formData);
+    if (issues.isNotEmpty || !formValid) {
+      if (issues.isNotEmpty) _formController.scrollTo(issues.first.field.label);
+      showInfoFeedback(
+        context,
+        issues.isEmpty
+            ? 'Some fields need attention.'
+            : '"${issues.first.field.label}" ${issues.first.message}'
+                '${issues.length > 1 ? ' (+${issues.length - 1} more)' : ''}.',
+        warning: true,
       );
       return;
     }
-
-    _formKey.currentState!.save();
+    final minPoints =
+        GeometryEditSession.minPoints(widget.project.geometryType);
+    if (_points.length < minPoints) {
+      showInfoFeedback(context,
+          'This ${widget.project.geometryType.name} needs at least $minPoints points.',
+          warning: true);
+      return;
+    }
 
     setState(() => _isSaving = true);
-
     try {
-      // Update geodata dengan formData baru, tapi tetap pakai points yang lama
       final updatedGeoData = widget.geoData.copyWith(
         formData: _formData,
+        points: _points,
         updatedAt: DateTime.now(),
-        isSynced: false, // Reset sync status karena ada perubahan
+        isSynced: false, // ada perubahan → perlu diunggah ulang
       );
-
       await _storageService.saveGeoData(updatedGeoData);
-
-      if (mounted) {
-        setState(() => _isSaving = false);
-        
-        // Delay untuk UI update
-        await Future.delayed(const Duration(milliseconds: 100));
-        
-        if (mounted) {
-          Navigator.pop(context, true); // Return true untuk trigger reload
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Changes saved successfully'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
+      logInfo(
+          'Edited record ${widget.geoData.id} in "${widget.project.name}"'
+          '${_geometryChanged ? ' (geometry ${widget.geoData.points.length} → ${_points.length} points)' : ''}',
+          tag: 'EDIT');
+      if (!mounted) return;
+      Navigator.pop(context, true); // true → layar sebelumnya memuat ulang
+      showInfoFeedback(context, 'Changes saved', success: true,
+          duration: const Duration(seconds: 2));
+    } catch (e, st) {
+      if (!mounted) return;
       setState(() => _isSaving = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving changes: $e')),
-        );
-      }
+      showErrorFeedback(context, 'Could not save the changes',
+          error: e, stack: st, tag: 'EDIT');
+    }
+  }
+
+  Future<bool> _confirmDiscard() async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text('The corrected geometry has not been saved.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return discard == true;
+  }
+
+  String _measurement() {
+    final settings = SettingsService().settings;
+    final pts = _points.map((p) => LatLng(p.latitude, p.longitude)).toList();
+    switch (widget.project.geometryType) {
+      case GeometryType.point:
+        if (pts.isEmpty) return '-';
+        return '${pts.first.latitude.toStringAsFixed(6)}, '
+            '${pts.first.longitude.toStringAsFixed(6)}';
+      case GeometryType.line:
+        return settings.formatDistance(polylineLengthMeters(pts));
+      case GeometryType.polygon:
+        return settings.formatArea(polygonAreaSqMeters(pts));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.scaffoldBackground,
-      appBar: AppBar(
-        backgroundColor: AppTheme.primaryGreen,
-        elevation: 0,
-        title: const Text(
-          'Edit Survey Data',
-          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
-        ),
-        actions: [
-          if (_isSaving)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
+    final type = widget.project.geometryType;
+    return PopScope(
+      canPop: !_geometryChanged || _isSaving,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.scaffoldBackground,
+        appBar: AppBar(
+          backgroundColor: AppTheme.primaryGreen,
+          elevation: 0,
+          title: const Text(
+            'Edit record',
+            style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+          ),
+          actions: [
+            if (_isSaving)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.check_rounded, size: 28),
+                onPressed: _saveChanges,
+                tooltip: 'Save changes',
               ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.check_rounded, size: 28),
-              onPressed: _saveChanges,
-              tooltip: 'Save Changes',
-            ),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(AppTheme.spacingMedium),
-                children: [
-                  // Info banner
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    margin: const EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.blue[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue[200]!),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: Colors.blue[700],
-                          size: 24,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+          ],
+        ),
+        body: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(AppTheme.spacingMedium),
+                  children: [
+                    // Geometri (bisa dikoreksi)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: _geometryChanged
+                                ? Colors.orange.shade300
+                                : Colors.grey[300]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
+                              const Icon(Icons.location_on,
+                                  color: AppTheme.primaryColor, size: 20),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'Geometry',
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              if (_geometryChanged)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text('Edited — not saved yet',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.orange.shade900)),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildInfoItem(
+                                    'Type', type.name.toUpperCase()),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: _buildInfoItem(
+                                    'Points', '${_points.length}'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          _buildInfoItem(
+                            switch (type) {
+                              GeometryType.point => 'Coordinates',
+                              GeometryType.line => 'Length',
+                              GeometryType.polygon => 'Area',
+                            },
+                            _measurement(),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildInfoItem(
+                            'Collected',
+                            '${_formatDate(widget.geoData.createdAt)}'
+                                '${widget.geoData.collectedBy == null ? '' : ' by ${widget.geoData.collectedBy}'}',
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _isSaving ? null : _editGeometry,
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 48),
+                                foregroundColor: AppTheme.primaryColor,
+                              ),
+                              icon: const Icon(Icons.edit_location_alt_rounded),
+                              label: Text(type == GeometryType.point
+                                  ? 'Move the point'
+                                  : 'Correct points on the map'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    RequiredFieldsProgress(
+                      fields: widget.project.formFields,
+                      data: _formData,
+                    ),
+                    // Tanpa projectId: nilai yang di-pin untuk koleksi baru
+                    // TIDAK boleh menimpa nilai record yang sedang diedit.
+                    DynamicForm(
+                      formFields: widget.project.formFields,
+                      initialData: _formData,
+                      controller: _formController,
+                      onSaved: (data) => _formData = data,
+                      onChanged: () {
+                        if (mounted) setState(() {});
+                      },
+                      username: widget.geoData.collectedBy,
+                      latitude:
+                          _points.isNotEmpty ? _points.first.latitude : null,
+                      longitude:
+                          _points.isNotEmpty ? _points.first.longitude : null,
+                    ),
+
+                    const SizedBox(height: 100), // ruang untuk tombol
+                  ],
+                ),
+              ),
+
+              // Save Button
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _saveChanges,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.grey[300],
+                      disabledForegroundColor: Colors.grey[600],
+                      minimumSize: const Size(0, 52),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _isSaving
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              SizedBox(width: 12),
                               Text(
-                                'Edit Form Fields Only',
+                                'Saving…',
                                 style: TextStyle(
-                                  color: Colors.blue[900],
-                                  fontSize: 14,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                            ],
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.save_outlined, size: 22),
+                              SizedBox(width: 8),
                               Text(
-                                'Location data (geometry) cannot be edited. You can only modify form field values.',
+                                'Save changes',
                                 style: TextStyle(
-                                  color: Colors.blue[800],
-                                  fontSize: 12,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
                   ),
-
-                  // Form fields
-                  DynamicForm(
-                    formFields: widget.project.formFields,
-                    initialData: _formData, // Pre-fill dengan data yang ada
-                    onSaved: (data) => _formData = data,
-                    onChanged: () {
-                      // Optional: bisa tambah validasi real-time
-                    },
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Location info (read-only)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(
-                              Icons.location_on,
-                              color: AppTheme.primaryColor,
-                              size: 20,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Location Data (Read-only)',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildInfoItem(
-                                'Geometry Type',
-                                widget.project.geometryType.toString().split('.').last.toUpperCase(),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildInfoItem(
-                                'Points Recorded',
-                                '${widget.geoData.points.length}',
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        _buildInfoItem(
-                          'Created At',
-                          _formatDate(widget.geoData.createdAt),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 100), // Extra space for button
-                ],
-              ),
-            ),
-
-            // Save Button
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                top: false,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveChanges,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey[300],
-                    disabledForegroundColor: Colors.grey[600],
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isSaving
-                      ? const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            ),
-                            SizedBox(width: 12),
-                            Text(
-                              'Saving Changes...',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        )
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.save_outlined, size: 22),
-                            SizedBox(width: 8),
-                            Text(
-                              'Save Changes',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
