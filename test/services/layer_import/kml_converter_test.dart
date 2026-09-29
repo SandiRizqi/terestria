@@ -62,7 +62,8 @@ void main() {
     final fc = kmlToGeoJson(_kml);
 
     test('Placemark di Folder bersarang terbaca; tanpa geometri dilewati', () {
-      expect((fc['features'] as List).length, 5);
+      // 5 Placemark bergeometri; "Campur" dipecah jadi 2 fitur.
+      expect((fc['features'] as List).length, 6);
     });
 
     test('Polygon berlubang: outer + hole (ring ditutup otomatis)', () {
@@ -92,14 +93,19 @@ void main() {
       expect(_byName(fc, 'Jalan')['geometry']['type'], 'LineString');
     });
 
-    test('MultiGeometry seragam → MultiPolygon; campuran → GeometryCollection',
-        () {
+    test(
+        'MultiGeometry seragam → MultiPolygon; campuran → dipecah per bagian '
+        '(peta tak merender GeometryCollection)', () {
       final m = _byName(fc, 'Dua Blok')['geometry'];
       expect(m['type'], 'MultiPolygon');
       expect((m['coordinates'] as List).length, 2);
-      final c = _byName(fc, 'Campur')['geometry'];
-      expect(c['type'], 'GeometryCollection');
-      expect((c['geometries'] as List).length, 2);
+      final campur = (fc['features'] as List)
+          .cast<Map<String, dynamic>>()
+          .where((f) => f['properties']['name'] == 'Campur')
+          .map((f) => f['geometry']['type'])
+          .toList();
+      expect(campur, ['Point', 'LineString']);
+      expect(jsonEncode(fc), isNot(contains('GeometryCollection')));
     });
 
     test('KML tanpa Placemark bergeometri → LayerImportException', () {
@@ -112,10 +118,10 @@ void main() {
     final kmlBytes = Uint8List.fromList(utf8.encode(_kml));
 
     test('.kml dan .xml ber-root <kml>', () {
-      expect(convertLayerBytes('kebun.kml', kmlBytes).featureCount, 5);
+      expect(convertLayerBytes('kebun.kml', kmlBytes).featureCount, 6);
       final x = convertLayerBytes('kebun.xml', kmlBytes);
       expect(x.format, LayerFormat.kml);
-      expect(x.featureCount, 5);
+      expect(x.featureCount, 6);
     });
 
     test('.kmz: zip berisi doc.kml (+ berkas lain)', () {
@@ -125,7 +131,7 @@ void main() {
       final kmz = Uint8List.fromList(ZipEncoder().encode(archive));
       final r = convertLayerBytes('kebun.kmz', kmz);
       expect(r.format, LayerFormat.kmz);
-      expect(r.featureCount, 5);
+      expect(r.featureCount, 6);
       expect(r.defaultName, 'kebun');
     });
 

@@ -11,20 +11,24 @@ import 'zip_helpers.dart';
 ///
 /// Semua `Placemark` (termasuk di dalam Folder/Document bersarang) dengan
 /// geometri Point / LineString / LinearRing / Polygon (+ lubang
-/// `innerBoundaryIs`) / MultiGeometry. Properti: `name`, `description`, dan
+/// `innerBoundaryIs`) / MultiGeometry (campuran tipe dipecah jadi satu fitur
+/// per bagian — peta tak merender GeometryCollection). Properti: `name`, `description`, dan
 /// `ExtendedData` (`Data/value` & `SchemaData/SimpleData`).
 Map<String, dynamic> kmlToGeoJson(String text) {
   final doc = parseXmlOrThrow(text, 'KML');
   final features = <Map<String, dynamic>>[];
 
   for (final pm in descendantsNamed(doc.rootElement, 'Placemark')) {
-    final geometry = _placemarkGeometry(pm);
-    if (geometry == null) continue;
-    features.add({
-      'type': 'Feature',
-      'properties': _properties(pm),
-      'geometry': geometry,
-    });
+    final geometries = _placemarkGeometries(pm);
+    if (geometries.isEmpty) continue;
+    final props = _properties(pm);
+    for (final geometry in geometries) {
+      features.add({
+        'type': 'Feature',
+        'properties': Map<String, dynamic>.of(props),
+        'geometry': geometry,
+      });
+    }
   }
 
   if (features.isEmpty) {
@@ -60,15 +64,29 @@ const _geometryNames = {
   'MultiGeometry',
 };
 
-Map<String, dynamic>? _placemarkGeometry(XmlElement pm) {
+/// Geometri pertama Placemark; MultiGeometry campuran → beberapa geometri.
+List<Map<String, dynamic>> _placemarkGeometries(XmlElement pm) {
   for (final child in pm.childElements) {
-    if (_geometryNames.contains(child.name.local)) {
-      final g = _geometry(child);
-      if (g != null) return g;
+    if (!_geometryNames.contains(child.name.local)) continue;
+    if (child.name.local == 'MultiGeometry') {
+      final parts = _multiParts(child);
+      if (parts.isNotEmpty) return _combine(parts);
+      continue;
     }
+    final g = _geometry(child);
+    if (g != null) return [g];
   }
-  return null;
+  return const [];
 }
+
+/// Bagian-bagian MultiGeometry (MultiGeometry bersarang diratakan).
+List<Map<String, dynamic>> _multiParts(XmlElement multi) => [
+      for (final c in multi.childElements)
+        if (c.name.local == 'MultiGeometry')
+          ..._multiParts(c)
+        else if (_geometryNames.contains(c.name.local))
+          ...[_geometry(c)].whereType<Map<String, dynamic>>(),
+    ];
 
 Map<String, dynamic>? _geometry(XmlElement e) {
   switch (e.name.local) {
@@ -82,31 +100,25 @@ Map<String, dynamic>? _geometry(XmlElement e) {
     case 'Polygon':
       final rings = _polygonRings(e);
       return rings == null ? null : {'type': 'Polygon', 'coordinates': rings};
-    case 'MultiGeometry':
-      final parts = e.childElements
-          .where((c) => _geometryNames.contains(c.name.local))
-          .map(_geometry)
-          .whereType<Map<String, dynamic>>()
-          .toList();
-      return _combine(parts);
   }
   return null;
 }
 
-/// Bagian MultiGeometry → Multi* bila tipenya seragam, selain itu
-/// GeometryCollection.
-Map<String, dynamic>? _combine(List<Map<String, dynamic>> parts) {
-  if (parts.isEmpty) return null;
-  if (parts.length == 1) return parts.single;
+/// Bagian MultiGeometry → satu Multi* bila tipenya seragam, selain itu
+/// dibiarkan terpisah (satu fitur per bagian).
+List<Map<String, dynamic>> _combine(List<Map<String, dynamic>> parts) {
+  if (parts.length == 1) return parts;
   final types = parts.map((p) => p['type']).toSet();
   if (types.length == 1 &&
       const {'Point', 'LineString', 'Polygon'}.contains(types.single)) {
-    return {
-      'type': 'Multi${types.single}',
-      'coordinates': [for (final p in parts) p['coordinates']],
-    };
+    return [
+      {
+        'type': 'Multi${types.single}',
+        'coordinates': [for (final p in parts) p['coordinates']],
+      }
+    ];
   }
-  return {'type': 'GeometryCollection', 'geometries': parts};
+  return parts;
 }
 
 List<List<List<double>>>? _polygonRings(XmlElement polygon) {
