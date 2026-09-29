@@ -21,10 +21,10 @@ Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Branch: `main`
 - [x] **Task 8 — Skenario end-to-end (fake)** (S) ✅ 1 test skenario, lolos uji mutasi — regresi C1 terkunci
 
 ## Phase 3 — UX pengelola tracking
-- [ ] **Task 9 — Panel "Tracking Aktif" interaktif** (M) — chip status, jeda/lanjut, durasi & titik live, ringkasan banner per status
+- [x] **Task 9 — Panel "Tracking Aktif" interaktif** (M) ✅ 13 test (termasuk layar 360 dp) — chip status, jeda/lanjut, durasi & titik live, ringkasan banner per status
 
 ### Checkpoint B (complete)
-- [ ] Semua test hijau; analyze 0 error
+- [x] Semua test tracking hijau (343 lulus; 2 gagal lama di luar tracking: photoWatermark, OSM sheet parity); analyze 0 error
 - [ ] Manual Android + iOS: 1-project, multi 2–3, layar tertutup ≥5 menit, kill/restore, Emlid, cap, ganti provider
 
 ## Keputusan
