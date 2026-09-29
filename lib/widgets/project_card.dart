@@ -34,7 +34,11 @@ class _ProjectCardState extends State<ProjectCard>
   late final Animation<double> _blink;
   final TrackingSessionManager _tracking = TrackingSessionManager.instance;
 
-  bool get _isTracking => _tracking.isActive(widget.project.id);
+  bool get _hasSession => _tracking.isActive(widget.project.id);
+
+  /// Sedang merekam (sesi ada & tidak di-pause) → badge REC berkedip.
+  bool get _isTracking =>
+      _tracking.sessionFor(widget.project.id)?.paused == false;
 
   @override
   void initState() {
@@ -72,6 +76,33 @@ class _ProjectCardState extends State<ProjectCard>
     _tracking.removeListener(_onTrackingChanged);
     _blinkController.dispose();
     super.dispose();
+  }
+
+  /// Badge statis "JEDA" untuk sesi yang di-pause (mis. hasil restore).
+  Widget _buildPausedBadge() {
+    return Container(
+      key: ValueKey('tracking-paused-${widget.project.id}'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF59E0B).withOpacity(0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pause_rounded, size: 11, color: Color(0xFFB45309)),
+          SizedBox(width: 2),
+          Text(
+            'JEDA',
+            style: TextStyle(
+              color: Color(0xFFB45309),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Badge "REC" berkedip saat project sedang aktif merekam.
@@ -313,7 +344,10 @@ class _ProjectCardState extends State<ProjectCard>
                                 ),
                               ),
                               _buildSyncBadge(widget.project.isSynced),
-                              if (_isTracking) _buildTrackingBadge(),
+                              if (_isTracking)
+                                _buildTrackingBadge()
+                              else if (_hasSession)
+                                _buildPausedBadge(),
                             ],
                           ),
                         ],

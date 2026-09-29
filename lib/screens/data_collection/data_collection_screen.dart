@@ -602,6 +602,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       print('🔄 Restoring tracking state (sesi manajer)...');
       setState(() {
         _isTracking = true;
+        // Status Play/Pause mengikuti sesi (mis. hasil restore = paused).
+        _isPaused = session.paused;
         _collectedPoints = List.from(session.points);
       });
       print('✅ Restored ${_collectedPoints.length} points');

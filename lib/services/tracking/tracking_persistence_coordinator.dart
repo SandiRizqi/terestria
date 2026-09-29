@@ -86,6 +86,12 @@ class TrackingPersistenceCoordinator {
     for (final s in part.drop) {
       await repo.deleteSession(s.projectId);
     }
+    // Pulihkan sebagai PAUSED: user memilih "Lanjutkan" sendiri. Mencegah GPS
+    // background menyala diam-diam saat app dibuka (dan alur izin iOS yang
+    // butuh foreground tetap lewat tombol Resume).
+    for (final s in part.keep) {
+      s.paused = true;
+    }
     manager.restoreSessions(part.keep);
     for (final s in part.keep) {
       _flushed[s.projectId] = s.points.length;

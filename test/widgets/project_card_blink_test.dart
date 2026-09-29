@@ -47,4 +47,35 @@ void main() {
     await tester.pump();
     expect(find.byKey(key), findsNothing);
   });
+
+  testWidgets('sesi di-pause → badge JEDA statis, bukan REC berkedip',
+      (tester) async {
+    final p = _proj('card2');
+    final mgr = TrackingSessionManager.instance;
+    mgr.stop('card2');
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ProjectCard(
+          project: p,
+          onTap: () {},
+          onDelete: () {},
+          onEdit: () {},
+        ),
+      ),
+    ));
+    mgr.start(p);
+    mgr.pause('card2');
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tracking-active-card2')), findsNothing);
+    expect(find.byKey(const ValueKey('tracking-paused-card2')), findsOneWidget);
+
+    mgr.resume('card2');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('tracking-active-card2')), findsOneWidget);
+
+    mgr.stop('card2');
+    await tester.pump();
+  });
 }

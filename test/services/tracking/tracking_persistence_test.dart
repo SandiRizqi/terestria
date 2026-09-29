@@ -24,13 +24,14 @@ GeoPoint _pt(double lon) =>
 /// tiba saat proses append sedang berjalan (uji race deterministik).
 class _FakeRepo extends SessionRepository {
   final List<GeoPoint> appended = [];
+  List<TrackingSession> stored = [];
   void Function()? onAppend;
   @override
   Future<void> upsertSession(TrackingSession s) async {}
   @override
   Future<void> deleteSession(String id) async {}
   @override
-  Future<List<TrackingSession>> restoreAll() async => [];
+  Future<List<TrackingSession>> restoreAll() async => stored;
   @override
   Future<void> appendPoints(String id, List<GeoPoint> pts, int fromSeq) async {
     appended.addAll(pts);
@@ -126,6 +127,28 @@ void main() {
     await coord.flushNow(); // flush kedua: HARUS menambah titik ke-2 (tak hilang)
     expect(repo.appended.length, 2);
 
+    mgr.stop('a');
+  });
+
+  test('restore memuat sesi sebagai PAUSED (feed GPS tak menyala sendiri)',
+      () async {
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    final repo = _FakeRepo()
+      ..stored = [
+        TrackingSession(
+            project: _proj('a'),
+            startedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+            points: [_pt(0), _pt(1)]),
+      ];
+    final coord = TrackingPersistenceCoordinator(
+        manager: mgr, repo: repo, notify: (_) {});
+
+    await coord.restore();
+
+    final s = mgr.sessionFor('a')!;
+    expect(s.paused, isTrue);
+    expect(s.points.length, 2);
+    expect(mgr.recordingCount, 0); // engine tak menyalakan service saat launch
     mgr.stop('a');
   });
 
