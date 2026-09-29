@@ -4,7 +4,7 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-logging.md](plan-logging.md) 
 
 - [x] **T1 — `resolvePdfOverlay` + helper bounds/kamera** (S) ✅ 10 test
 - [x] **T2 — `PdfOverlayController`** (S) ✅ 9 test
-- [ ] **T3 — `buildBasemapLayers` + chip loading** (S)
+- [x] **T3 — `buildBasemapLayers` + chip loading** (S) ✅ 6 test
 - [ ] **T4 — DataCollectionScreen: tanpa I/O di build + fit kamera saat ganti** (M)
 - [ ] **T5 — Navigasi & Notification Map** (M)
 
