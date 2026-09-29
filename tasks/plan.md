@@ -7,8 +7,8 @@ Plan sebelumnya (basemap PDF, selesai): [plan-basemap-pdf.md](plan-basemap-pdf.m
 Tiga fitur independen:
 1. **Nama basemap dari Analysis Report** — sekarang hanya `file.title`
    ([analysis_files_screen.dart:174](../lib/screens/analysis/analysis_files_screen.dart)).
-   Diberi prefix project (perusahaan di Analysis Report, `compName` = `widget.title`), mis.
-   `PT Sawit Jaya · NDVI Blok A12`.
+   Diberi prefix **project** = level pertama Analysis Report (`AnalysisType.name`, alurnya
+   Project → Perusahaan → Berkas), mis. `Project Replanting · NDVI Blok A12`.
 2. **Import layer** — halaman Layers hanya menerima `.json/.geojson`
    ([layers_screen.dart:57](../lib/screens/layers/layers_screen.dart)). Ditambah **SHP ber-zip,
    GPX, dan XML (KML)**. Semua dikonversi ke GeoJSON saat import → sisa pipeline (simpan, style,
@@ -52,9 +52,9 @@ Tiga fitur independen:
 
 ### Phase 1 — Nama basemap Analysis Report
 #### T1: Prefix project pada nama basemap dari Analysis Report (S)
-- AC: basemap baru bernama `"<project> · <judul>"`; tak dobel bila judul sudah berawalan nama project; nama kosong/spasi dirapikan; dialog progres & snackbar memakai nama yang sama.
+- AC: basemap baru bernama `"<project> · <judul>"` dengan project = `AnalysisType.name` (diteruskan AnalysisCompaniesScreen → AnalysisFilesScreen sebagai parameter baru `projectName`); tak dobel bila judul sudah berawalan nama project; nama kosong/spasi dirapikan; dialog progres & snackbar memakai nama yang sama.
 - Verifikasi: unit test helper; widget/manual: tambah PDF dari Analysis Report → nama di pemilih basemap & Kelola Basemap lengkap.
-- Files: `lib/services/analysis/analysis_basemap_name.dart` (baru), `lib/screens/analysis/analysis_files_screen.dart`, test.
+- Files: `lib/services/analysis/analysis_basemap_name.dart` (baru), `lib/screens/analysis/analysis_files_screen.dart`, `lib/screens/analysis/analysis_companies_screen.dart`, test.
 
 ### Checkpoint 1
 - [ ] Test hijau; nama basemap tampil lengkap di pemilih basemap.
@@ -119,7 +119,7 @@ Tiga fitur independen:
 | Menambah paket `xml` ke `pubspec.yaml` yang punya perubahan lokal user | Low | Minta izin (OQ4); hanya menambah 1 baris dependency |
 
 ## Keputusan (Open Questions — default diterima saat approve)
-1. **"Project" di Analysis Report = perusahaan (`compName`)?** Format `"PT Sawit Jaya · NDVI Blok A12"`. Basemap lama yang sudah ada **tidak** diganti namanya. *(usul: ya)*
+1. **"Project" = level pertama Analysis Report (`AnalysisType.name`)** — dikoreksi user (bukan `compName`). Format `"<Project> · <judul>"`. Basemap lama tidak diganti namanya.
 2. **"XML" = KML?** Usul: terima `.kml`, `.kmz`, dan `.xml` (isi diendus: root `<kml>` atau `<gpx>`); XML lain ditolak.
 3. **SHP:** proyeksi yang didukung WGS84 + UTM WGS84 (umum di data kebun Indonesia); zip berisi beberapa shapefile → user memilih satu. *(usul: ya)*
 4. **Dependency `xml` ditambahkan ke `pubspec.yaml`** (sesuai Architecture Decision yang di-approve) — hanya satu baris itu; perubahan lokal user di pubspec tidak ikut di-commit.

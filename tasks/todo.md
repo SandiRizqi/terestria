@@ -3,7 +3,7 @@
 Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-basemap-pdf.md](plan-basemap-pdf.md) · Branch: `main`
 
 ## Phase 1 — Nama basemap Analysis Report
-- [ ] **T1 — Prefix project pada nama basemap** (S) — `"<project> · <judul>"`, tak dobel prefix
+- [ ] **T1 — Prefix project pada nama basemap** (S) — `"<project> · <judul>"`, project = `AnalysisType.name`, tak dobel prefix
 
 ### Checkpoint 1
 - [ ] Test hijau; nama basemap lengkap di pemilih basemap
@@ -27,5 +27,5 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-basemap-pdf.md](plan-basemap-
 - [ ] Test hijau; analyze 0 error; device: logout A (ada data belum sync) → login B bersih
 
 ## Open questions (lihat plan.md)
-1. Project = perusahaan (`compName`)?  2. XML = KML (+ .kmz)?  3. SHP: WGS84 + UTM saja?
+1. Project = `AnalysisType.name` (level pertama; dikoreksi user)  2. XML = KML (+ .kmz)?  3. SHP: WGS84 + UTM saja?
 4. Boleh tambah dependency `xml` di pubspec?  5. Allowlist logout: setelan tampilan/GPS/Emlid saja?
