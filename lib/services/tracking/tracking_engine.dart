@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../models/geo_data_model.dart';
 import '../../utils/app_logger.dart';
 import '../location_service_v2.dart';
+import 'tracking_log_summary.dart';
 import 'tracking_notification.dart';
 import 'tracking_session.dart';
 import 'tracking_session_manager.dart';
@@ -73,6 +74,9 @@ class TrackingEngine {
   final Future<void> Function()? _onFeedStop;
   final List<StreamSubscription<GeoPoint>> _feedSubs = [];
   String? _lastLabel;
+  TrackingLogSummary? _summary; // ringkasan GPS per menit selama aktif
+
+  static const _tag = 'ENGINE';
 
   bool _attached = false;
   bool _active = false;
@@ -104,6 +108,8 @@ class TrackingEngine {
     if (want != _active) {
       _active = want;
       if (want) {
+        logInfo('Aktif (${manager.recordingCount} merekam)', tag: _tag);
+        _summary = TrackingLogSummary(start: _now());
         _heartbeat?.cancel();
         _heartbeat = _periodicTimer(heartbeatInterval, (_) => tick());
         _sendHeartbeat();
@@ -111,6 +117,8 @@ class TrackingEngine {
         unawaited(_safely(_onFeedStart));
         unawaited(ensureRunning());
       } else {
+        logInfo('Idle — tak ada sesi merekam, service dimatikan', tag: _tag);
+        _summary = null;
         _heartbeat?.cancel();
         _heartbeat = null;
         _unsubscribeFeeds();
@@ -145,7 +153,7 @@ class TrackingEngine {
     try {
       await f();
     } catch (e) {
-      logError('❌ TrackingEngine: $e');
+      logError('Hook engine gagal', tag: _tag, error: e);
     }
   }
 
@@ -156,14 +164,22 @@ class TrackingEngine {
     _unsubscribeFeeds();
     final phone = _phoneFeed;
     if (phone != null) {
-      _feedSubs.add(phone.listen(
-          (p) => manager.ingest(p, source: TrackSource.phone)));
+      _feedSubs.add(phone.listen((p) => _onFix(p, TrackSource.phone)));
     }
     final emlid = _emlidFeed;
     if (emlid != null) {
-      _feedSubs.add(emlid.listen(
-          (p) => manager.ingest(p, source: TrackSource.emlid)));
+      _feedSubs.add(emlid.listen((p) => _onFix(p, TrackSource.emlid)));
     }
+  }
+
+  void _onFix(GeoPoint p, TrackSource source) {
+    _summary?.onFix(source, p);
+    logDebug(
+        'fix ${source.name} ${p.latitude},${p.longitude} '
+        '±${p.accuracy?.toStringAsFixed(1) ?? '?'} m '
+        '${p.recordable ? 'rekam' : 'tolak'}',
+        tag: 'GPS');
+    manager.ingest(p, source: source);
   }
 
   void _unsubscribeFeeds() {
@@ -176,8 +192,8 @@ class TrackingEngine {
   Future<void> _stop() async {
     try {
       await _stopService();
-    } catch (e) {
-      logError('❌ TrackingEngine: gagal menghentikan service: $e');
+    } catch (e, stack) {
+      logError('Gagal menghentikan service', tag: _tag, error: e, stack: stack);
     }
   }
 
@@ -196,11 +212,16 @@ class TrackingEngine {
   Future<bool> _startSafely() async {
     try {
       final ok = await _startService();
-      // Service baru menyala dengan teks default → kirim ulang ringkasan.
-      if (ok) _pushLabel(force: true);
+      if (ok) {
+        logInfo('Service menyala', tag: _tag);
+        // Service baru menyala dengan teks default → kirim ulang ringkasan.
+        _pushLabel(force: true);
+      } else {
+        logWarn('Service gagal dinyalakan (izin/lokasi mati?)', tag: _tag);
+      }
       return ok;
-    } catch (e) {
-      logError('❌ TrackingEngine: gagal menyalakan service: $e');
+    } catch (e, stack) {
+      logError('Gagal menyalakan service', tag: _tag, error: e, stack: stack);
       return false;
     }
   }
@@ -210,12 +231,15 @@ class TrackingEngine {
   void tick() {
     if (!_active) return;
     _sendHeartbeat();
-    if (_starting != null || _isServiceRunning()) return;
     final now = _now();
+    final summary = _summary?.maybeSummary(now, manager.activeSessions);
+    if (summary != null) logInfo(summary, tag: 'GPS');
+
+    if (_starting != null || _isServiceRunning()) return;
     final last = _lastRestartAttempt;
     if (last != null && now.difference(last) < restartBackoff) return;
     _lastRestartAttempt = now;
-    logError('⚠️ TrackingEngine: service mati saat sesi merekam → start ulang');
+    logWarn('Service mati saat sesi merekam → start ulang', tag: _tag);
     unawaited(ensureRunning());
   }
 }

@@ -163,7 +163,8 @@ class BackgroundTrackingService {
       final wasRunning = _isRunning;
       _isRunning = running;
       if (wasRunning && !running) {
-        logError('⚠️ Background service berhenti sendiri (dilaporkan isolate)');
+        logWarn('Background service berhenti sendiri (dilaporkan isolate; '
+            'alasan di bg-*.log)', tag: 'SERVICE');
         if (Platform.isAndroid) WakelockPlus.disable();
       }
     });
@@ -427,7 +428,18 @@ class BackgroundTrackingService {
   
   /// Laporkan ke app bahwa service berhenti SEBELUM stopSelf(), agar cache
   /// `_isRunning` di app tidak basi (Start berikutnya menyalakan ulang).
-  static Future<void> _reportStoppedAndStop(ServiceInstance service) async {
+  static Future<void> _reportStoppedAndStop(
+    ServiceInstance service, {
+    required String reason,
+    bool expected = false,
+  }) async {
+    // Alasan berhenti = informasi terpenting saat men-debug "titik tak
+    // terekam" → selalu tercatat di bg-*.log.
+    if (expected) {
+      logInfo('Service berhenti: $reason', tag: 'SERVICE');
+    } else {
+      logWarn('Service berhenti sendiri: $reason', tag: 'SERVICE');
+    }
     service.invoke('service_status', {'isRunning': false});
     await AppLogger.flush(); // log isolate jangan hilang saat isolate mati
     service.stopSelf();
@@ -475,7 +487,7 @@ class BackgroundTrackingService {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         logError('❌ Location service not enabled');
-        _reportStoppedAndStop(service);
+        _reportStoppedAndStop(service, reason: 'layanan lokasi (GPS) HP mati');
         return;
       }
       
@@ -498,7 +510,7 @@ class BackgroundTrackingService {
         heartbeatTimer?.cancel();
         await subscription?.cancel();
         await NotificationService.cancelNotification();
-        _reportStoppedAndStop(service);
+        _reportStoppedAndStop(service, reason: 'perintah stop dari app', expected: true);
       });
       
       // Ringkasan multi-project dari app ("Merekam 2 project · 1 jeda").
@@ -537,7 +549,7 @@ class BackgroundTrackingService {
           timer.cancel();
           await subscription?.cancel();
           await NotificationService.cancelNotification();
-          _reportStoppedAndStop(service);
+          _reportStoppedAndStop(service, reason: 'tak ada heartbeat > 15 dtk (app tertutup/dibekukan)');
         } else {
           logDebug('💚 Service alive - last heartbeat ${timeSinceLastHeartbeat.inSeconds}s ago');
         }
@@ -652,16 +664,21 @@ class BackgroundTrackingService {
           service.invoke('service_status', {'isRunning': true});
         },
         onError: (error) {
-          logError('❌ Location stream error in background: $error');
+          logError('Stream lokasi background error',
+              tag: 'SERVICE', error: error);
         },
       );
-      
-      logDebug('✅ Location tracking started in background isolate');
-      logDebug('═══════════════════════════════════════');
-      
-    } catch (e) {
-      logError('❌ Error in background service: $e');
-      _reportStoppedAndStop(service);
+
+      logInfo(
+          'Service background mulai (${Platform.operatingSystem}, '
+          'distanceFilter=${distanceFilterM} m, '
+          'interval=${gpsSettings.trackingIntervalMs} ms)',
+          tag: 'SERVICE');
+
+    } catch (e, stack) {
+      logError('Error di service background',
+          tag: 'SERVICE', error: e, stack: stack);
+      _reportStoppedAndStop(service, reason: 'error: $e');
     }
   }
   

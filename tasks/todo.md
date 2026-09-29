@@ -10,7 +10,7 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-tracking-engine.md](plan-trac
 - [ ] Test hijau; berkas `app-*.log` & `bg-*.log` muncul saat tracking
 
 ## Phase 2 — Isi log & ekspor
-- [ ] **Task 3 — Event tracking + ringkasan per menit** (M) — SESSION/ENGINE/SERVICE/GPS, alasan `stopSelf`
+- [x] **Task 3 — Event tracking + ringkasan per menit** (M) ✅ 6 test — SESSION/ENGINE/SERVICE/GPS, alasan `stopSelf`
 - [ ] **Task 4 — Settings "Log Diagnostik"** (M) — toggle 24 jam, ukuran log, Bagikan, Hapus
 - [ ] **Task 5 — Paket ekspor zip** (M) — log app+bg, 3 CSV GPS, info.txt, snapshot.txt → share
 - [ ] **Task 6 — Breadcrumb Crashlytics** (S) — warn/error → breadcrumb; rate-limit recordError

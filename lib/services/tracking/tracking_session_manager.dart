@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
+import '../../utils/app_logger.dart';
 import 'tracking_session.dart';
 
 /// Hasil percobaan memulai sesi tracking.
@@ -29,6 +30,13 @@ class TrackingSessionManager extends ChangeNotifier {
 
   final Map<String, TrackingSession> _sessions = {};
   int _maxConcurrent;
+
+  static const _tag = 'SESSION';
+
+  void _logCapReached(Project project) => logWarn(
+      'Start "${project.name}" ditolak: batas $_maxConcurrent project '
+      '(merekam+jeda) tercapai',
+      tag: _tag);
 
   int get maxConcurrent => _maxConcurrent;
   set maxConcurrent(int value) {
@@ -59,16 +67,20 @@ class TrackingSessionManager extends ChangeNotifier {
     final existing = _sessions[project.id];
     if (existing != null) {
       if (existing.pendingSave && liveCount >= _maxConcurrent) {
+        _logCapReached(project);
         return const StartResult(StartStatus.capReached);
       }
       return StartResult(StartStatus.alreadyActive, existing);
     }
     if (liveCount >= _maxConcurrent) {
+      _logCapReached(project);
       return const StartResult(StartStatus.capReached);
     }
     final s = TrackingSession(
         project: project, startedAt: DateTime.now(), source: source);
     _sessions[project.id] = s;
+    logInfo('Start "${project.name}" (${project.id}, sumber=${source.name}, '
+        '${project.geometryType.name})', tag: _tag);
     notifyListeners();
     return StartResult(StartStatus.started, s);
   }
@@ -115,6 +127,7 @@ class TrackingSessionManager extends ChangeNotifier {
     final s = _sessions[projectId];
     if (s != null && s.isRecording) {
       s.state = SessionState.paused;
+      logInfo('Jeda "${s.project.name}" (${s.pointCount} titik)', tag: _tag);
       notifyListeners();
     }
   }
@@ -123,7 +136,9 @@ class TrackingSessionManager extends ChangeNotifier {
   void resume(String projectId) {
     final s = _sessions[projectId];
     if (s != null && !s.isRecording) {
+      final from = s.pendingSave ? ' (dari draft)' : '';
       s.state = SessionState.recording;
+      logInfo('Lanjut "${s.project.name}"$from', tag: _tag);
       notifyListeners();
     }
   }
@@ -143,6 +158,7 @@ class TrackingSessionManager extends ChangeNotifier {
     if (s == null || s.points.isEmpty) return;
     s.points.removeLast();
     s.editVersion++;
+    logDebug('Undo titik "${s.project.name}" → ${s.pointCount}', tag: _tag);
     notifyListeners();
   }
 
@@ -150,6 +166,8 @@ class TrackingSessionManager extends ChangeNotifier {
   void clearPoints(String projectId) {
     final s = _sessions[projectId];
     if (s == null || s.points.isEmpty) return;
+    logInfo('Hapus semua titik "${s.project.name}" (${s.pointCount})',
+        tag: _tag);
     s.points.clear();
     s.editVersion++;
     notifyListeners();
@@ -161,6 +179,8 @@ class TrackingSessionManager extends ChangeNotifier {
     final s = _sessions[projectId];
     if (s != null && !s.pendingSave) {
       s.state = SessionState.pendingSave;
+      logInfo('Stop "${s.project.name}" → draft (${s.pointCount} titik)',
+          tag: _tag);
       notifyListeners();
     }
   }
@@ -168,7 +188,10 @@ class TrackingSessionManager extends ChangeNotifier {
   /// Lepas sesi (dipakai saat stop→simpan). Mengembalikan sesi yang dilepas.
   TrackingSession? stop(String projectId) {
     final s = _sessions.remove(projectId);
-    if (s != null) notifyListeners();
+    if (s != null) {
+      logInfo('Lepas "${s.project.name}" (${s.pointCount} titik)', tag: _tag);
+      notifyListeners();
+    }
     return s;
   }
 
@@ -180,6 +203,11 @@ class TrackingSessionManager extends ChangeNotifier {
     for (final s in sessions) {
       _sessions[s.projectId] = s;
     }
-    if (sessions.isNotEmpty) notifyListeners();
+    if (sessions.isNotEmpty) {
+      logInfo(
+          'Pulihkan ${sessions.length} sesi: ${sessions.map((s) => '"${s.project.name}" ${s.state.name} ${s.pointCount} titik').join(', ')}',
+          tag: _tag);
+      notifyListeners();
+    }
   }
 }
