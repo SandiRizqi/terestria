@@ -30,6 +30,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
 
   bool _isConnecting = false;
   bool _isConnected = false;
+  EmlidStatus _emlidState = const EmlidStatus();
   bool _isTesting = false;
   bool _isReceivingData = false; // NEW: track if data is being received
   DateTime? _lastDataReceived; // NEW: timestamp of last data
@@ -44,7 +45,21 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
   void initState() {
     super.initState();
     _listenToConsoleUpdates();
+    _locationService.emlidStatus.addListener(_onEmlidStatus);
+    _emlidState = _locationService.emlidStatus.value;
     _loadSavedSettings();
+  }
+
+  /// Status koneksi dari service (termasuk sambung-ulang otomatis di
+  /// background) — layar tak lagi menebak status sendiri.
+  void _onEmlidStatus() {
+    if (!mounted) return;
+    final st = _locationService.emlidStatus.value;
+    setState(() {
+      _emlidState = st;
+      _isConnected = st.connected;
+      if (!st.connected) _isReceivingData = false;
+    });
   }
 
   Future<void> _loadSavedSettings() async {
@@ -103,6 +118,7 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
 
   @override
   void dispose() {
+    _locationService.emlidStatus.removeListener(_onEmlidStatus);
     _locationSubscription?.cancel();
     _consoleSubscription?.cancel();
     _hostController.dispose();
@@ -603,6 +619,43 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
     }
   }
 
+  Widget _buildEmlidNotice({
+    required Color color,
+    required IconData icon,
+    required String title,
+    required String detail,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color, width: 2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: color.withOpacity(0.9))),
+                const SizedBox(height: 4),
+                Text(detail, style: const TextStyle(fontSize: 13)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -772,7 +825,8 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                                 child: ElevatedButton.icon(
                                   onPressed: _isConnecting
                                       ? null
-                                      : (_isConnected
+                                      : ((_isConnected ||
+                                              _emlidState.reconnecting)
                                           ? _disconnectFromEmlid
                                           : _connectToEmlid),
                                   icon: _isConnecting
@@ -782,17 +836,21 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                                           child: CircularProgressIndicator(
                                               strokeWidth: 2),
                                         )
-                                      : Icon(_isConnected
+                                      : Icon((_isConnected ||
+                                              _emlidState.reconnecting)
                                           ? Icons.close
                                           : Icons.link),
                                   label: Text(_isConnecting
                                       ? 'Connecting...'
-                                      : (_isConnected
+                                      : ((_isConnected ||
+                                              _emlidState.reconnecting)
                                           ? 'Disconnect'
                                           : 'Connect')),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor:
-                                        _isConnected ? Colors.red : Colors.blue,
+                                    backgroundColor: (_isConnected ||
+                                            _emlidState.reconnecting)
+                                        ? Colors.red
+                                        : Colors.blue,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
                                         vertical: 12),
@@ -873,6 +931,29 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
                                   ),
                                 ],
                               ),
+                            ),
+                          ],
+                          if (!_isConnected && _emlidState.reconnecting) ...[
+                            const SizedBox(height: 12),
+                            _buildEmlidNotice(
+                              color: Colors.orange,
+                              icon: Icons.sync,
+                              title: 'Connection lost — reconnecting'
+                                  '${_emlidState.reconnectAttempt > 0 ? ' (attempt ${_emlidState.reconnectAttempt})' : ''}…',
+                              detail: "Stay within the receiver's Wi-Fi "
+                                  'range. Tap Disconnect to stop.',
+                            ),
+                          ],
+                          if (_isConnected && _emlidState.belowRequirement) ...[
+                            const SizedBox(height: 12),
+                            _buildEmlidNotice(
+                              color: Colors.red,
+                              icon: Icons.gps_not_fixed,
+                              title: 'RTK ${(_emlidState.lastQuality ?? 'unknown').toUpperCase()} '
+                                  '— below the required '
+                                  '${_emlidState.requiredQuality.toUpperCase()}',
+                              detail: 'Positions are shown but NOT recorded '
+                                  'until the fix quality improves.',
                             ),
                           ],
                           const SizedBox(height: 8),

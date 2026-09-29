@@ -3,11 +3,16 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/geo_data_model.dart';
-import 'dart:math' show cos, sqrt, asin, sin, atan, atan2;
+import 'dart:math' as math;
+import 'dart:math' show cos, sqrt, asin, sin;
+import 'package:flutter/foundation.dart';
+import 'package:latlong2/latlong.dart';
+import '../widgets/map/tools/measure_math.dart';
 import 'background/notification_service.dart';
 import 'background/permission_service.dart';
 import 'background/background_tracking_service.dart';
 import 'background/phone_gps_service.dart';
+import 'gps/emlid_parsers.dart';
 import 'gps_logger_service.dart';
 import 'gps_settings_service.dart';
 import 'crashlytics_service.dart';
@@ -62,6 +67,30 @@ bool meetsFixRequirement(FixQuality required, String? fixQuality) {
 }
 
 
+/// Ringkasan status Emlid untuk UI.
+@immutable
+class EmlidStatus {
+  final bool connected;
+  final bool reconnecting;
+  final int reconnectAttempt;
+
+  /// Kualitas fix terakhir yang DITERIMA dari receiver (bisa di bawah syarat).
+  final String? lastQuality;
+
+  /// Fix terakhir di bawah syarat kualitas → titik TIDAK direkam.
+  final bool belowRequirement;
+  final String requiredQuality;
+
+  const EmlidStatus({
+    this.connected = false,
+    this.reconnecting = false,
+    this.reconnectAttempt = 0,
+    this.lastQuality,
+    this.belowRequirement = false,
+    this.requiredQuality = 'any',
+  });
+}
+
 class LocationServiceV2 {
   // Singleton pattern
   static final LocationServiceV2 _instance = LocationServiceV2._internal();
@@ -92,6 +121,26 @@ class LocationServiceV2 {
   String _emlidBuffer = '';
   DateTime? _lastEmlidDataTime;
   GeoPoint? _lastEmlidPoint; // titik Emlid live terakhir yang lolos filter
+
+  // Koneksi ulang otomatis & diagnosis.
+  NmeaStreamParser _nmeaParser = NmeaStreamParser();
+  bool _autoReconnect = false; // aktif sesudah konek sukses; mati saat Disconnect
+  Timer? _reconnectTimer;
+  Timer? _watchdog;
+  int _reconnectAttempt = 0;
+  int _socketGen = 0; // generasi socket; event socket lama diabaikan
+  String? _lastHost;
+  int? _lastPort;
+  DateTime? _lastEmlidBytesAt;
+  int _bytesSinceConnect = 0;
+  int _positionsSinceConnect = 0;
+  String? _lastReceivedQuality;
+  bool _belowRequirement = false;
+
+  /// Status Emlid untuk banner UI (tersambung / menyambung ulang / kualitas
+  /// di bawah syarat sehingga titik tidak direkam).
+  final ValueNotifier<EmlidStatus> emlidStatus =
+      ValueNotifier<EmlidStatus>(const EmlidStatus());
   
   // Getters
   LocationProvider get currentProvider => _currentProvider;
@@ -451,6 +500,7 @@ Future<bool> initialize() async {
   }) async {
     _currentProvider = provider;
     _requiredFixQuality = requiredFixQuality;
+    _publishEmlidStatus();
     await _saveLocationSettings();
     logDebug('📍 Provider set to: ${provider.name}, Quality: ${requiredFixQuality.name}');
   }
@@ -519,327 +569,338 @@ Future<bool> initialize() async {
     }
   }
   
+  /// Sambung ke Emlid (dipicu user). Setelah tersambung, koneksi yang putus
+  /// disambung ulang otomatis sampai user menekan Disconnect.
   Future<bool> connectEmlidTCP({
     required String host,
     required int port,
     required CoordinateFormat coordinateFormat,
   }) async {
+    logInfo('Connecting to Emlid at $host:$port (${coordinateFormat.name})',
+        tag: 'EMLID');
+    _addConsoleLog('Connecting to $host:$port...');
+    _cancelReconnect();
+    await _closeSocket();
+    _coordinateFormat = coordinateFormat;
+    _lastHost = host;
+    _lastPort = port;
+
+    final ok = await _openSocket(host, port);
+    if (!ok) {
+      _autoReconnect = false;
+      _publishEmlidStatus();
+      return false;
+    }
+
+    // Tunggu data pertama agar user langsung tahu bila format/output salah.
+    _addConsoleLog('Waiting for data...');
+    await Future.delayed(const Duration(seconds: 3));
+    if (!_isEmlidConnected) {
+      _addConsoleLog('✗ Connection lost right after connecting');
+      logWarn('Emlid connection lost right after connecting', tag: 'EMLID');
+      return false;
+    }
+    if (_bytesSinceConnect == 0) {
+      _addConsoleLog('⚠ Connected, but no data yet. Check that Position '
+          'Output (TCP server) is enabled on the receiver.');
+    } else if (_positionsSinceConnect == 0) {
+      _addConsoleLog('⚠ Receiving data but no valid position. Check that the '
+          'Data Format here matches the receiver (NMEA / LLH / XYZ).');
+      logWarn('Emlid: data received but no position parsed '
+          '(format ${coordinateFormat.name})', tag: 'EMLID');
+    } else {
+      _addConsoleLog('✓ Connected, receiving positions');
+    }
+
+    _autoReconnect = true;
+    await saveEmlidConnectionSettings(
+      host: host,
+      port: port,
+      format: coordinateFormat,
+    );
+    return true;
+  }
+
+  /// Buka socket & pasang listener. Tak melempar — kegagalan dicatat.
+  Future<bool> _openSocket(String host, int port) async {
+    final gen = ++_socketGen;
     try {
-      logDebug('🔌 Connecting to Emlid at $host:$port...');
-      _addConsoleLog('Connecting to $host:$port...');
-      
-      await disconnectEmlidTCP();
-      _coordinateFormat = coordinateFormat;
-      
-      _emlidSocket = await Socket.connect(
+      final socket = await Socket.connect(
         host,
         port,
-        timeout: const Duration(seconds: 30),
+        timeout: const Duration(seconds: 15),
       );
-      
+      if (gen != _socketGen) {
+        // Sudah diganti/diputus saat menunggu koneksi.
+        socket.destroy();
+        return false;
+      }
+      _emlidSocket = socket;
       _isEmlidConnected = true;
+      _emlidBuffer = '';
+      _nmeaParser = NmeaStreamParser();
+      _bytesSinceConnect = 0;
+      _positionsSinceConnect = 0;
+      _lastEmlidBytesAt = DateTime.now();
+      _reconnectAttempt = 0;
       _addConsoleLog('✓ TCP Socket connected');
-      _addConsoleLog('Format: ${coordinateFormat.name.toUpperCase()}');
-      
-      _emlidSocket!.setOption(SocketOption.tcpNoDelay, true);
-      
-      _emlidSocket!.listen(
+      _addConsoleLog('Format: ${_coordinateFormat.name.toUpperCase()}');
+      logInfo('Emlid socket connected ($host:$port)', tag: 'EMLID');
+
+      socket.setOption(SocketOption.tcpNoDelay, true);
+      socket.listen(
         _handleEmlidData,
-        onError: (error) {
+        onError: (Object error) {
           _addConsoleLog('✗ Socket Error: $error');
-          _isEmlidConnected = false;
+          _onSocketClosed(gen, 'socket error: $error');
         },
         onDone: () {
           _addConsoleLog('✗ Connection closed');
-          _isEmlidConnected = false;
+          _onSocketClosed(gen, 'closed by receiver/network');
         },
-        cancelOnError: false,
+        cancelOnError: true,
       );
-      
-      // Send initialization commands
+
+      // Perintah pemicu (beberapa firmware menunggu input sebelum mengirim).
       try {
-        _addConsoleLog('Sending init commands...');
-        _emlidSocket!.write('\r\n');
-        await _emlidSocket!.flush();
-        await Future.delayed(const Duration(milliseconds: 200));
-        
-        _emlidSocket!.add([0x00]);
-        await _emlidSocket!.flush();
-        await Future.delayed(const Duration(milliseconds: 200));
-        
-        if (coordinateFormat == CoordinateFormat.nmea) {
-          _emlidSocket!.write('\$GPGGA\r\n');
-          await _emlidSocket!.flush();
-          await Future.delayed(const Duration(milliseconds: 200));
+        socket.write('\r\n');
+        if (_coordinateFormat == CoordinateFormat.nmea) {
+          socket.write('\$GPGGA\r\n');
         }
-        
-        _addConsoleLog('✓ Init commands sent');
+        await socket.flush();
       } catch (e) {
         _addConsoleLog('⚠ Init commands error: $e');
       }
-      
-      _addConsoleLog('Waiting for data...');
-      await Future.delayed(const Duration(seconds: 3));
-      
-      if (!_isEmlidConnected) {
-        throw Exception('Connection lost');
-      }
-      
-      _addConsoleLog('✓ Connected, listening for data');
-      
-      await saveEmlidConnectionSettings(
-        host: host,
-        port: port,
-        format: coordinateFormat,
-      );
-      
+
+      _startWatchdog();
+      _publishEmlidStatus();
       return true;
-      
     } on SocketException catch (e) {
       final errorMsg = e.message;
       _addConsoleLog('✗ SocketException: $errorMsg');
-      
-      if (errorMsg.contains('Connection refused') || e.osError?.errorCode == 61) {
+      if (errorMsg.contains('Connection refused') ||
+          e.osError?.errorCode == 61 ||
+          e.osError?.errorCode == 111) {
         _addConsoleLog('→ Check Emlid settings:');
         _addConsoleLog('  1. Position Output enabled');
         _addConsoleLog('  2. TCP Server mode');
         _addConsoleLog('  3. Correct port (9090)');
-      } else if (errorMsg.contains('unreachable') || e.osError?.errorCode == 51) {
+      } else if (errorMsg.contains('unreachable') ||
+          e.osError?.errorCode == 51 ||
+          e.osError?.errorCode == 101) {
         _addConsoleLog('→ Network unreachable');
         _addConsoleLog('  1. Connect to Emlid WiFi');
         _addConsoleLog('  2. Check IP: 192.168.42.1');
       }
-      
-      _isEmlidConnected = false;
+      logWarn('Emlid connect to $host:$port failed: $errorMsg', tag: 'EMLID');
+      if (gen == _socketGen) _isEmlidConnected = false;
       return false;
-      
-    } catch (e) {
+    } catch (e, st) {
       _addConsoleLog('✗ Error: $e');
-      _isEmlidConnected = false;
+      logError('Emlid connect to $host:$port failed',
+          tag: 'EMLID', error: e, stack: st);
+      if (gen == _socketGen) _isEmlidConnected = false;
       return false;
     }
   }
-  
+
+  void _onSocketClosed(int gen, String reason) {
+    if (gen != _socketGen) return; // socket lama yang sengaja ditutup
+    _isEmlidConnected = false;
+    _emlidSocket = null;
+    _stopWatchdog();
+    logWarn('Emlid connection lost: $reason', tag: 'EMLID');
+    if (_autoReconnect) _scheduleReconnect();
+    _publishEmlidStatus();
+  }
+
+  /// Backoff 2 → 4 → 8 → 16 → 30 dtk, terus mencoba selama auto-reconnect aktif
+  /// (mis. surveyor berjalan menjauh lalu kembali ke jangkauan Wi-Fi Emlid).
+  void _scheduleReconnect() {
+    final host = _lastHost, port = _lastPort;
+    if (host == null || port == null) return;
+    _reconnectTimer?.cancel();
+    const delays = [2, 4, 8, 16, 30];
+    final delay = Duration(
+        seconds: delays[math.min(_reconnectAttempt, delays.length - 1)]);
+    _reconnectAttempt++;
+    _addConsoleLog('Reconnecting in ${delay.inSeconds}s '
+        '(attempt $_reconnectAttempt)...');
+    _reconnectTimer = Timer(delay, () async {
+      if (!_autoReconnect || _isEmlidConnected) return;
+      final ok = await _openSocket(host, port);
+      if (ok) {
+        logInfo('Emlid reconnected after $_reconnectAttempt attempt(s)',
+            tag: 'EMLID');
+      } else if (_autoReconnect) {
+        _scheduleReconnect();
+      }
+      _publishEmlidStatus();
+    });
+    _publishEmlidStatus();
+  }
+
+  void _cancelReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _reconnectAttempt = 0;
+  }
+
+  /// Socket "setengah mati" (tak ada data > 30 dtk tanpa onDone, sering di
+  /// Wi-Fi lemah) → tutup paksa agar auto-reconnect berjalan.
+  void _startWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = Timer.periodic(const Duration(seconds: 5), (_) {
+      final last = _lastEmlidBytesAt;
+      if (!_isEmlidConnected || last == null) return;
+      if (DateTime.now().difference(last) > const Duration(seconds: 30)) {
+        _addConsoleLog('✗ No data for 30s — reconnecting');
+        final gen = _socketGen;
+        final socket = _emlidSocket;
+        _socketGen++; // abaikan onDone socket lama
+        socket?.destroy();
+        _isEmlidConnected = false;
+        _emlidSocket = null;
+        _stopWatchdog();
+        logWarn('Emlid stalled (no data for 30s, socket gen $gen)',
+            tag: 'EMLID');
+        if (_autoReconnect) _scheduleReconnect();
+        _publishEmlidStatus();
+      }
+    });
+  }
+
+  void _stopWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = null;
+  }
+
+  Future<void> _closeSocket() async {
+    _socketGen++; // listener socket lama tak lagi memicu reconnect
+    _stopWatchdog();
+    final socket = _emlidSocket;
+    _emlidSocket = null;
+    _isEmlidConnected = false;
+    try {
+      await socket?.close();
+    } catch (e) {
+      logDebug('Closing Emlid socket: $e', tag: 'EMLID');
+      socket?.destroy();
+    }
+  }
+
+  /// Putus manual oleh user: hentikan juga auto-reconnect.
   Future<void> disconnectEmlidTCP() async {
     try {
-      await _emlidSocket?.close();
-      _emlidSocket = null;
-      _isEmlidConnected = false;
+      _autoReconnect = false;
+      _cancelReconnect();
+      await _closeSocket();
       _emlidBuffer = '';
       _lastEmlidPoint = null;
       _lastEmlidDataTime = null;
+      _belowRequirement = false;
+      _lastReceivedQuality = null;
       _addConsoleLog('Disconnected');
-    } catch (e) {
-      logError('❌ Error disconnecting: $e');
+      logInfo('Emlid disconnected by user', tag: 'EMLID');
+    } catch (e, st) {
+      logError('Error disconnecting Emlid', tag: 'EMLID', error: e, stack: st);
+    } finally {
+      _publishEmlidStatus();
     }
   }
-  
+
   Stream<GeoPoint> trackEmlidLocation() {
     if (!_isEmlidConnected) {
       throw Exception('Not connected to Emlid GPS');
     }
     return _emlidLocationController.stream;
   }
-  
+
   void _handleEmlidData(List<int> data) {
     try {
-      final text = utf8.decode(data, allowMalformed: true);
-      _emlidBuffer += text;
-      
+      _lastEmlidBytesAt = DateTime.now();
+      _bytesSinceConnect += data.length;
+      _emlidBuffer += utf8.decode(data, allowMalformed: true);
+      // Tanpa newline (mis. format biner ERB) buffer tak boleh tumbuh terus.
+      if (_emlidBuffer.length > 16384) {
+        _emlidBuffer = _emlidBuffer.substring(_emlidBuffer.length - 4096);
+      }
+
       final lines = _emlidBuffer.split('\n');
       _emlidBuffer = lines.removeLast();
-      
-      for (final line in lines) {
-        if (line.trim().isEmpty) continue;
-        
-        _addConsoleLog('< ${line.trim()}');
-        
-        GeoPoint? point;
-        
+
+      for (final raw in lines) {
+        final line = raw.trim();
+        if (line.isEmpty) continue;
+
+        _addConsoleLog('< $line');
+
+        final GeoPoint? point;
         switch (_coordinateFormat) {
           case CoordinateFormat.nmea:
-            point = _parseNMEA(line);
+            point = _nmeaParser.parse(line);
             break;
           case CoordinateFormat.llh:
-            point = _parseLLH(line);
+            point = parseRtklibLlh(line);
             break;
           case CoordinateFormat.xyz:
-            point = _parseXYZ(line);
+            point = parseRtklibXyz(line);
             break;
         }
-        
-        if (point != null) {
-          _lastEmlidDataTime = DateTime.now();
-          if (_meetsQualityRequirement(point)) {
-            _addConsoleLog('✓ Valid position');
-            _lastEmlidPoint = point; // sumber getCurrentLocation utk Emlid live
-            _emlidLocationController.add(point);
-            _gpsLogger.log(point);
-          } else {
-            _addConsoleLog('⚠ Quality below requirement');
-          }
+        if (point == null) continue;
+
+        _positionsSinceConnect++;
+        _lastEmlidDataTime = DateTime.now();
+        _lastReceivedQuality = point.fixQuality;
+        if (_meetsQualityRequirement(point)) {
+          _lastEmlidPoint = point; // sumber getCurrentLocation utk Emlid live
+          _setBelowRequirement(false);
+          _emlidLocationController.add(point);
+          _gpsLogger.log(point);
+        } else {
+          // Tetap kirim untuk TAMPILAN (marker bergerak, ring oranye) tapi
+          // ditandai tak layak rekam — dulu dibuang diam-diam sehingga marker
+          // membeku dan user mengira tracking masih merekam.
+          _setBelowRequirement(true);
+          _emlidLocationController.add(point.copyWith(recordable: false));
         }
       }
-    } catch (e) {
+    } catch (e, st) {
       _addConsoleLog('✗ Parse error: $e');
+      logError('Emlid data handling failed', tag: 'EMLID', error: e, stack: st);
     }
   }
-  
-  GeoPoint? _parseNMEA(String line) {
-    try {
-      if (!line.startsWith('\$GPGGA') && !line.startsWith('\$GNGGA')) {
-        return null;
-      }
-      
-      final parts = line.split(',');
-      if (parts.length < 15) return null;
-      
-      final latStr = parts[2];
-      final latDir = parts[3];
-      if (latStr.isEmpty || latDir.isEmpty) return null;
-      
-      final latDeg = double.parse(latStr.substring(0, 2));
-      final latMin = double.parse(latStr.substring(2));
-      var latitude = latDeg + (latMin / 60);
-      if (latDir == 'S') latitude = -latitude;
-      
-      final lonStr = parts[4];
-      final lonDir = parts[5];
-      if (lonStr.isEmpty || lonDir.isEmpty) return null;
-      
-      final lonDeg = double.parse(lonStr.substring(0, 3));
-      final lonMin = double.parse(lonStr.substring(3));
-      var longitude = lonDeg + (lonMin / 60);
-      if (lonDir == 'W') longitude = -longitude;
-      
-      final fixQuality = int.tryParse(parts[6]) ?? 0;
-      String? fixQualityStr;
-      switch (fixQuality) {
-        case 0: fixQualityStr = 'invalid'; break;
-        case 1: fixQualityStr = 'autonomous'; break;
-        case 2: fixQualityStr = 'dgps'; break;
-        case 4: fixQualityStr = 'fix'; break;
-        case 5: fixQualityStr = 'float'; break;
-        default: fixQualityStr = 'unknown';
-      }
-      
-      final satCount = int.tryParse(parts[7]);
-      final altitude = double.tryParse(parts[9]);
-      
-      return GeoPoint(
-        latitude: latitude,
-        longitude: longitude,
-        altitude: altitude,
-        timestamp: DateTime.now(),
-        fixQuality: fixQualityStr,
-        satelliteCount: satCount,
-      );
-    } catch (e) {
-      _addConsoleLog('✗ NMEA parse error: $e');
-      return null;
+
+  void _setBelowRequirement(bool below) {
+    if (below == _belowRequirement) return;
+    _belowRequirement = below;
+    if (below) {
+      _addConsoleLog('⚠ Quality ${_lastReceivedQuality ?? '?'} below '
+          'requirement "${_requiredFixQuality.name}" — positions not recorded');
+      logWarn('RTK quality ${_lastReceivedQuality ?? '?'} below requirement '
+          '"${_requiredFixQuality.name}" — points not recorded', tag: 'EMLID');
+    } else {
+      logInfo('RTK quality back to ${_lastReceivedQuality ?? '?'}',
+          tag: 'EMLID');
     }
+    _publishEmlidStatus();
   }
-  
-  GeoPoint? _parseLLH(String line) {
-    try {
-      final parts = line.trim().split(RegExp(r'\s+'));
-      if (parts.length < 10) return null;
-      
-      final latitude = double.tryParse(parts[0]);
-      final longitude = double.tryParse(parts[1]);
-      final altitude = double.tryParse(parts[2]);
-      final quality = int.tryParse(parts[3]);
-      final satCount = int.tryParse(parts[4]);
-      
-      if (latitude == null || longitude == null) return null;
-      
-      String? fixQualityStr;
-      switch (quality) {
-        case 1: fixQualityStr = 'fix'; break;
-        case 2: fixQualityStr = 'float'; break;
-        case 5: fixQualityStr = 'autonomous'; break;
-        default: fixQualityStr = 'unknown';
-      }
-      
-      return GeoPoint(
-        latitude: latitude,
-        longitude: longitude,
-        altitude: altitude,
-        timestamp: DateTime.now(),
-        fixQuality: fixQualityStr,
-        satelliteCount: satCount,
-      );
-    } catch (e) {
-      _addConsoleLog('✗ LLH parse error: $e');
-      return null;
-    }
-  }
-  
-  GeoPoint? _parseXYZ(String line) {
-    try {
-      final parts = line.trim().split(RegExp(r'\s+'));
-      if (parts.length < 10) return null;
-      
-      final x = double.tryParse(parts[0]);
-      final y = double.tryParse(parts[1]);
-      final z = double.tryParse(parts[2]);
-      final quality = int.tryParse(parts[3]);
-      final satCount = int.tryParse(parts[4]);
-      
-      if (x == null || y == null || z == null) return null;
-      
-      final llh = _ecefToLLH(x, y, z);
-      
-      String? fixQualityStr;
-      switch (quality) {
-        case 1: fixQualityStr = 'fix'; break;
-        case 2: fixQualityStr = 'float'; break;
-        case 5: fixQualityStr = 'autonomous'; break;
-        default: fixQualityStr = 'unknown';
-      }
-      
-      return GeoPoint(
-        latitude: llh['lat']!,
-        longitude: llh['lon']!,
-        altitude: llh['height']!,
-        timestamp: DateTime.now(),
-        fixQuality: fixQualityStr,
-        satelliteCount: satCount,
-      );
-    } catch (e) {
-      _addConsoleLog('✗ XYZ parse error: $e');
-      return null;
-    }
-  }
-  
-  Map<String, double> _ecefToLLH(double x, double y, double z) {
-    const double a = 6378137.0;
-    const double e2 = 0.00669437999014;
-    
-    final p = sqrt(x * x + y * y);
-    final lon = atan2(y, x) * 180 / 3.141592653589793;
-    
-    var lat = atan2(z, p * (1 - e2));
-    var height = 0.0;
-    
-    for (var i = 0; i < 5; i++) {
-      final sinLat = sin(lat);
-      final N = a / sqrt(1 - e2 * sinLat * sinLat);
-      height = p / cos(lat) - N;
-      lat = atan2(z, p * (1 - e2 * N / (N + height)));
-    }
-    
-    return {
-      'lat': lat * 180 / 3.141592653589793,
-      'lon': lon,
-      'height': height,
-    };
-  }
-  
+
   bool _meetsQualityRequirement(GeoPoint point) =>
       point.fixQuality != null &&
       meetsFixRequirement(_requiredFixQuality, point.fixQuality);
-  
+
+  void _publishEmlidStatus() {
+    emlidStatus.value = EmlidStatus(
+      connected: _isEmlidConnected,
+      reconnecting: _autoReconnect && !_isEmlidConnected,
+      reconnectAttempt: _reconnectAttempt,
+      lastQuality: _lastReceivedQuality,
+      belowRequirement: _isEmlidConnected && _belowRequirement,
+      requiredQuality: _requiredFixQuality.name,
+    );
+  }
+
   void _addConsoleLog(String message) {
     final timestamp = DateTime.now();
     final timeStr = '${timestamp.hour.toString().padLeft(2, '0')}:'
@@ -877,23 +938,16 @@ Future<bool> initialize() async {
     return totalDistance;
   }
   
+  /// Luas poligon (m²). Memakai rumus yang sama dengan alat ukur peta
+  /// (proyeksi lokal dengan koreksi cos(lintang)) — dulu shoelace pada derajat
+  /// × 111320² tanpa koreksi bujur, sehingga luas di info card berbeda dari
+  /// alat ukur (±0,5–1 % di Indonesia, makin besar di lintang tinggi).
   double calculatePolygonArea(List<GeoPoint> points) {
     if (points.length < 3) return 0;
-    
-    double area = 0;
-    int n = points.length;
-    
-    for (int i = 0; i < n; i++) {
-      int j = (i + 1) % n;
-      area += points[i].latitude * points[j].longitude;
-      area -= points[j].latitude * points[i].longitude;
-    }
-    
-    area = (area.abs() / 2.0);
-    const double metersPerDegree = 111320;
-    return area * metersPerDegree * metersPerDegree;
+    return polygonAreaSqMeters(
+        points.map((p) => LatLng(p.latitude, p.longitude)).toList());
   }
-  
+
   double _toRadians(double degree) {
     return degree * (3.141592653589793 / 180.0);
   }
