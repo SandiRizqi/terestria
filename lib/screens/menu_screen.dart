@@ -8,6 +8,8 @@ import '../services/connectivity_service.dart';
 import '../services/database_service.dart';
 import '../services/notification_event_service.dart';
 import '../services/notification_sync_service.dart';
+import '../services/app_reset/logout_guard.dart';
+import '../services/sync_service.dart';
 import '../services/firebase_messaging_service.dart';
 import '../widgets/connectivity/connectivity_indicator.dart';
 import 'auth/login_screen.dart';
@@ -707,27 +709,32 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Logout = reset app ke kondisi awal. Bila masih ada data belum
+  /// tersinkron / sesi tracking, user diberi pilihan Sync dulu / Batal /
+  /// Hapus & Logout (ketik HAPUS).
   void _logout(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
+    var confirm = false;
+    while (!confirm) {
+      final pending = await countPendingLogoutData();
+      logInfo('Logout diminta; tertunda: $pending', tag: 'AUTH');
+      if (!context.mounted) return;
+      final choice = await showLogoutGuardDialog(context, pending);
+      if (!context.mounted) return;
+      switch (choice) {
+        case LogoutChoice.cancel:
+          return;
+        case LogoutChoice.sync:
+          await _syncBeforeLogout(context);
+          if (!context.mounted) return;
+        case LogoutChoice.wipe:
+          if (!pending.isEmpty) {
+            logWarn('Logout paksa dengan data tertunda: $pending', tag: 'AUTH');
+          }
+          confirm = true;
+      }
+    }
 
-    if (confirm == true) {
+    if (confirm) {
       try {
         final authService = AuthService();
         await authService.logout();
@@ -750,5 +757,41 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
         }
       }
     }
+  }
+
+  /// Jalankan sync semua data tertunda dengan dialog progres, lalu kembali ke
+  /// dialog logout (jumlah dihitung ulang).
+  Future<void> _syncBeforeLogout(BuildContext context) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(children: [
+            SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5)),
+            SizedBox(width: 16),
+            Expanded(child: Text('Menyinkronkan data…')),
+          ]),
+        ),
+      ),
+    );
+    String message;
+    try {
+      final result = await SyncService().syncAllUnsyncedData();
+      message = result.abortedDueToConnection
+          ? 'Server tidak terjangkau — sync gagal, data belum terkirim'
+          : result.summary;
+    } catch (e, st) {
+      logError('Sync sebelum logout gagal', tag: 'AUTH', error: e, stack: st);
+      message = 'Sync gagal: $e';
+    }
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
