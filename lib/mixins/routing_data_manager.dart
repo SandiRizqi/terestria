@@ -480,7 +480,7 @@ mixin RoutingDataManager<T extends StatefulWidget> on State<T> {
       _activeCard(
         icon: Icons.insert_drive_file_rounded,
         color: Colors.blueGrey,
-        label: 'File lokal',
+        label: 'Local file',
         detail: osmFilePath!.split('/').last,
       ),
       const SizedBox(height: 12),
