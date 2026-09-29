@@ -93,9 +93,13 @@ class TrackingPersistenceCoordinator {
   }
 
   /// Mulai mengawasi perubahan manajer.
+  /// Koordinator yang sedang terpasang (dipakai reset app untuk flush).
+  static TrackingPersistenceCoordinator? active;
+
   void attach() {
     if (_attached) return;
     _attached = true;
+    active = this;
     manager.addListener(_onChanged);
   }
 
@@ -103,6 +107,7 @@ class TrackingPersistenceCoordinator {
     manager.removeListener(_onChanged);
     _debounceTimer?.cancel();
     _attached = false;
+    if (identical(active, this)) active = null;
   }
 
   void _onChanged() {

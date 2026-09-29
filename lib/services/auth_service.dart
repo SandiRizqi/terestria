@@ -172,7 +172,9 @@ class AuthService {
 
   // Logout with FCM token deactivation
   // Local state dibersihkan dulu (instan) → FCM cleanup jalan fire-and-forget.
-  Future<void> logout() async {
+  // [waitForCleanup]: tunggu lepas topic FCM & deaktivasi token selesai —
+  // dipakai reset app agar prefs (daftar topic) tak dihapus sebelum cleanup.
+  Future<void> logout({bool waitForCleanup = false}) async {
     // 1. Ambil token sebelum cache dihapus (butuh untuk FCM cleanup)
     final tokenToDeactivate = _cachedToken ??
         (await SharedPreferences.getInstance()).getString(_tokenKey);
@@ -187,13 +189,14 @@ class AuthService {
     await prefs.setBool(_isLoggedInKey, false);
 
     // 3. FCM cleanup jalan di background (fire-and-forget), tidak blokir UI
-    _cleanupFCMAsync(tokenToDeactivate);
+    final cleanup = _cleanupFCMAsync(tokenToDeactivate);
+    if (waitForCleanup) await cleanup;
   }
 
   /// Jalankan FCM unsubscribe + deactivate di background.
-  /// Tidak di-await supaya logout terasa instan.
-  void _cleanupFCMAsync(String? token) {
-    Future(() async {
+  /// Tidak di-await oleh logout biasa supaya terasa instan.
+  Future<void> _cleanupFCMAsync(String? token) {
+    return Future(() async {
       try {
         // Lewat antrean serial service — tak balapan dengan syncTopics milik
         // login berikutnya bila user logout lalu login cepat.

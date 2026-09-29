@@ -267,4 +267,22 @@ void main() {
       expect(n, greaterThanOrEqualTo(2));
     });
   });
+
+  test('clearAll membuang semua sesi (reset logout) + memberi tahu listener',
+      () {
+    final m = TrackingSessionManager(maxConcurrent: 3);
+    m.start(_proj('a'));
+    m.start(_proj('b'));
+    m.pause('b');
+    var n = 0;
+    m.addListener(() => n++);
+
+    m.clearAll();
+
+    expect(m.activeCount, 0);
+    expect(m.recordingCount, 0);
+    expect(n, 1);
+    m.clearAll(); // sudah kosong → tak memberi tahu lagi
+    expect(n, 1);
+  });
 }

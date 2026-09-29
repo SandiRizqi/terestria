@@ -195,6 +195,14 @@ class TrackingSessionManager extends ChangeNotifier {
     return s;
   }
 
+  /// Buang SEMUA sesi tanpa menyimpan (reset app saat logout).
+  void clearAll() {
+    if (_sessions.isEmpty) return;
+    logInfo('Buang ${_sessions.length} sesi (reset app)', tag: _tag);
+    _sessions.clear();
+    notifyListeners();
+  }
+
   double distanceOf(String projectId) =>
       _sessions[projectId]?.distanceMeters ?? 0.0;
 

@@ -8,6 +8,7 @@ import '../services/connectivity_service.dart';
 import '../services/database_service.dart';
 import '../services/notification_event_service.dart';
 import '../services/notification_sync_service.dart';
+import '../services/app_reset/app_reset_service.dart';
 import '../services/app_reset/logout_guard.dart';
 import '../services/sync_service.dart';
 import '../services/firebase_messaging_service.dart';
@@ -734,29 +735,36 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
       }
     }
 
-    if (confirm) {
-      try {
-        final authService = AuthService();
-        await authService.logout();
-        
-        if (context.mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (route) => false,
-          );
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Logged out successfully')),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error during logout: $e')),
-          );
-        }
-      }
-    }
+    // Reset app ke kondisi awal (hapus data user ini) lalu ke layar login.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(children: [
+            SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5)),
+            SizedBox(width: 16),
+            Expanded(child: Text('Logout & menghapus data di HP…')),
+          ]),
+        ),
+      ),
+    );
+    final report = await AppResetService().reset();
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(report.success
+          ? 'Logout berhasil — data di HP sudah dibersihkan'
+          : 'Logout selesai, sebagian data gagal dibersihkan '
+              '(${report.failed.keys.join(', ')})'),
+    ));
   }
 
   /// Jalankan sync semua data tertunda dengan dialog progres, lalu kembali ke

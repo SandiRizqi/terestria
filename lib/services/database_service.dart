@@ -19,6 +19,16 @@ class DatabaseService {
   static const int schemaVersion = _databaseVersion;
   static const String _databaseName = 'geoform.db';
 
+  /// Nama berkas DB utama (reset logout menghapus `geoform.db*`).
+  static const String databaseName = _databaseName;
+
+  /// Tutup koneksi (reset logout) — akses berikutnya membuka/membuat DB baru.
+  Future<void> close() async {
+    final db = _database;
+    _database = null;
+    await db?.close();
+  }
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
