@@ -12,6 +12,7 @@ import '../../services/basemap_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/pdf/pdf_basemap_importer.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/share_origin.dart';
 import '../../widgets/analysis/analysis_file_tile.dart';
 
 /// Daftar File untuk satu Project (Jenis Analisis x PT).
@@ -250,7 +251,7 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
         subject: file.title,
         // iOS/iPad butuh rect sumber untuk anchor share popover; tanpa ini
         // memicu PlatformException(sharePositionOrigin). Pakai bounds layar.
-        sharePositionOrigin: _shareOrigin(),
+        sharePositionOrigin: shareOriginFor(context),
       );
     } on TimeoutException catch (e) {
       if (!mounted) return;
@@ -263,21 +264,6 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
     } finally {
       status.dispose();
     }
-  }
-
-  /// Rect sumber untuk share popover iOS/iPad, diambil dari RenderBox layar.
-  /// Fallback ke titik tengah layar bila render box belum tersedia.
-  Rect _shareOrigin() {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box != null && box.hasSize) {
-      return box.localToGlobal(Offset.zero) & box.size;
-    }
-    final size = MediaQuery.of(context).size;
-    return Rect.fromCenter(
-      center: Offset(size.width / 2, size.height / 2),
-      width: 1,
-      height: 1,
-    );
   }
 
   String _shareError(Object e) {

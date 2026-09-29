@@ -35,6 +35,7 @@ import '../navigation/widgets/instruction_bar.dart';
 import '../navigation/widgets/step_list_sheet.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/share_origin.dart';
 /// Fullscreen map viewer for notification GeoJSON data.
 /// Supports basemap switching, user GeoJSON layers, click-to-inspect,
 /// notification overlay, and GraphHopper turn-by-turn routing.
@@ -1590,7 +1591,13 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
   }
 
   Future<void> _shareFile(File file, String mimeType) async {
-    await Share.shareXFiles([XFile(file.path, mimeType: mimeType)], subject: widget.title);
+    if (!mounted) return;
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: mimeType)],
+      subject: widget.title,
+      // iOS menolak share sheet dengan rect asal nol (PlatformException).
+      sharePositionOrigin: shareOriginFor(context),
+    );
   }
 
   void _showExportError(String message) {

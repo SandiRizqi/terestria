@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geoform_app/utils/share_origin.dart';
 import 'package:geoform_app/widgets/settings/diagnostic_log_section.dart';
 
 /// Aksi palsu: tanpa berkas/plugin.
@@ -10,6 +11,7 @@ class _FakeActions implements DiagnosticLogActions {
   LogStats current = const LogStats(files: 3, bytes: 1536 * 1024);
   int shares = 0;
   int clears = 0;
+  Rect? shareOrigin;
   final DateTime now;
   _FakeActions(this.now);
 
@@ -29,7 +31,10 @@ class _FakeActions implements DiagnosticLogActions {
   }
 
   @override
-  Future<void> share(BuildContext context) async => shares++;
+  Future<void> share(BuildContext context) async {
+    shares++;
+    shareOrigin = shareOriginFor(context);
+  }
 }
 
 class _ThrowingShare extends _FakeActions {
@@ -95,6 +100,18 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('share-logs')));
     await tester.pumpAndSettle();
     expect(a.shares, 1);
+  });
+
+  testWidgets(
+      'share menerima context baris Share Logs → share sheet iOS berjangkar '
+      'ke baris itu (sharePositionOrigin tak nol)', (tester) async {
+    final a = _FakeActions(now);
+    await tester.pumpWidget(host(a));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('share-logs')));
+    await tester.pumpAndSettle();
+
+    expect(a.shareOrigin, tester.getRect(find.byKey(const ValueKey('share-logs'))));
   });
 
   testWidgets('ekspor gagal → pesan jelas, app tak crash', (tester) async {

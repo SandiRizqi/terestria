@@ -8,6 +8,7 @@ import '../../services/logging/log_exporter.dart';
 import '../../services/logging/log_setup.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
+import '../../utils/share_origin.dart';
 
 // ─── Helper tampilan (murni, teruji) ─────────────────────────────────────────
 
@@ -100,8 +101,11 @@ class DefaultDiagnosticLogActions implements DiagnosticLogActions {
   }
 
   /// Zip: log app+bg, 3 CSV GPS terbaru, info perangkat, snapshot tracking.
+  /// Rect asal share sheet diambil dari [context] (baris yang ditekan)
+  /// sebelum proses async dimulai.
   @override
-  Future<void> share(BuildContext context) => exportAndShareLogs();
+  Future<void> share(BuildContext context) =>
+      exportAndShareLogs(sharePositionOrigin: shareOriginFor(context));
 }
 
 // ─── Widget ──────────────────────────────────────────────────────────────────
@@ -156,10 +160,12 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
     }
   }
 
-  Future<void> _share() async {
+  /// [anchor] = context baris Share Logs: share sheet iOS/iPad berjangkar ke
+  /// baris itu.
+  Future<void> _share(BuildContext anchor) async {
     setState(() => _sharing = true);
     try {
-      await widget.actions.share(context);
+      await widget.actions.share(anchor);
     } catch (e, stack) {
       logError('Gagal membagikan log', tag: 'LOG', error: e, stack: stack);
       if (mounted) {
@@ -238,22 +244,24 @@ class _DiagnosticLogSectionState extends State<DiagnosticLogSection> {
               onChanged: _toggle,
             ),
             const Divider(height: 1, indent: 16, endIndent: 16),
-            ListTile(
-              key: const ValueKey('share-logs'),
-              leading: _icon(Icons.ios_share, AppTheme.primaryBlue),
-              title: const Text('Share Logs',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                  'Kirim ke tim (WhatsApp, email, Drive) · $statsText',
-                  style: const TextStyle(fontSize: 12)),
-              trailing: _sharing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.arrow_forward_ios_rounded,
-                      size: 16, color: Colors.grey),
-              onTap: _sharing ? null : _share,
+            Builder(
+              builder: (tileContext) => ListTile(
+                key: const ValueKey('share-logs'),
+                leading: _icon(Icons.ios_share, AppTheme.primaryBlue),
+                title: const Text('Share Logs',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                    'Kirim ke tim (WhatsApp, email, Drive) · $statsText',
+                    style: const TextStyle(fontSize: 12)),
+                trailing: _sharing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.arrow_forward_ios_rounded,
+                        size: 16, color: Colors.grey),
+                onTap: _sharing ? null : () => _share(tileContext),
+              ),
             ),
             const Divider(height: 1, indent: 16, endIndent: 16),
             ListTile(

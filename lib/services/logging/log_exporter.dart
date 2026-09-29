@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
@@ -117,7 +118,10 @@ Future<File> buildLogBundle({
 
 /// Kumpulkan semua bahan dari app, buat zip di folder temp, lalu buka share
 /// sheet. Error dilempar ke pemanggil (UI menampilkan pesannya).
-Future<void> exportAndShareLogs() async {
+///
+/// [sharePositionOrigin] wajib (`shareOriginFor(context)` dari tombol yang
+/// ditekan): iOS menolak share sheet dengan rect asal nol.
+Future<void> exportAndShareLogs({required Rect sharePositionOrigin}) async {
   final now = DateTime.now();
   logInfo('Ekspor log dimulai', tag: 'LOG');
   await AppLogger.flush();
@@ -163,5 +167,6 @@ Future<void> exportAndShareLogs() async {
   await Share.shareXFiles(
     [XFile(zip.path, mimeType: 'application/zip')],
     subject: 'Log Terestria ${_stamp(now)}',
+    sharePositionOrigin: sharePositionOrigin,
   );
 }
