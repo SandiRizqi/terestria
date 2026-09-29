@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:in_app_update/in_app_update.dart';
 
+import '../utils/app_logger.dart';
 /// Handles Google Play In-App Updates.
 ///
 /// - Priority 0–3 → Flexible update (background download, user stays in app)
@@ -31,7 +32,7 @@ class UpdateService {
 
     // Fire-and-forget: tidak memblokir startup app
     _checkForUpdate(context).catchError((e) {
-      debugPrint('⚠️ [UpdateService] Uncaught error in update check: $e');
+      logWarn('⚠️ [UpdateService] Uncaught error in update check: $e', tag: 'UPDATE');
     });
   }
 
@@ -42,12 +43,12 @@ class UpdateService {
           .timeout(const Duration(seconds: 8));
 
       if (info.updateAvailability != UpdateAvailability.updateAvailable) {
-        debugPrint('✅ [UpdateService] App sudah versi terbaru');
+        logDebug('✅ [UpdateService] App sudah versi terbaru', tag: 'UPDATE');
         return;
       }
 
       final int priority = info.updatePriority ?? 0;
-      debugPrint('🔄 [UpdateService] Update tersedia, priority: $priority');
+      logDebug('🔄 [UpdateService] Update tersedia, priority: $priority', tag: 'UPDATE');
 
       if (priority >= 4) {
         // Priority tinggi → Immediate update (wajib sebelum lanjut pakai app)
@@ -58,30 +59,30 @@ class UpdateService {
       }
     } catch (e) {
       // Offline, Play Store tidak tersedia, atau timeout → skip saja
-      debugPrint('⚠️ [UpdateService] Update check dilewati: $e');
+      logWarn('⚠️ [UpdateService] Update check dilewati: $e', tag: 'UPDATE');
     }
   }
 
   Future<void> _startImmediateUpdate() async {
     try {
       await InAppUpdate.performImmediateUpdate();
-      debugPrint('✅ [UpdateService] Immediate update selesai');
+      logDebug('✅ [UpdateService] Immediate update selesai', tag: 'UPDATE');
     } catch (e) {
-      debugPrint('⚠️ [UpdateService] Immediate update gagal: $e');
+      logWarn('⚠️ [UpdateService] Immediate update gagal: $e', tag: 'UPDATE');
     }
   }
 
   Future<void> _startFlexibleUpdate(BuildContext? context) async {
     try {
       await InAppUpdate.startFlexibleUpdate();
-      debugPrint('✅ [UpdateService] Flexible update dimulai (download background)');
+      logDebug('✅ [UpdateService] Flexible update dimulai (download background)', tag: 'UPDATE');
 
       // Setelah download selesai, tampilkan snackbar jika context tersedia
       if (context != null && context.mounted) {
         _showFlexibleUpdateSnackbar(context);
       }
     } catch (e) {
-      debugPrint('⚠️ [UpdateService] Flexible update gagal: $e');
+      logWarn('⚠️ [UpdateService] Flexible update gagal: $e', tag: 'UPDATE');
     }
   }
 
@@ -98,7 +99,7 @@ class UpdateService {
           label: 'RESTART',
           onPressed: () {
             InAppUpdate.completeFlexibleUpdate().catchError((e) {
-              debugPrint('⚠️ [UpdateService] completeFlexibleUpdate error: $e');
+              logWarn('⚠️ [UpdateService] completeFlexibleUpdate error: $e', tag: 'UPDATE');
             });
           },
         ),

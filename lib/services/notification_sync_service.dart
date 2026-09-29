@@ -7,6 +7,7 @@ import 'api_service.dart';
 import 'database_service.dart';
 import 'notification_event_service.dart';
 
+import '../utils/app_logger.dart';
 /// Id lokal yang STABIL untuk sebuah notifikasi berdasarkan `data` FCM/server.
 ///
 /// Push (FCM) dan hasil sync inbox server harus menghasilkan id yang sama agar
@@ -155,7 +156,7 @@ class NotificationSyncService {
     } catch (e) {
       // Sync bersifat best-effort — jangan ganggu UI.
       // ignore: avoid_print
-      print('NotificationSyncService.sync gagal: $e');
+      logWarn('NotificationSyncService.sync gagal: $e', tag: 'NOTIF');
       return 0;
     }
   }

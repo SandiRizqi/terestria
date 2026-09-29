@@ -5,6 +5,7 @@ import '../models/form_field_model.dart';
 import '../services/storage_service.dart';
 import '../services/photo_sync_service.dart';
 
+import '../utils/app_logger.dart';
 /// Service untuk migrate foto dari cache directory ke persistent storage
 /// Dijalankan sekali saat app update
 class PhotoMigrationService {
@@ -21,7 +22,7 @@ class PhotoMigrationService {
       final migrationFlag = File('${appDir.path}/.photo_migration_completed');
       return await migrationFlag.exists();
     } catch (e) {
-      print('Error checking migration status: $e');
+      logWarn('Error checking migration status: $e', tag: 'MIGRATE');
       return false;
     }
   }
@@ -32,15 +33,15 @@ class PhotoMigrationService {
       final appDir = await getApplicationDocumentsDirectory();
       final migrationFlag = File('${appDir.path}/.photo_migration_completed');
       await migrationFlag.writeAsString(DateTime.now().toIso8601String());
-      print('✅ Photo migration marked as completed');
+      logDebug('✅ Photo migration marked as completed', tag: 'MIGRATE');
     } catch (e) {
-      print('Error marking migration completed: $e');
+      logWarn('Error marking migration completed: $e', tag: 'MIGRATE');
     }
   }
   
   /// Migrate existing photos from cache to persistent storage
   Future<MigrationResult> migratePhotosToPersistentStorage() async {
-    print('🔄 Starting photo migration from cache to persistent storage...');
+    logDebug('🔄 Starting photo migration from cache to persistent storage...', tag: 'MIGRATE');
     
     int totalPhotos = 0;
     int migratedPhotos = 0;
@@ -51,7 +52,7 @@ class PhotoMigrationService {
     try {
       // Check if migration already completed
       if (await isMigrationCompleted()) {
-        print('⏭️ Photo migration already completed, skipping...');
+        logDebug('⏭️ Photo migration already completed, skipping...', tag: 'MIGRATE');
         return MigrationResult(
           totalPhotos: 0,
           migratedPhotos: 0,
@@ -115,7 +116,7 @@ class PhotoMigrationService {
                             updatedPhotos.add(updatedPhoto.toJson());
                             hasChanges = true;
                             migratedPhotos++;
-                            print('✅ Migrated: ${photoData.name}');
+                            logDebug('✅ Migrated: ${photoData.name}', tag: 'MIGRATE');
                           } else {
                             failedPhotos++;
                             errors.add('Failed to copy ${photoData.name}');
@@ -128,7 +129,7 @@ class PhotoMigrationService {
                           }
                         } else {
                           // File doesn't exist in cache anymore
-                          print('⚠️ Photo not found: ${photoData.localPath}');
+                          logWarn('⚠️ Photo not found: ${photoData.localPath}', tag: 'MIGRATE');
                           skippedPhotos++;
                           
                           // If there's a server URL, we can re-download it later
@@ -151,7 +152,7 @@ class PhotoMigrationService {
                         skippedPhotos++;
                       }
                     } catch (e) {
-                      print('❌ Error parsing photo: $e');
+                      logError('❌ Error parsing photo: $e', tag: 'MIGRATE');
                       failedPhotos++;
                       errors.add('Error parsing photo: $e');
                       updatedPhotos.add(
@@ -177,7 +178,7 @@ class PhotoMigrationService {
             );
             
             await _storageService.saveGeoData(updatedGeoData);
-            print('💾 Updated geodata: ${geoData.id}');
+            logDebug('💾 Updated geodata: ${geoData.id}', tag: 'MIGRATE');
           }
         }
       }
@@ -185,11 +186,11 @@ class PhotoMigrationService {
       // Mark migration as completed
       await markMigrationCompleted();
       
-      print('✅ Photo migration completed!');
-      print('   Total photos: $totalPhotos');
-      print('   Migrated: $migratedPhotos');
-      print('   Failed: $failedPhotos');
-      print('   Skipped: $skippedPhotos');
+      logDebug('✅ Photo migration completed!', tag: 'MIGRATE');
+      logDebug('   Total photos: $totalPhotos', tag: 'MIGRATE');
+      logDebug('   Migrated: $migratedPhotos', tag: 'MIGRATE');
+      logWarn('   Failed: $failedPhotos', tag: 'MIGRATE');
+      logDebug('   Skipped: $skippedPhotos', tag: 'MIGRATE');
       
       return MigrationResult(
         totalPhotos: totalPhotos,
@@ -200,7 +201,7 @@ class PhotoMigrationService {
         alreadyCompleted: false,
       );
     } catch (e) {
-      print('❌ Photo migration error: $e');
+      logError('❌ Photo migration error: $e', tag: 'MIGRATE');
       errors.add('Migration error: $e');
       
       return MigrationResult(
@@ -231,11 +232,11 @@ class PhotoMigrationService {
         await sourceFile.copy(destPath);
         return destPath;
       } else {
-        print('⚠️ Source file not found: $sourcePath');
+        logWarn('⚠️ Source file not found: $sourcePath', tag: 'MIGRATE');
         return null;
       }
     } catch (e) {
-      print('❌ Error copying photo: $e');
+      logError('❌ Error copying photo: $e', tag: 'MIGRATE');
       return null;
     }
   }
@@ -273,7 +274,7 @@ class PhotoMigrationService {
         'migrationCompleted': await isMigrationCompleted(),
       };
     } catch (e) {
-      print('Error getting migration stats: $e');
+      logWarn('Error getting migration stats: $e', tag: 'MIGRATE');
       return {
         'cachePhotoCount': 0,
         'persistentPhotoCount': 0,

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
+import '../utils/app_logger.dart';
 class FCMTokenService {
   static final FCMTokenService _instance = FCMTokenService._internal();
   factory FCMTokenService() => _instance;
@@ -32,10 +33,10 @@ class FCMTokenService {
       // Get last registered token
       _lastRegisteredToken = prefs.getString(_prefKeyLastToken);
       
-      print('📱 Device ID: $_deviceId');
-      print('🔑 Last registered token: ${_lastRegisteredToken != null ? "exists" : "none"}');
+      logDebug('📱 Device ID: $_deviceId', tag: 'FCM');
+      logDebug('🔑 Last registered token: ${_lastRegisteredToken != null ? "exists" : "none"}', tag: 'FCM');
     } catch (e) {
-      print('❌ Error initializing FCM Token Service: $e');
+      logError('❌ Error initializing FCM Token Service: $e', tag: 'FCM');
     }
   }
 
@@ -44,7 +45,7 @@ class FCMTokenService {
     try {
       // Check if token already registered
       if (_lastRegisteredToken == fcmToken) {
-        print('✅ Token already registered, skipping');
+        logDebug('✅ Token already registered, skipping', tag: 'FCM');
         return true;
       }
 
@@ -58,11 +59,11 @@ class FCMTokenService {
       final appVersion = await _getAppVersion();
       final platform = Platform.isAndroid ? 'android' : 'ios';
 
-      print('📤 Registering FCM token to backend...');
-      print('   Device ID: $_deviceId');
-      print('   Platform: $platform');
-      print('   Device: $deviceName');
-      print('   OS: $osVersion');
+      logDebug('📤 Registering FCM token to backend...', tag: 'FCM');
+      logDebug('   Device ID: $_deviceId', tag: 'FCM');
+      logDebug('   Platform: $platform', tag: 'FCM');
+      logDebug('   Device: $deviceName', tag: 'FCM');
+      logDebug('   OS: $osVersion', tag: 'FCM');
 
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.fcmTokenRegisterEndpoint}'),
@@ -87,16 +88,16 @@ class FCMTokenService {
         _lastRegisteredToken = fcmToken;
         
         final data = jsonDecode(response.body);
-        print('✅ FCM Token registered successfully');
-        print('   Response: ${data['message']}');
+        logDebug('✅ FCM Token registered successfully', tag: 'FCM');
+        logDebug('   Response: ${data['message']}', tag: 'FCM');
         return true;
       } else {
-        print('❌ Failed to register FCM token: ${response.statusCode}');
-        print('   Response: ${response.body}');
+        logError('❌ Failed to register FCM token: ${response.statusCode}', tag: 'FCM');
+        logDebug('   Response: ${response.body.length} byte', tag: 'FCM');
         return false;
       }
     } catch (e) {
-      print('❌ Error registering FCM token: $e');
+      logError('❌ Error registering FCM token: $e', tag: 'FCM');
       return false;
     }
   }
@@ -108,7 +109,7 @@ class FCMTokenService {
         await initialize();
       }
 
-      print('📤 Deactivating FCM token...');
+      logDebug('📤 Deactivating FCM token...', tag: 'FCM');
 
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.fcmTokenDeactivateByDeviceEndpoint}'),
@@ -128,16 +129,16 @@ class FCMTokenService {
         _lastRegisteredToken = null;
         
         final data = jsonDecode(response.body);
-        print('✅ FCM token deactivated');
-        print('   Response: ${data['message']}');
+        logDebug('✅ FCM token deactivated', tag: 'FCM');
+        logDebug('   Response: ${data['message']}', tag: 'FCM');
         return true;
       } else {
-        print('❌ Failed to deactivate FCM token: ${response.statusCode}');
-        print('   Response: ${response.body}');
+        logError('❌ Failed to deactivate FCM token: ${response.statusCode}', tag: 'FCM');
+        logDebug('   Response: ${response.body.length} byte', tag: 'FCM');
         return false;
       }
     } catch (e) {
-      print('❌ Error deactivating FCM token: $e');
+      logError('❌ Error deactivating FCM token: $e', tag: 'FCM');
       return false;
     }
   }
@@ -145,7 +146,7 @@ class FCMTokenService {
   /// Deactivate all tokens (global logout)
   Future<bool> deactivateAllTokens(String authToken) async {
     try {
-      print('📤 Deactivating all FCM tokens...');
+      logDebug('📤 Deactivating all FCM tokens...', tag: 'FCM');
 
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.fcmTokenDeactivateAllEndpoint}'),
@@ -162,15 +163,15 @@ class FCMTokenService {
         _lastRegisteredToken = null;
         
         final data = jsonDecode(response.body);
-        print('✅ All FCM tokens deactivated');
-        print('   Response: ${data['message']}');
+        logDebug('✅ All FCM tokens deactivated', tag: 'FCM');
+        logDebug('   Response: ${data['message']}', tag: 'FCM');
         return true;
       } else {
-        print('❌ Failed to deactivate all FCM tokens: ${response.statusCode}');
+        logError('❌ Failed to deactivate all FCM tokens: ${response.statusCode}', tag: 'FCM');
         return false;
       }
     } catch (e) {
-      print('❌ Error deactivating all FCM tokens: $e');
+      logError('❌ Error deactivating all FCM tokens: $e', tag: 'FCM');
       return false;
     }
   }
@@ -189,11 +190,11 @@ class FCMTokenService {
         final data = jsonDecode(response.body);
         return List<Map<String, dynamic>>.from(data['data'] ?? []);
       } else {
-        print('❌ Failed to get tokens list: ${response.statusCode}');
+        logError('❌ Failed to get tokens list: ${response.statusCode}', tag: 'FCM');
         return null;
       }
     } catch (e) {
-      print('❌ Error getting tokens list: $e');
+      logError('❌ Error getting tokens list: $e', tag: 'FCM');
       return null;
     }
   }
@@ -207,7 +208,7 @@ class FCMTokenService {
       final randomPart = timestamp.toString().substring(timestamp.toString().length - 8);
       return '${platform}_$randomPart';
     } catch (e) {
-      print('❌ Error generating device ID: $e');
+      logError('❌ Error generating device ID: $e', tag: 'FCM');
       return 'unknown_${DateTime.now().millisecondsSinceEpoch}';
     }
   }
@@ -222,7 +223,7 @@ class FCMTokenService {
       }
       return 'Unknown Device';
     } catch (e) {
-      print('❌ Error getting device name: $e');
+      logError('❌ Error getting device name: $e', tag: 'FCM');
       return 'Unknown Device';
     }
   }
@@ -237,7 +238,7 @@ class FCMTokenService {
       }
       return Platform.operatingSystemVersion;
     } catch (e) {
-      print('❌ Error getting OS version: $e');
+      logError('❌ Error getting OS version: $e', tag: 'FCM');
       return 'Unknown';
     }
   }
@@ -249,7 +250,7 @@ class FCMTokenService {
       // You can update this manually or use package_info_plus later
       return ApiConfig.appVersion;
     } catch (e) {
-      print('❌ Error getting app version: $e');
+      logError('❌ Error getting app version: $e', tag: 'FCM');
       return '1.0.0';
     }
   }

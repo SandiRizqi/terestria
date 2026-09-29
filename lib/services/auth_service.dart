@@ -6,6 +6,7 @@ import '../config/api_config.dart';
 import '../app_initializer.dart';
 import 'scope_topic_service.dart';
 
+import '../utils/app_logger.dart';
 class AuthService {
   static const String _userKey = 'user_data';
   static const String _tokenKey = 'auth_token';
@@ -107,9 +108,9 @@ class AuthService {
         if (user.token != null) {
           try {
             await AppInitializer().updateFCMAuthToken(user.token!);
-            print('✅ FCM token registered after login');
+            logDebug('✅ FCM token registered after login', tag: 'AUTH');
           } catch (e) {
-            print('⚠️ Failed to register FCM token: $e');
+            logWarn('⚠️ Failed to register FCM token: $e', tag: 'AUTH');
             // Don't fail login if FCM registration fails
           }
         }
@@ -197,18 +198,18 @@ class AuthService {
         // Lewat antrean serial service — tak balapan dengan syncTopics milik
         // login berikutnya bila user logout lalu login cepat.
         await _scopeTopicService.unsubscribeAllInBackground();
-        print('✅ FCM scope topics unsubscribed on logout');
+        logDebug('✅ FCM scope topics unsubscribed on logout', tag: 'AUTH');
       } catch (e) {
-        print('⚠️ Failed to unsubscribe FCM topics: $e');
+        logWarn('⚠️ Failed to unsubscribe FCM topics: $e', tag: 'AUTH');
       }
 
       try {
         if (token != null) {
           await AppInitializer().deactivateFCMToken(token);
-          print('✅ FCM token deactivated on logout');
+          logDebug('✅ FCM token deactivated on logout', tag: 'AUTH');
         }
       } catch (e) {
-        print('⚠️ Failed to deactivate FCM token: $e');
+        logWarn('⚠️ Failed to deactivate FCM token: $e', tag: 'AUTH');
       }
     });
   }

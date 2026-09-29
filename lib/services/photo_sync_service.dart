@@ -8,6 +8,7 @@ import '../models/form_field_model.dart';
 import '../models/project_model.dart';
 import 'api_service.dart';
 
+import '../utils/app_logger.dart';
 /// Photo metadata model
 class PhotoMetadata {
   final String name;
@@ -171,7 +172,7 @@ class PhotoSyncService {
     try {
       final file = File(localPath);
       if (!file.existsSync()) {
-        print('Photo file not found: $localPath');
+        logDebug('Photo file not found: $localPath', tag: 'SYNC');
         return null;
       }
 
@@ -188,10 +189,10 @@ class PhotoSyncService {
         };
       }
 
-      print('Upload failed: $response');
+      logWarn('Upload failed: $response', tag: 'SYNC');
       return null;
     } catch (e) {
-      print('Error uploading photo: $e');
+      logWarn('Error uploading photo: $e', tag: 'SYNC');
       return null;
     }
   }
@@ -226,7 +227,7 @@ class PhotoSyncService {
 
       // Check if already downloaded
       if (file.existsSync()) {
-        print('Photo already exists locally: $localPath');
+        logDebug('Photo already exists locally: $localPath', tag: 'SYNC');
         return localPath;
       }
 
@@ -248,12 +249,12 @@ class PhotoSyncService {
         //print('Photo downloaded successfully: $localPath (${response.bodyBytes.length} bytes)');
         return localPath;
       } else {
-        print('Download failed with status: ${response.statusCode}');
+        logWarn('Download failed with status: ${response.statusCode}', tag: 'SYNC');
         return null;
       }
     } catch (e) {
       // Strip query string — it carries the OSS signature/credentials.
-      print('Error downloading photo from ${ossUrl.split('?').first}: $e');
+      logWarn('Error downloading photo from ${ossUrl.split('?').first}: $e', tag: 'SYNC');
       return null;
     }
   }
@@ -281,7 +282,7 @@ class PhotoSyncService {
   Future<PhotoMetadata> _uploadIfNeeded(PhotoMetadata metadata) async {
     if (!needsUpload(metadata)) return metadata;
 
-    print('Uploading photo: ${metadata.name}');
+    logDebug('Uploading photo: ${metadata.name}', tag: 'SYNC');
     final ossData = await uploadSinglePhoto(metadata.localPath);
     if (ossData != null) {
       final updated = metadata.copyWith(
@@ -289,7 +290,7 @@ class PhotoSyncService {
         serverKey: ossData['key'],
         updated: DateTime.now(),
       );
-      print('Photo uploaded: ${updated.name} -> key=${ossData['key']}');
+      logDebug('Photo uploaded: ${updated.name} -> key=${ossData['key']}', tag: 'SYNC');
       return updated;
     }
     return metadata;
@@ -340,7 +341,7 @@ class PhotoSyncService {
                 photoMetadataList
                     .add(PhotoMetadata.fromJson(Map<String, dynamic>.from(item)));
               } catch (e) {
-                print('Error parsing PhotoMetadata: $e');
+                logWarn('Error parsing PhotoMetadata: $e', tag: 'SYNC');
                 continue;
               }
             } else if (item is String && item.isNotEmpty) {
@@ -392,7 +393,7 @@ class PhotoSyncService {
         .map((f) => f.label)
         .toSet() ?? <String>{};
 
-    print('📥 Processing form data for pull. Photo fields: $photoFields');
+    logDebug('📥 Processing form data for pull. Photo fields: $photoFields', tag: 'SYNC');
 
     // Process each photo field
     for (var fieldName in photoFields) {
@@ -426,14 +427,14 @@ class PhotoSyncService {
                     );
                     // print('✅ Downloaded: ${metadata.name}');
                   } else {
-                    print('❌ Failed to download: ${metadata.name}');
+                    logError('❌ Failed to download: ${metadata.name}', tag: 'SYNC');
                   }
                 } else {
-                  print('⏭️ Skipping existing photo: ${metadata.name} (key: ${metadata.serverKey})');
+                  logDebug('⏭️ Skipping existing photo: ${metadata.name} (key: ${metadata.serverKey})', tag: 'SYNC');
                 }
               }
             } catch (e) {
-              print('Error parsing PhotoMetadata: $e');
+              logWarn('Error parsing PhotoMetadata: $e', tag: 'SYNC');
               continue;
             }
           } else if (item is String && item.isNotEmpty) {
@@ -597,9 +598,9 @@ class PhotoSyncService {
         }
       }
 
-      print('Cleaned up $deletedCount orphaned photos from persistent storage');
+      logDebug('Cleaned up $deletedCount orphaned photos from persistent storage', tag: 'SYNC');
     } catch (e) {
-      print('Error cleaning up photos: $e');
+      logWarn('Error cleaning up photos: $e', tag: 'SYNC');
     }
   }
 
@@ -622,7 +623,7 @@ class PhotoSyncService {
 
       return totalSize;
     } catch (e) {
-      print('Error calculating photo storage size: $e');
+      logWarn('Error calculating photo storage size: $e', tag: 'SYNC');
       return 0;
     }
   }

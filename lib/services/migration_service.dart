@@ -7,6 +7,7 @@ import 'storage_service.dart';
 import 'photo_sync_service.dart';
 import 'crashlytics_service.dart';
 
+import '../utils/app_logger.dart';
 class MigrationService {
   static final MigrationService _instance = MigrationService._internal();
   factory MigrationService() => _instance;
@@ -85,7 +86,7 @@ class MigrationService {
     } catch (e) {
       // Jangan set flag saat scan gagal — biarkan recovery dicoba lagi di
       // startup berikutnya, supaya error transien tidak melewatkan pemulihan.
-      print('Error during partial photo sync recovery: $e');
+      logWarn('Error during partial photo sync recovery: $e', tag: 'MIGRATE');
       return PhotoSyncRecoveryResult(
         alreadyRun: false,
         scanned: scanned,
@@ -149,7 +150,7 @@ class MigrationService {
           await _databaseService.saveProject(project);
           projectsCount++;
         } catch (e) {
-          print('Error migrating project: $e');
+          logWarn('Error migrating project: $e', tag: 'MIGRATE');
         }
       }
 
@@ -164,7 +165,7 @@ class MigrationService {
               await _databaseService.saveGeoData(geoData);
               geoDataCount++;
             } catch (e) {
-              print('Error migrating geo data: $e');
+              logWarn('Error migrating geo data: $e', tag: 'MIGRATE');
             }
           }
         }

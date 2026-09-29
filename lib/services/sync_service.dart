@@ -13,6 +13,7 @@ import 'connectivity_service.dart';
 import 'sync_watermark_service.dart';
 import 'pull_preflight.dart';
 
+import '../utils/app_logger.dart';
 class SyncService {
   static final SyncService _instance = SyncService._internal();
   factory SyncService() => _instance;
@@ -50,7 +51,7 @@ class SyncService {
   Future<SyncResult> syncGeoData(GeoData geoData, Project project) async {
     try {
       // Step 1: Upload photos to OSS and get URLs
-      print('Processing photos for geodata ${geoData.id}...');
+      logDebug('Processing photos for geodata ${geoData.id}...', tag: 'SYNC');
       final processedFormData = await _photoSyncService.processFormDataForPush(
         geoData.formData,
         project,
@@ -422,7 +423,7 @@ class SyncService {
 
         int savedCount = 0;
         for (var projectJson in projectsList) {
-          print(projectJson);
+          logDebug((projectJson).toString(), tag: 'SYNC');
           try {
             // Parse project from server format
             final project = _parseProjectFromServer(projectJson);
@@ -448,7 +449,7 @@ class SyncService {
               }
             }
           } catch (e) {
-            print('Error parsing project: $e');
+            logWarn('Error parsing project: $e', tag: 'SYNC');
           }
         }
 
@@ -620,7 +621,7 @@ class SyncService {
 
               if (existingGeoData == null) {
                 // New geo data from server - download photos and save
-                print('New geodata from server: ${geoData.id}');
+                logDebug('New geodata from server: ${geoData.id}', tag: 'SYNC');
                 onProgress?.call(
                   'Downloading photos for record ${i + 1}/${geoDataList.length} (page $currentPage/$totalPages)...',
                 );
@@ -636,7 +637,7 @@ class SyncService {
                 savedCount++;
               } else if (geoData.updatedAt.isAfter(existingGeoData.updatedAt)) {
                 // Server version is newer - download photos and update local
-                print('Updating geodata from server: ${geoData.id}');
+                logDebug('Updating geodata from server: ${geoData.id}', tag: 'SYNC');
                 onProgress?.call(
                   'Updating record ${i + 1}/${geoDataList.length} (page $currentPage/$totalPages)...',
                 );
@@ -652,7 +653,7 @@ class SyncService {
                 updatedCount++;
               }
             } catch (e) {
-              print('Error parsing geo data: $e');
+              logWarn('Error parsing geo data: $e', tag: 'SYNC');
             }
           }
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/app_logger.dart';
 /// Service untuk mengelola FCM topic subscription berdasarkan scope user.
 /// Format topic: scope_7, scope_12, dst.
 class ScopeTopicService {
@@ -20,7 +21,7 @@ class ScopeTopicService {
   Future<void> _enqueue(String label, Future<void> Function() op) {
     _serial = _serial.then((_) => op()).catchError((e) {
       // Telan error agar antrean tidak mati; operasi berikutnya tetap jalan.
-      print('⚠️ [FCM] $label gagal di background: $e');
+      logWarn('⚠️ [FCM] $label gagal di background: $e', tag: 'FCM');
     });
     return _serial;
   }
@@ -67,9 +68,9 @@ class ScopeTopicService {
       final topic = _topicName(scope);
       try {
         await FirebaseMessaging.instance.subscribeToTopic(topic);
-        print('✅ [FCM] Subscribed to: $topic');
+        logDebug('✅ [FCM] Subscribed to: $topic', tag: 'FCM');
       } catch (e) {
-        print('⚠️ [FCM] Failed to subscribe to $topic: $e');
+        logWarn('⚠️ [FCM] Failed to subscribe to $topic: $e', tag: 'FCM');
       }
     }
   }
@@ -80,9 +81,9 @@ class ScopeTopicService {
       final topic = _topicName(scope);
       try {
         await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
-        print('✅ [FCM] Unsubscribed from: $topic');
+        logDebug('✅ [FCM] Unsubscribed from: $topic', tag: 'FCM');
       } catch (e) {
-        print('⚠️ [FCM] Failed to unsubscribe from $topic: $e');
+        logWarn('⚠️ [FCM] Failed to unsubscribe from $topic: $e', tag: 'FCM');
       }
     }
   }
@@ -95,7 +96,7 @@ class ScopeTopicService {
       await unsubscribeFromTopics(scopes);
     }
     await _clearSubscribedScopes();
-    print('✅ [FCM] All scope topics unsubscribed and cleared');
+    logDebug('✅ [FCM] All scope topics unsubscribed and cleared', tag: 'FCM');
   }
 
   /// Kembalikan list scope yang saat ini tersimpan di SharedPreferences.
@@ -113,7 +114,7 @@ class ScopeTopicService {
       final decoded = jsonDecode(raw) as List<dynamic>;
       return decoded.map((e) => e as int).toList();
     } catch (e) {
-      print('⚠️ [FCM] Failed to read subscribed scopes: $e');
+      logWarn('⚠️ [FCM] Failed to read subscribed scopes: $e', tag: 'FCM');
       return [];
     }
   }
@@ -123,7 +124,7 @@ class ScopeTopicService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_subscribedScopesKey, jsonEncode(scopes));
     } catch (e) {
-      print('⚠️ [FCM] Failed to save subscribed scopes: $e');
+      logWarn('⚠️ [FCM] Failed to save subscribed scopes: $e', tag: 'FCM');
     }
   }
 
@@ -132,7 +133,7 @@ class ScopeTopicService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_subscribedScopesKey);
     } catch (e) {
-      print('⚠️ [FCM] Failed to clear subscribed scopes: $e');
+      logWarn('⚠️ [FCM] Failed to clear subscribed scopes: $e', tag: 'FCM');
     }
   }
 
@@ -141,18 +142,18 @@ class ScopeTopicService {
     required List<int> unsubscribed,
     required List<int> kept,
   }) {
-    print('📡 [FCM] Topic sync result:');
+    logDebug('📡 [FCM] Topic sync result:', tag: 'FCM');
     if (subscribed.isNotEmpty) {
-      print('   ➕ Subscribed   : ${subscribed.map(_topicName).join(', ')}');
+      logDebug('   ➕ Subscribed   : ${subscribed.map(_topicName).join(', ')}', tag: 'FCM');
     }
     if (unsubscribed.isNotEmpty) {
-      print('   ➖ Unsubscribed : ${unsubscribed.map(_topicName).join(', ')}');
+      logDebug('   ➖ Unsubscribed : ${unsubscribed.map(_topicName).join(', ')}', tag: 'FCM');
     }
     if (kept.isNotEmpty) {
-      print('   ✔️  Kept         : ${kept.map(_topicName).join(', ')}');
+      logDebug('   ✔️  Kept         : ${kept.map(_topicName).join(', ')}', tag: 'FCM');
     }
     if (subscribed.isEmpty && unsubscribed.isEmpty) {
-      print('   ✔️  No changes needed');
+      logDebug('   ✔️  No changes needed', tag: 'FCM');
     }
   }
 }

@@ -4,6 +4,7 @@ import '../models/project_model.dart';
 import 'api_service.dart';
 import '../config/api_config.dart';
 
+import '../utils/app_logger.dart';
 class CloudProjectService {
   final ApiService _apiService = ApiService();
 
@@ -12,27 +13,27 @@ class CloudProjectService {
   /// Uses same endpoint as sync: /mobile/projects/?user_only=true
   Future<CloudProjectResponse?> fetchCloudProjects() async {
     try {
-      print('🔍 Fetching cloud projects from: ${ApiConfig.syncProjectEndpoint}?user_only=true');
+      logDebug('🔍 Fetching cloud projects from: ${ApiConfig.syncProjectEndpoint}?user_only=true', tag: 'CLOUD');
       
       final response = await _apiService.get(
         '${ApiConfig.syncProjectEndpoint}?user_only=true',
       );
 
-      print('📥 Response status: ${response.statusCode}');
-      print('📥 Response body length: ${response.body.length}');
+      logDebug('📥 Response status: ${response.statusCode}', tag: 'CLOUD');
+      logDebug('📥 Response body length: ${response.body.length}', tag: 'CLOUD');
 
       if (_apiService.isSuccess(response)) {
         final jsonData = jsonDecode(response.body);
-        print('📦 JSON data type: ${jsonData.runtimeType}');
+        logDebug('📦 JSON data type: ${jsonData.runtimeType}', tag: 'CLOUD');
         
         // Response should be a list of projects directly
         if (jsonData is List) {
-          print('✅ Got list with ${jsonData.length} items');
+          logDebug('✅ Got list with ${jsonData.length} items', tag: 'CLOUD');
           
           final projects = jsonData
               .map((item) {
                 try {
-                  print('🔄 Parsing project: ${item['name']}');
+                  logDebug('🔄 Parsing project: ${item['name']}', tag: 'CLOUD');
                   
                   // Parse as Project first to get all fields
                   final project = Project.fromJson(item as Map<String, dynamic>);
@@ -60,14 +61,14 @@ class CloudProjectService {
                     }).toList(),
                   );
                 } catch (e) {
-                  print('❌ Error parsing project: $e');
+                  logError('❌ Error parsing project: $e', tag: 'CLOUD');
                   return null;
                 }
               })
               .whereType<CloudProject>()
               .toList();
 
-          print('✅ Successfully parsed ${projects.length} projects');
+          logDebug('✅ Successfully parsed ${projects.length} projects', tag: 'CLOUD');
 
           return CloudProjectResponse(
             success: true,
@@ -77,21 +78,21 @@ class CloudProjectService {
         
         // If response has 'data' field
         if (jsonData is Map<String, dynamic>) {
-          print('📦 Got map, trying fromJson...');
+          logDebug('📦 Got map, trying fromJson...', tag: 'CLOUD');
           return CloudProjectResponse.fromJson(jsonData);
         }
 
-        print('❌ Invalid response format');
+        logError('❌ Invalid response format', tag: 'CLOUD');
         return CloudProjectResponse.error('Invalid response format');
       } else {
-        print('❌ Request failed with status: ${response.statusCode}');
+        logError('❌ Request failed with status: ${response.statusCode}', tag: 'CLOUD');
         return CloudProjectResponse.error(
           'Failed to fetch projects: ${response.statusCode}',
         );
       }
     } catch (e, stackTrace) {
-      print('❌ Error fetching cloud projects: $e');
-      print('Stack trace: $stackTrace');
+      logError('❌ Error fetching cloud projects: $e', tag: 'CLOUD');
+      logDebug('Stack trace: $stackTrace', tag: 'CLOUD');
       return CloudProjectResponse.error(e.toString());
     }
   }

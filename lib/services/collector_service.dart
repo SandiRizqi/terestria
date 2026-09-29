@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'api_service.dart';
 import '../config/api_config.dart';
 
+import '../utils/app_logger.dart';
 /// Model untuk hasil search user
 class UserSearchResult {
   final int id;
@@ -61,7 +62,7 @@ class CollectorService {
       }
       return [];
     } catch (e) {
-      print('Error searching users: $e');
+      logWarn('Error searching users: $e', tag: 'CLOUD');
       return [];
     }
   }

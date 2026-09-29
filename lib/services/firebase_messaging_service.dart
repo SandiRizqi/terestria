@@ -7,15 +7,16 @@ import 'notification_event_service.dart';
 import 'notification_sync_service.dart' show stableNotificationId;
 import '../models/notification_model.dart';
 
+import '../utils/app_logger.dart';
 // Background message handler - HARUS top-level function
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print('📱 Background message: ${message.messageId}');
-  print('📱 Data: ${message.data}');
+  logDebug('📱 Background message: ${message.messageId}', tag: 'FCM');
+  logDebug('📱 Data: ${message.data}', tag: 'FCM');
   
   if (message.notification != null) {
-    print('📱 Notification: ${message.notification!.title}');
+    logDebug('📱 Notification: ${message.notification!.title}', tag: 'FCM');
     
     // Save notification to database
     try {
@@ -33,12 +34,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       );
       
       await databaseService.saveNotification(notification);
-      print('✅ Background notification saved to database');
+      logDebug('✅ Background notification saved to database', tag: 'FCM');
       
       // Notify listeners about new notification
       NotificationEventService().notifyNewNotification();
     } catch (e) {
-      print('❌ Error saving background notification: $e');
+      logError('❌ Error saving background notification: $e', tag: 'FCM');
     }
   }
 }
@@ -74,7 +75,7 @@ class FirebaseMessagingService {
         provisional: false,
       );
 
-      print('🔔 Permission status: ${settings.authorizationStatus}');
+      logDebug('🔔 Permission status: ${settings.authorizationStatus}', tag: 'FCM');
 
       // Initialize FCM Token Service
       await _fcmTokenService.initialize();
@@ -87,7 +88,7 @@ class FirebaseMessagingService {
 
       // Get FCM token
       _fcmToken = await _firebaseMessaging.getToken();
-      print('🔑 FCM Token: $_fcmToken');
+      logDebug('🔑 FCM token: ${_fcmToken == null ? 'none' : 'ada (${_fcmToken!.length} karakter)'}', tag: 'FCM');
 
       // Register token to backend if auth token available
       if (_fcmToken != null && _authToken != null) {
@@ -97,7 +98,7 @@ class FirebaseMessagingService {
       // Listen to token refresh
       _firebaseMessaging.onTokenRefresh.listen((newToken) {
         _fcmToken = newToken;
-        print('🔄 Token refreshed: $newToken');
+        logDebug('🔄 FCM token diperbarui (${newToken.length} karakter)', tag: 'FCM');
         // Register new token to backend
         if (_authToken != null) {
           _registerTokenToBackend(newToken, _authToken!);
@@ -116,9 +117,9 @@ class FirebaseMessagingService {
         _handleMessageOpenedApp(initialMessage);
       }
 
-      print('✅ Firebase Messaging initialized successfully');
+      logDebug('✅ Firebase Messaging initialized successfully', tag: 'FCM');
     } catch (e) {
-      print('❌ Error initializing Firebase Messaging: $e');
+      logError('❌ Error initializing Firebase Messaging: $e', tag: 'FCM');
     }
   }
 
@@ -161,10 +162,10 @@ class FirebaseMessagingService {
 
   // Handle foreground messages
   void _handleForegroundMessage(RemoteMessage message) async {
-    print('📨 Foreground message received');
-    print('Title: ${message.notification?.title}');
-    print('Body: ${message.notification?.body}');
-    print('Data: ${message.data}');
+    logDebug('📨 Foreground message received', tag: 'FCM');
+    logDebug('Title: ${message.notification?.title}', tag: 'FCM');
+    logDebug('Body: ${message.notification?.body}', tag: 'FCM');
+    logDebug('Data: ${message.data}', tag: 'FCM');
 
     // Save notification to database
     await _saveNotificationToDatabase(message);
@@ -177,8 +178,8 @@ class FirebaseMessagingService {
 
   // Handle notification tap
   void _handleMessageOpenedApp(RemoteMessage message) async {
-    print('🔔 Notification tapped!');
-    print('Data: ${message.data}');
+    logDebug('🔔 Notification tapped!', tag: 'FCM');
+    logDebug('Data: ${message.data}', tag: 'FCM');
     
     // Save notification to database if not already saved
     await _saveNotificationToDatabase(message);
@@ -192,8 +193,8 @@ class FirebaseMessagingService {
 
   // Handle notification tap (local)
   void _onNotificationTapped(NotificationResponse response) {
-    print('🔔 Local notification tapped!');
-    print('Payload: ${response.payload}');
+    logDebug('🔔 Local notification tapped!', tag: 'FCM');
+    logDebug('Payload: ${response.payload}', tag: 'FCM');
     
     // TODO: Handle navigation based on payload
   }
@@ -233,20 +234,20 @@ class FirebaseMessagingService {
   // Subscribe to topic
   Future<void> subscribeToTopic(String topic) async {
     await _firebaseMessaging.subscribeToTopic(topic);
-    print('📢 Subscribed to topic: $topic');
+    logDebug('📢 Subscribed to topic: $topic', tag: 'FCM');
   }
 
   // Unsubscribe from topic
   Future<void> unsubscribeFromTopic(String topic) async {
     await _firebaseMessaging.unsubscribeFromTopic(topic);
-    print('🔇 Unsubscribed from topic: $topic');
+    logDebug('🔇 Unsubscribed from topic: $topic', tag: 'FCM');
   }
 
   // Delete token
   Future<void> deleteToken() async {
     await _firebaseMessaging.deleteToken();
     _fcmToken = null;
-    print('🗑️ FCM token deleted');
+    logDebug('🗑️ FCM token deleted', tag: 'FCM');
   }
 
   // Register token to backend
@@ -254,12 +255,12 @@ class FirebaseMessagingService {
     try {
       final success = await _fcmTokenService.registerToken(fcmToken, authToken);
       if (success) {
-        print('✅ Token registered to backend');
+        logDebug('✅ Token registered to backend', tag: 'FCM');
       } else {
-        print('⚠️ Failed to register token to backend');
+        logWarn('⚠️ Failed to register token to backend', tag: 'FCM');
       }
     } catch (e) {
-      print('❌ Error registering token to backend: $e');
+      logError('❌ Error registering token to backend: $e', tag: 'FCM');
     }
   }
 
@@ -284,9 +285,9 @@ class FirebaseMessagingService {
     try {
       await _fcmTokenService.deactivateToken(authToken);
       _authToken = null;
-      print('✅ Token deactivated from backend');
+      logDebug('✅ Token deactivated from backend', tag: 'FCM');
     } catch (e) {
-      print('❌ Error deactivating token: $e');
+      logError('❌ Error deactivating token: $e', tag: 'FCM');
     }
   }
 
@@ -295,9 +296,9 @@ class FirebaseMessagingService {
     try {
       await _fcmTokenService.deactivateAllTokens(authToken);
       _authToken = null;
-      print('✅ All tokens deactivated from backend');
+      logDebug('✅ All tokens deactivated from backend', tag: 'FCM');
     } catch (e) {
-      print('❌ Error deactivating all tokens: $e');
+      logError('❌ Error deactivating all tokens: $e', tag: 'FCM');
     }
   }
 
@@ -316,7 +317,7 @@ class FirebaseMessagingService {
       );
 
       await _databaseService.saveNotification(notification);
-      print('✅ Notification saved to database');
+      logDebug('✅ Notification saved to database', tag: 'FCM');
       
       // Notify listeners about new notification
       _notificationEventService.notifyNewNotification();
@@ -326,7 +327,7 @@ class FirebaseMessagingService {
         onNewNotificationCallback!();
       }
     } catch (e) {
-      print('❌ Error saving notification to database: $e');
+      logError('❌ Error saving notification to database: $e', tag: 'FCM');
     }
   }
 }

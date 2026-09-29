@@ -6,6 +6,7 @@ import '../../services/cloud_project_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 
+import '../../utils/app_logger.dart';
 /// Dialog untuk menampilkan daftar projects dari cloud dan memilih mana yang akan ditambahkan
 class CloudProjectDialog extends StatefulWidget {
   const CloudProjectDialog({Key? key}) : super(key: key);
@@ -55,7 +56,7 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
   }
 
   Future<void> _loadCloudProjects() async {
-    print('🚀 CloudProjectDialog: Starting to load projects...');
+    logDebug('🚀 CloudProjectDialog: Starting to load projects...', tag: 'CLOUD');
     
     setState(() {
       _isLoading = true;
@@ -65,28 +66,28 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
     try {
       // Load existing projects untuk check duplikasi
       _existingProjects = await _storageService.loadProjects();
-      print('📂 Loaded ${_existingProjects.length} existing projects');
+      logDebug('📂 Loaded ${_existingProjects.length} existing projects', tag: 'CLOUD');
       
       // Fetch dari cloud menggunakan endpoint yang sama dengan sync
-      print('☁️ Fetching from cloud...');
+      logDebug('☁️ Fetching from cloud...', tag: 'CLOUD');
       final response = await _cloudService.fetchCloudProjects();
       
-      print('📬 Response received: ${response != null ? 'success=${response.success}' : 'null'}');
+      logDebug('📬 Response received: ${response != null ? 'success=${response.success}' : 'null'}', tag: 'CLOUD');
       
       if (response != null && response.success) {
-        print('✅ Success! Got ${response.data.length} cloud projects');
+        logDebug('✅ Success! Got ${response.data.length} cloud projects', tag: 'CLOUD');
         
         if (response.data.isEmpty) {
-          print('⚠️ No projects available from cloud');
+          logWarn('⚠️ No projects available from cloud', tag: 'CLOUD');
           setState(() {
             _cloudProjects = [];
             _filteredProjects = [];
             _isLoading = false;
           });
         } else {
-          print('📋 Projects:');
+          logDebug('📋 Projects:', tag: 'CLOUD');
           for (var project in response.data) {
-            print('   - ${project.name} (${project.geometryType})');
+            logDebug('   - ${project.name} (${project.geometryType})', tag: 'CLOUD');
           }
           
           setState(() {
@@ -97,7 +98,7 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
         }
       } else {
         final errorMsg = response?.message ?? 'Failed to load projects from cloud';
-        print('❌ Error: $errorMsg');
+        logError('❌ Error: $errorMsg', tag: 'CLOUD');
         
         setState(() {
           _errorMessage = errorMsg;
@@ -105,8 +106,8 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
         });
       }
     } catch (e, stackTrace) {
-      print('❌ Exception loading cloud projects: $e');
-      print('Stack trace: $stackTrace');
+      logError('❌ Exception loading cloud projects: $e', tag: 'CLOUD');
+      logDebug('Stack trace: $stackTrace', tag: 'CLOUD');
       
       setState(() {
         _errorMessage = 'Error: $e';

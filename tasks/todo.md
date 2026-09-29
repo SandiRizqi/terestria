@@ -21,7 +21,7 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-tracking-engine.md](plan-trac
 ## Phase 3 — Hilangkan print()
 Hitung ulang (parser): **443 panggilan di 41 file** (plan awal ±370/34 menghitung per baris).
 - [x] **Task 7a — Tracking, data collection & inti app** (M) ✅ 135 panggilan: data_collection_screen, main, app_initializer, gps_logger, location_provider, notification_service, settings_service, routing_service
-- [ ] **Task 7b — Sync, auth, cloud, notifikasi, update** (M) — tanpa nilai token
+- [x] **Task 7b — Sync, auth, cloud, notifikasi, update** (M) ✅ 159 panggilan; token FCM & body respons token disamarkan
 - [ ] **Task 7c — Basemap, tile, PDF** (M)
 - [ ] **Task 7d — Sisa UI + gerbang `avoid_print: error` + test no-print** (M)
 
