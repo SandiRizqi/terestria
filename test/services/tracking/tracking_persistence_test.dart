@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
@@ -24,17 +26,28 @@ GeoPoint _pt(double lon) =>
 /// tiba saat proses append sedang berjalan (uji race deterministik).
 class _FakeRepo extends SessionRepository {
   final List<GeoPoint> appended = [];
+  final Map<String, int> appendedFor = {};
+  final List<String> upserted = [];
+  final List<String> deleted = [];
+  Set<String> failUpsertFor = {};
   List<TrackingSession> stored = [];
   void Function()? onAppend;
   @override
-  Future<void> upsertSession(TrackingSession s) async {}
+  Future<void> upsertSession(TrackingSession s) async {
+    if (failUpsertFor.contains(s.projectId)) {
+      throw Exception('disk full');
+    }
+    upserted.add(s.projectId);
+  }
+
   @override
-  Future<void> deleteSession(String id) async {}
+  Future<void> deleteSession(String id) async => deleted.add(id);
   @override
   Future<List<TrackingSession>> restoreAll() async => stored;
   @override
   Future<void> appendPoints(String id, List<GeoPoint> pts, int fromSeq) async {
     appended.addAll(pts);
+    appendedFor[id] = (appendedFor[id] ?? 0) + pts.length;
     onAppend?.call();
   }
 
@@ -46,6 +59,59 @@ class _FakeRepo extends SessionRepository {
     appended
       ..clear()
       ..addAll(pts);
+  }
+}
+
+/// Penjadwal timer palsu: waktu maju manual, timer yang jatuh tempo dijalankan
+/// berurutan — menguji debounce + max-wait tanpa menunggu waktu nyata.
+class _Scheduler {
+  DateTime now = DateTime(2026, 1, 1, 8);
+  final List<_FakeTimer> _timers = [];
+
+  Timer create(Duration d, void Function() cb) {
+    final t = _FakeTimer(now.add(d), cb);
+    _timers.add(t);
+    return t;
+  }
+
+  void advance(Duration d) {
+    final end = now.add(d);
+    while (true) {
+      final due = _timers
+          .where((t) => t.isActive && !t.due.isAfter(end))
+          .toList()
+        ..sort((a, b) => a.due.compareTo(b.due));
+      if (due.isEmpty) break;
+      final t = due.first;
+      now = t.due;
+      t.fire();
+    }
+    now = end;
+  }
+}
+
+class _FakeTimer implements Timer {
+  _FakeTimer(this.due, this._cb);
+  final DateTime due;
+  final void Function() _cb;
+  bool _active = true;
+
+  void fire() {
+    _active = false;
+    _cb();
+  }
+
+  @override
+  void cancel() => _active = false;
+  @override
+  bool get isActive => _active;
+  @override
+  int get tick => 0;
+}
+
+Future<void> _pumpMicrotasks() async {
+  for (var i = 0; i < 5; i++) {
+    await Future<void>.delayed(Duration.zero);
   }
 }
 
@@ -91,28 +157,47 @@ void main() {
   });
 
   group('partitionRestorable', () {
-    TrackingSession s(String id, DateTime started) => TrackingSession(
-        project: _proj(id), startedAt: started, points: [_pt(0)]);
+    TrackingSession s(String id, DateTime started,
+            {SessionState state = SessionState.recording}) =>
+        TrackingSession(
+            project: _proj(id),
+            startedAt: started,
+            points: [_pt(0)],
+            state: state);
     final now = DateTime(2026, 1, 2, 12, 0);
     const maxAge = Duration(hours: 12);
 
-    test('buang sesi lebih tua dari maxAge (abandoned)', () {
+    test('sesi lama (> maxAge) TIDAK dibuang — dijadikan draft', () {
       final r = partitionRestorable([
         s('old', now.subtract(const Duration(hours: 20))),
         s('fresh', now.subtract(const Duration(hours: 1))),
       ], 3, now, maxAge);
-      expect(r.keep.map((e) => e.projectId), ['fresh']);
-      expect(r.drop.map((e) => e.projectId), ['old']);
+      expect(r.keep.map((e) => e.projectId).toSet(), {'old', 'fresh'});
+      expect(r.drop, isEmpty);
+      expect(r.demoted.map((e) => e.projectId), ['old']);
     });
 
-    test('batasi ke cap, simpan yang terbaru', () {
+    test('melebihi cap: live terbaru tetap, sisanya jadi draft (tak dihapus)',
+        () {
       final r = partitionRestorable([
         s('c', now.subtract(const Duration(hours: 3))),
         s('a', now.subtract(const Duration(hours: 1))),
         s('b', now.subtract(const Duration(hours: 2))),
       ], 2, now, maxAge);
-      expect(r.keep.map((e) => e.projectId).toSet(), {'a', 'b'});
-      expect(r.drop.map((e) => e.projectId), ['c']);
+      expect(r.keep.map((e) => e.projectId).toSet(), {'a', 'b', 'c'});
+      expect(r.drop, isEmpty);
+      expect(r.demoted.map((e) => e.projectId), ['c']);
+    });
+
+    test('draft (pendingSave) tak dihitung cap', () {
+      final r = partitionRestorable([
+        s('d1', now, state: SessionState.pendingSave),
+        s('d2', now, state: SessionState.pendingSave),
+        s('a', now),
+        s('b', now),
+      ], 2, now, maxAge);
+      expect(r.keep.length, 4);
+      expect(r.demoted, isEmpty);
     });
 
     test('semua fresh & dalam cap → keep semua', () {
@@ -120,6 +205,7 @@ void main() {
           [s('a', now), s('b', now)], 3, now, maxAge);
       expect(r.keep.length, 2);
       expect(r.drop, isEmpty);
+      expect(r.demoted, isEmpty);
     });
 
     test('sesi kosong (0 titik) dibuang', () {
@@ -128,6 +214,105 @@ void main() {
       expect(r.keep.map((e) => e.projectId), ['a']);
       expect(r.drop.map((e) => e.projectId), ['e']);
     });
+  });
+
+  group('nextFlushDelay', () {
+    const debounce = Duration(seconds: 2);
+    const maxWait = Duration(seconds: 8);
+    test('awal: debounce biasa', () {
+      expect(
+          nextFlushDelay(
+              sinceFirstPending: Duration.zero,
+              debounce: debounce,
+              maxWait: maxWait),
+          debounce);
+    });
+    test('mendekati maxWait: sisa waktu, bukan debounce penuh', () {
+      expect(
+          nextFlushDelay(
+              sinceFirstPending: const Duration(seconds: 7),
+              debounce: debounce,
+              maxWait: maxWait),
+          const Duration(seconds: 1));
+    });
+    test('melewati maxWait: segera', () {
+      expect(
+          nextFlushDelay(
+              sinceFirstPending: const Duration(seconds: 12),
+              debounce: debounce,
+              maxWait: maxWait),
+          Duration.zero);
+    });
+  });
+
+  test('fix tiap 1 dtk terus-menerus tetap ter-flush berkala (max-wait)',
+      () async {
+    final sched = _Scheduler();
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    final repo = _FakeRepo();
+    final coord = TrackingPersistenceCoordinator(
+      manager: mgr,
+      repo: repo,
+      timer: sched.create,
+      now: () => sched.now,
+    )..attach();
+    mgr.start(_proj('m'));
+
+    // 20 dtk bergerak: satu fix per detik → debounce 2 dtk selalu ter-reset.
+    for (var i = 0; i < 20; i++) {
+      mgr.addPointToActiveSessions(_pt(i.toDouble()));
+      sched.advance(const Duration(seconds: 1));
+      await _pumpMicrotasks();
+    }
+
+    // Tanpa max-wait: 0 titik tersimpan. Dengan max-wait 8 dtk: ≥2 flush dan
+    // hanya titik detik terakhir yang belum tersimpan.
+    expect(repo.appended.length, greaterThanOrEqualTo(16));
+    coord.detach();
+    mgr.stop('m');
+  });
+
+  test('gagal simpan satu sesi tak menghalangi sesi lain & dicoba lagi',
+      () async {
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    final repo = _FakeRepo()..failUpsertFor = {'bad'};
+    final coord = TrackingPersistenceCoordinator(manager: mgr, repo: repo);
+    mgr.start(_proj('bad'));
+    mgr.start(_proj('good'));
+    mgr.addPointToActiveSessions(_pt(1));
+
+    await coord.flushNow(); // tak melempar walau 'bad' gagal
+    expect(repo.appendedFor['good'], 1);
+    expect(repo.appendedFor['bad'], isNull);
+
+    repo.failUpsertFor = {};
+    await coord.flushNow(); // percobaan ulang: 'bad' kini tersimpan
+    expect(repo.appendedFor['bad'], 1);
+    expect(repo.appendedFor['good'], 1); // tak dobel
+    mgr.stop('bad');
+    mgr.stop('good');
+  });
+
+  test('restore: sesi lama dipulihkan sebagai draft & statusnya disimpan',
+      () async {
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    final repo = _FakeRepo()
+      ..stored = [
+        TrackingSession(
+            project: _proj('old'),
+            startedAt: DateTime.now().subtract(const Duration(hours: 30)),
+            points: [_pt(0), _pt(1), _pt(2)]),
+      ];
+    final coord = TrackingPersistenceCoordinator(manager: mgr, repo: repo);
+
+    await coord.restore();
+
+    final s = mgr.sessionFor('old')!;
+    expect(s.pendingSave, isTrue);
+    expect(s.points.length, 3);
+    expect(repo.upserted, contains('old')); // status draft ditulis ke DB
+    expect(repo.deleted, isEmpty);
+    mgr.stop('old');
   });
 
   test('flushNow tak kehilangan titik yang tiba saat append (race)', () async {

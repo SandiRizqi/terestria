@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
+import '../../utils/app_logger.dart';
 import '../database_service.dart';
 import 'tracking_session.dart';
 
@@ -113,16 +114,37 @@ class SessionRepository {
   }
 
   /// Muat semua sesi tersimpan + titiknya (urut seq) untuk restore saat start.
+  ///
+  /// Toleran terhadap baris rusak: sesi yang tak bisa di-parse dilewati (baris
+  /// DB-nya DIBIARKAN, tak dihapus) dan titik rusak dilewati satu per satu,
+  /// sehingga satu baris korup tak menggagalkan pemulihan sesi lain.
   Future<List<TrackingSession>> restoreAll() async {
     final db = await _dbService.database;
     final rows = await db.query('tracking_sessions');
     final out = <TrackingSession>[];
     for (final row in rows) {
-      final pid = row['projectId'] as String;
-      final ptRows = await db.query('tracking_session_points',
-          where: 'projectId = ?', whereArgs: [pid], orderBy: 'seq ASC');
-      final points = ptRows.map(pointFromRow).toList();
-      out.add(sessionFromRow(row, points));
+      final pid = row['projectId'];
+      try {
+        final ptRows = await db.query('tracking_session_points',
+            where: 'projectId = ?', whereArgs: [pid], orderBy: 'seq ASC');
+        final points = <GeoPoint>[];
+        var corrupt = 0;
+        for (final r in ptRows) {
+          try {
+            points.add(pointFromRow(r));
+          } catch (_) {
+            corrupt++;
+          }
+        }
+        if (corrupt > 0) {
+          logWarn('Session $pid: skipped $corrupt corrupt point(s) on restore',
+              tag: 'PERSIST');
+        }
+        out.add(sessionFromRow(row, points));
+      } catch (e, st) {
+        logError('Session $pid could not be restored (row kept in DB)',
+            tag: 'PERSIST', error: e, stack: st);
+      }
     }
     return out;
   }

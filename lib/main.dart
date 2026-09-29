@@ -71,13 +71,15 @@ void main() async {
       // 5. Pulihkan sesi tracking multi-project dari SQLite + mulai persistensi,
       //    lalu pasang TrackingEngine: pemilik tunggal feed GPS (service +
       //    heartbeat) selama ada sesi merekam — bukan lagi layar collection.
+      trackingPersistence = TrackingPersistenceCoordinator();
       try {
-        trackingPersistence = TrackingPersistenceCoordinator();
         await trackingPersistence!.restore();
-        trackingPersistence!.attach();
-      } catch (e) {
-        logWarn('⚠️ Gagal restore/attach tracking persistence: $e', tag: 'APP');
+      } catch (e, st) {
+        logError('Tracking session restore failed', tag: 'APP', error: e, stack: st);
       }
+      // Selalu pasang persistensi, walau restore gagal — tanpa ini sesi baru
+      // tak pernah dicadangkan ke SQLite selama app berjalan.
+      trackingPersistence!.attach();
       TrackingEngine.instance.attach();
 
       runApp(const TerestriaApp());
@@ -168,6 +170,13 @@ class _TerestriaAppState extends State<TerestriaApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     logDebug('📱 [MAIN APP] Lifecycle changed to: $state', tag: 'APP');
+
+    if (state == AppLifecycleState.paused) {
+      // App ke background: OS bisa membunuh proses kapan saja tanpa
+      // `detached` → cadangkan titik sesi sekarang.
+      trackingPersistence?.flushNow();
+      AppLogger.flush();
+    }
 
     if (state == AppLifecycleState.detached) {
       logWarn('⚠️ [MAIN APP] App is being killed - ensuring cleanup...', tag: 'APP');
