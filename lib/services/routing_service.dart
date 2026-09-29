@@ -407,6 +407,13 @@ class RoutingService {
     }
   }
 
+  /// Lepas graf jalan yang dimuat (reset logout) — data jalan user sebelumnya
+  /// tak boleh dipakai user berikutnya.
+  void resetForLogout() {
+    _isInitialized = false;
+    if (!_isAndroid) _iosEngine.dispose();
+  }
+
   /// Force re-initialize after importing a new OSM file.
   /// Deletes the stale graph cache so GraphHopper rebuilds from the new PBF.
   Future<bool> reinitialize() async {

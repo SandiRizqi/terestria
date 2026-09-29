@@ -21,7 +21,7 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-basemap-pdf.md](plan-basemap-
 ## Phase 3 — Reset app saat logout
 - [x] **T7 — Pengaman data belum sync** (S) — dialog jumlah + Sync dulu / Batal / Hapus (ketik `HAPUS`)
 - [x] **T8 — `AppResetService`** (M) — hapus semua kecuali allowlist, urutan aman
-- [ ] **T9 — Reset state in-memory + uji user B** (M) — tak ada data user A setelah login ulang
+- [x] **T9 — Reset state in-memory + uji user B** (M) — tak ada data user A setelah login ulang
 
 ### Checkpoint 3
 - [ ] Test hijau; analyze 0 error; device: logout A (ada data belum sync) → login B bersih

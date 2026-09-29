@@ -8,9 +8,14 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../utils/app_logger.dart';
 import '../auth_service.dart';
+import '../crashlytics_service.dart';
 import '../database_service.dart';
+import '../fcm_token_service.dart';
+import '../firebase_messaging_service.dart';
 import '../location_service_v2.dart';
+import '../notification_topic_service.dart';
 import '../offline_basemap_download_service.dart';
+import '../routing_service.dart';
 import '../tile_cache_sqlite_service.dart';
 import '../tracking/tracking_persistence_coordinator.dart';
 import '../tracking/tracking_session_manager.dart';
@@ -87,22 +92,36 @@ List<String> get standardResetStepNames =>
     standardResetSteps().map((s) => s.name).toList();
 
 /// Urutan wajib:
-/// 1. tracking — sesi dibuang, service & feed GPS berhenti (tak menulis lagi);
-/// 2. downloads — unduhan basemap dihentikan;
-/// 3. auth — logout + lepas topic FCM (butuh token & daftar topic di prefs);
-/// 4. databases — koneksi SQLite ditutup sebelum berkasnya dihapus;
-/// 5. files — Documents & Temp dikosongkan; di folder yang juga dipakai
+/// 1. tracking — sesi dibuang & koordinator persistensi menyinkronkannya
+///    (engine melihat 0 sesi → berhenti);
+/// 2. location — service background & log GPS dipastikan berhenti;
+/// 3. downloads — unduhan basemap dihentikan;
+/// 4. auth — logout + lepas topic scope FCM (butuh token & daftar topic di
+///    prefs, jadi sebelum preferences);
+/// 5. accounts — state user di singleton: topic notifikasi, token FCM
+///    tercatat, auth token FCM, user Crashlytics, graf routing;
+/// 6. databases — koneksi SQLite ditutup sebelum berkasnya dihapus;
+/// 7. files — Documents & Temp dikosongkan; di folder yang juga dipakai
 ///    Firebase/plugin (databases, Application Support) hanya milik app;
-/// 6. preferences — semua kunci dihapus kecuali [kResetKeepPrefKeys];
-/// 7. memory — cache gambar (overlay PDF, foto) dikosongkan.
+/// 8. preferences — semua kunci dihapus kecuali [kResetKeepPrefKeys];
+/// 9. memory — cache gambar (overlay PDF, foto) dikosongkan.
 List<AppResetStep> standardResetSteps() => [
-      const AppResetStep('tracking', _stopTracking),
+      AppResetStep('tracking', () async {
+        TrackingSessionManager.instance.clearAll();
+        await TrackingPersistenceCoordinator.active?.flushNow();
+      }),
+      AppResetStep('location', () async {
+        final location = LocationServiceV2();
+        await location.stopBackgroundTracking();
+        await location.stopGpsLog();
+      }),
       AppResetStep('downloads', () async {
         OfflineBasemapDownloadService().cancelDownload();
       }),
       AppResetStep('auth', () => AuthService()
           .logout(waitForCleanup: true)
           .timeout(const Duration(seconds: 12))),
+      const AppResetStep('accounts', _resetAccountState),
       AppResetStep('databases', () async {
         await DatabaseService().close();
         await TileCacheSqliteService().closeAll();
@@ -117,26 +136,55 @@ List<AppResetStep> standardResetSteps() => [
       }),
     ];
 
-Future<void> _stopTracking() async {
-  // Buang sesi (engine melihat 0 sesi → hentikan service/feed), lalu pastikan
-  // berhenti & koordinator persistensi menyinkronkan state kosongnya.
-  TrackingSessionManager.instance.clearAll();
-  final location = LocationServiceV2();
-  await location.stopBackgroundTracking();
-  await location.stopGpsLog();
-  await TrackingPersistenceCoordinator.active?.flushNow();
+/// Tiap bagian dibungkus sendiri-sendiri: Firebase belum siap / offline tak
+/// boleh menggagalkan reset bagian lain.
+Future<void> _resetAccountState() async {
+  final parts = <String, Future<void> Function()>{
+    'token FCM tercatat': () async => FCMTokenService().forgetRegisteredToken(),
+    'graf routing': () async => RoutingService().resetForLogout(),
+    'auth token FCM': () async => FirebaseMessagingService().clearAuthToken(),
+    'topic notifikasi': () => NotificationTopicService()
+        .resetForLogout()
+        .timeout(const Duration(seconds: 8)),
+    'user Crashlytics': () => CrashlyticsService.instance.clearUser(),
+  };
+  await _runParts(parts);
 }
 
+/// Documents & Temp dikosongkan penuh. Folder databases & Application Support
+/// juga dipakai Firebase/plugin → hanya milik app: `geoform.db*`, cache tile
+/// (`MapTiles/`) dan cache graf GraphHopper (Android: `context.filesDir`).
 Future<void> _wipeFiles() async {
-  final removed = <String, int>{
-    'documents': await wipeDirectory(await getApplicationDocumentsDirectory()),
-    'temp': await wipeDirectory(await getTemporaryDirectory()),
-    'databases': await wipeDirectory(Directory(await getDatabasesPath()),
+  final removed = <String, int>{};
+  await _runParts({
+    'documents': () async => removed['documents'] =
+        await wipeDirectory(await getApplicationDocumentsDirectory()),
+    'temp': () async =>
+        removed['temp'] = await wipeDirectory(await getTemporaryDirectory()),
+    'databases': () async => removed['databases'] = await wipeDirectory(
+        Directory(await getDatabasesPath()),
         only: (name) => name.startsWith(DatabaseService.databaseName)),
-    'support': await wipeDirectory(await getApplicationSupportDirectory(),
-        only: (name) => name == 'MapTiles'),
-  };
+    'support': () async => removed['support'] = await wipeDirectory(
+        await getApplicationSupportDirectory(),
+        only: (name) =>
+            name == 'MapTiles' || name.startsWith('gh-graph-cache')),
+  });
   logInfo('Berkas dihapus: $removed', tag: 'RESET');
+}
+
+/// Jalankan [parts] berurutan; yang gagal dicatat lalu dilewati. Bila ada
+/// yang gagal, lempar di akhir agar langkahnya tercatat gagal di laporan.
+Future<void> _runParts(Map<String, Future<void> Function()> parts) async {
+  final failed = <String>[];
+  for (final e in parts.entries) {
+    try {
+      await e.value();
+    } catch (err) {
+      failed.add(e.key);
+      logWarn('Reset ${e.key} gagal: $err', tag: 'RESET');
+    }
+  }
+  if (failed.isNotEmpty) throw StateError('gagal: ${failed.join(', ')}');
 }
 
 /// Hapus isi [dir] (bukan folder-nya). [only] membatasi ke nama entri

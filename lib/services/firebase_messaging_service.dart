@@ -264,6 +264,10 @@ class FirebaseMessagingService {
     }
   }
 
+  /// Lupakan auth token user (reset logout) agar refresh token FCM tak
+  /// didaftarkan atas nama user yang sudah logout.
+  void clearAuthToken() => _authToken = null;
+
   // Update auth token (call this after login)
   Future<void> updateAuthToken(String authToken) async {
     _authToken = authToken;

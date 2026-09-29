@@ -40,6 +40,11 @@ class FCMTokenService {
     }
   }
 
+  /// Lupakan token yang tercatat terdaftar (reset logout) — tanpa ini login
+  /// user berikutnya di HP yang sama melewati registrasi token ("already
+  /// registered") bila deaktivasi saat logout gagal (mis. offline).
+  void forgetRegisteredToken() => _lastRegisteredToken = null;
+
   /// Register or update FCM token to backend
   Future<bool> registerToken(String fcmToken, String authToken) async {
     try {

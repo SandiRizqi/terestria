@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/app_logger.dart';
 import '../config/notification_topics.dart';
 import 'firebase_messaging_service.dart';
 
@@ -77,6 +78,26 @@ class NotificationTopicService {
     } catch (e) {
       rethrow;
     }
+  }
+
+  /// Reset logout: lepas SEMUA topic yang sedang di-subscribe user ini (status
+  /// dari prefs; bawaan bila belum pernah diatur) lalu kosongkan cache. Login
+  /// berikutnya kembali ke topic default lewat [initialize]. Gagal per topic
+  /// (mis. offline) dicatat & dilewati.
+  Future<void> resetForLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final topic in defaultNotificationTopics) {
+      final subscribed = _subscriptionStatus[topic.id] ??
+          prefs.getBool('$_prefsKeyPrefix${topic.id}') ??
+          topic.isDefault;
+      if (!subscribed) continue;
+      try {
+        await _messagingService.unsubscribeFromTopic(topic.id);
+      } catch (e) {
+        logWarn('Gagal lepas topic ${topic.id} saat reset: $e', tag: 'FCM');
+      }
+    }
+    _subscriptionStatus.clear();
   }
 
   /// Toggle subscribe/unsubscribe

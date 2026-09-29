@@ -37,9 +37,11 @@ void main() {
       final names = standardResetStepNames;
       int at(String n) => names.indexOf(n);
       expect(names, containsAll(
-          ['tracking', 'downloads', 'auth', 'databases', 'files', 'preferences',
-           'memory']));
+          ['tracking', 'location', 'downloads', 'auth', 'accounts', 'databases',
+           'files', 'preferences', 'memory']));
       expect(at('tracking'), lessThan(at('databases')));
+      expect(at('location'), lessThan(at('files')));
+      expect(at('accounts'), lessThan(at('preferences')));
       expect(at('downloads'), lessThan(at('databases')));
       // Logout auth butuh token & daftar topic FCM di prefs.
       expect(at('auth'), lessThan(at('preferences')));
