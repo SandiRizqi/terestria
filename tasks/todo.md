@@ -11,7 +11,7 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-basemap-pdf.md](plan-basemap-
 ## Phase 2 — Import layer SHP (zip), GPX, XML
 - [x] **T2 — `LayerImporter` satu pintu** (S–M) — deteksi format, GeoJSON lama tetap jalan, parsing di isolate
 - [x] **T3 — GPX → GeoJSON** (S) — wpt/trk/rte + properti
-- [ ] **T4 — KML/XML (+KMZ) → GeoJSON** (S–M) — Placemark, polygon berlubang, MultiGeometry
+- [x] **T4 — KML/XML (+KMZ) → GeoJSON** (S–M) — Placemark, polygon berlubang, MultiGeometry
 - [ ] **T5 — Pembaca Shapefile .shp + .dbf** (M) — semua tipe geometri, atribut, encoding `.cpg`
 - [ ] **T6 — SHP ber-zip: `.prj` WGS84/UTM + wiring** (M) — tolak proyeksi lain, pilih bila >1 shapefile
 
