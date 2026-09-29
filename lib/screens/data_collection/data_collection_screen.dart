@@ -14,6 +14,9 @@ import 'package:flutter_compass/flutter_compass.dart';
 import '../../widgets/map/compass_button.dart';
 import '../../widgets/map/map_controls_column.dart';
 import '../../widgets/map/map_tool_button.dart';
+import '../../widgets/map/basemap_layers.dart';
+import '../../services/basemap/pdf_overlay.dart';
+import '../../services/basemap/pdf_overlay_controller.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
@@ -106,6 +109,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   // 🔧 FIX: Single unified stream for both tracking and blue marker
   StreamSubscription<GeoPoint>? _unifiedLocationSubscription;
   bool _isSaving = false;
+  late final PdfOverlayController _pdfOverlay;
   Map<String, dynamic> _formData = {};
   CollectionMode _collectionMode = CollectionMode.tracking;
   Basemap? _selectedBasemap;
@@ -159,6 +163,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // Rebuild marker layer setiap frame animasi
     _markerAnimController.addListener(_onMarkerAnimationTick);
 
+    // Overlay PDF disiapkan sekali per ganti basemap (bukan di build).
+    _pdfOverlay = PdfOverlayController(onProblem: _showBasemapProblem)
+      ..addListener(_onPdfOverlayChanged);
+
     _setTransparentStatusBar();
 
     // Settings harus selesai dulu sebelum _loadExistingData()
@@ -206,6 +214,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   /// agar posisi marker ter-interpolasi dari begin ke target.
   void _onMarkerAnimationTick() {
     if (mounted) setState(() {});
+  }
+
+  void _onPdfOverlayChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _showBasemapProblem(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.orange,
+      duration: const Duration(seconds: 4),
+    ));
   }
 
   /// Posisi marker yang diinterpolasi secara smooth antara posisi lama dan baru.
@@ -1252,6 +1273,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
+    _pdfOverlay
+      ..removeListener(_onPdfOverlayChanged)
+      ..dispose();
     TrackingSessionManager.instance.removeListener(_onSessionsChanged);
 
     // Cancel compass stream (UI only)
@@ -1283,6 +1307,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     if (mounted) {
       setState(() => _selectedBasemap = basemap);
+      _pdfOverlay.show(basemap);
 
       // Jika PDF basemap dengan georeferencing, zoom ke bounds PDF
       if (basemap.type == BasemapType.pdf && basemap.hasPdfGeoreferencing) {
@@ -2660,6 +2685,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         onBasemapSelected: (basemap) {
           setState(() => _selectedBasemap = basemap);
           _basemapService.setSelectedBasemap(basemap.id);
+          _pdfOverlay.show(basemap);
+          _fitToPdfIfOffscreen(basemap);
         },
       ),
     );
@@ -3041,133 +3068,32 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     });
   }
 
-  List<Widget> _buildBasemapLayers(Basemap basemap) {
-    // Check if this is an overlay-mode PDF basemap
-    if (basemap.useOverlayMode &&
-        basemap.pdfOverlayImagePath != null &&
-        basemap.hasPdfGeoreferencing) {
-      //print('⚡ Using Overlay Mode for ${basemap.name}');
+  /// Layer OSM langsung dari jaringan: dasar di bawah overlay PDF & cadangan
+  /// bila overlay tak bisa ditampilkan.
+  TileLayer _osmNetworkLayer() => TileLayer(
+        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        userAgentPackageName: ApiConfig.bundleName,
+        tileProvider: NetworkTileProvider(),
+      );
 
-      // VALIDASI: Cek apakah file image ada
-      final imageFile = File(basemap.pdfOverlayImagePath!);
-      if (!imageFile.existsSync()) {
-        //print('❌ ERROR: Image file not found at: ${basemap.pdfOverlayImagePath}');
-        // Fallback ke OSM jika file tidak ada
-        return [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: ApiConfig.bundleName,
-          ),
-        ];
+  /// Setelah ganti ke basemap PDF: pindahkan kamera ke PDF HANYA bila PDF
+  /// sama sekali tak terlihat (dulu kamera diam → PDF di area lain terkesan
+  /// "tidak muncul"). Bila sudah beririsan dengan tampilan, kamera dibiarkan.
+  void _fitToPdfIfOffscreen(Basemap basemap) {
+    final pdf = pdfBoundsOf(basemap);
+    if (pdf == null) return;
+    try {
+      if (!shouldFitToPdf(
+          visible: _mapController.camera.visibleBounds, pdf: pdf)) {
+        return;
       }
-
-      // VALIDASI: Cek bounds tidak null
-      if (basemap.pdfMinLat == null ||
-          basemap.pdfMinLon == null ||
-          basemap.pdfMaxLat == null ||
-          basemap.pdfMaxLon == null) {
-        //print('❌ ERROR: Invalid bounds (null values)');
-        return [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: ApiConfig.bundleName,
-          ),
-        ];
-      }
-
-      // VALIDASI: Cek min < max untuk latitude dan longitude
-      if (basemap.pdfMinLat! >= basemap.pdfMaxLat! ||
-          basemap.pdfMinLon! >= basemap.pdfMaxLon!) {
-        logError('❌ ERROR: Invalid bounds (min >= max)', tag: 'COLLECT');
-        logDebug(
-            '   MinLat (${basemap.pdfMinLat}) should be < MaxLat (${basemap.pdfMaxLat})', tag: 'COLLECT');
-        logDebug(
-            '   MinLon (${basemap.pdfMinLon}) should be < MaxLon (${basemap.pdfMaxLon})', tag: 'COLLECT');
-        return [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: ApiConfig.bundleName,
-          ),
-        ];
-      }
-
-      try {
-        // Use OverlayImageLayer for PDF overlay mode (FAST!)
-        logDebug('✅ Creating OverlayImageLayer...', tag: 'COLLECT');
-
-        // FIX: LatLngBounds constructor order is (southwest, northeast)
-        final bounds = LatLngBounds(
-          LatLng(basemap.pdfMinLat!,
-              basemap.pdfMinLon!), // southwest corner (minLat, minLon)
-          LatLng(basemap.pdfMaxLat!,
-              basemap.pdfMaxLon!), // northeast corner (maxLat, maxLon)
-        );
-
-        logDebug('✅ Bounds created successfully', tag: 'COLLECT');
-        logDebug('   Southwest corner: ${bounds.southWest}', tag: 'COLLECT');
-        logDebug('   Northeast corner: ${bounds.northEast}', tag: 'COLLECT');
-        logDebug('📷 Current map center: ${_mapController.camera.center}', tag: 'COLLECT');
-        logDebug('📷 Current map zoom: ${_mapController.camera.zoom}', tag: 'COLLECT');
-
-        // Cek apakah image bisa di-decode
-        try {
-          final bytes = imageFile.readAsBytesSync();
-          logDebug('🖼️ Image bytes read: ${bytes.length}', tag: 'COLLECT');
-          logDebug('🖼️ First bytes: ${bytes.take(20).toList()}', tag: 'COLLECT');
-        } catch (e) {
-          logError('❌ Error reading image bytes: $e', tag: 'COLLECT');
-        }
-
-        return [
-          // Base layer OSM (optional, untuk konteks)
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: ApiConfig.bundleName,
-            tileProvider: NetworkTileProvider(),
-          ),
-          // PDF Overlay layer
-          OverlayImageLayer(
-            overlayImages: [
-              OverlayImage(
-                bounds: bounds,
-                imageProvider: FileImage(imageFile),
-                opacity: 1.0, // Full opacity untuk PDF map
-                gaplessPlayback: true,
-              ),
-            ],
-          ),
-        ];
-      } catch (e, stackTrace) {
-        logError('❌ ERROR creating OverlayImageLayer: $e', tag: 'COLLECT');
-        logDebug('Stack trace: $stackTrace', tag: 'COLLECT');
-
-        // Fallback ke OSM
-        return [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: ApiConfig.bundleName,
-          ),
-        ];
-      }
-    } else {
-      // Use TileLayer for TMS or tile-based PDF basemaps
-      //print('🗺️ Using TileLayer for ${basemap.name}');
-
-      return [
-        TileLayer(
-          urlTemplate: basemap.urlTemplate.startsWith('sqlite://') ||
-                  basemap.urlTemplate.startsWith('overlay://')
-              ? '' // PDF basemap from SQLite or overlay - URL not used
-              : basemap.urlTemplate, // TMS basemap URL
-          userAgentPackageName: ApiConfig.bundleName,
-          minZoom: basemap.minZoom.toDouble(),
-          maxZoom: basemap.maxZoom.toDouble(),
-          tileProvider: SqliteCachedTileProvider(
-            basemapId: basemap.id,
-            maxStale: const Duration(days: 30),
-          ),
-        ),
-      ];
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: pdf, padding: const EdgeInsets.all(50)),
+      );
+      logInfo('Kamera dipindah ke PDF "${basemap.name}" (di luar layar)',
+          tag: 'BASEMAP');
+    } catch (e) {
+      logWarn('Gagal memindah kamera ke PDF: $e', tag: 'BASEMAP');
     }
   }
 
@@ -3541,9 +3467,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     },
                   ),
                   children: [
-                    // Basemap Layer - Support both Tile and Overlay modes
+                    // Basemap Layer - Support both Tile and Overlay modes.
+                    // Tanpa I/O: overlay PDF disiapkan _pdfOverlay saat ganti.
                     if (_selectedBasemap != null)
-                      ..._buildBasemapLayers(_selectedBasemap!)
+                      ...buildBasemapLayers(
+                        _selectedBasemap!,
+                        overlay: _pdfOverlay.spec,
+                        fallback: _osmNetworkLayer,
+                      )
                     else
                       TileLayer(
                         urlTemplate:
@@ -3713,6 +3644,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
                     // Map measure tool overlays (shared, scratch) — on top.
                     ...buildMapToolsLayers(),
+
+                    // Overlay PDF sedang di-decode (ganti basemap).
+                    if (_pdfOverlay.loading) const PdfOverlayLoadingChip(),
                   ],
                 ),
               );
