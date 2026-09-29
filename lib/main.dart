@@ -19,6 +19,7 @@ import 'services/logging/crashlytics_forwarder.dart';
 import 'services/logging/log_setup.dart';
 import 'services/tracking/tracking_engine.dart';
 import 'utils/app_logger.dart';
+import 'widgets/auth/session_expiry_listener.dart';
 import 'services/tracking/tracking_persistence_coordinator.dart';
 
 /// Koordinator persistensi sesi tracking (restore + flush ke SQLite). Disimpan
@@ -238,6 +239,12 @@ class _TerestriaAppState extends State<TerestriaApp>
           darkTheme: AppTheme.darkTheme,
           themeMode: themeMode,
           navigatorKey: _navigatorKey,
+          // Dialog login ulang saat server menolak token (401) — data lokal
+          // tetap utuh (logout akan menghapusnya).
+          builder: (context, child) => SessionExpiryListener(
+            navigatorKey: _navigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
           home: const SplashScreen(),
           // Navigator observer untuk breadcrumb screen transitions
           navigatorObservers: [CrashlyticsNavigatorObserver()],

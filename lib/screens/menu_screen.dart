@@ -27,6 +27,8 @@ import '../utils/page_routes.dart';
 import 'dart:async';
 
 import '../utils/app_logger.dart';
+import '../utils/ui_feedback.dart';
+import '../widgets/backup/backup_actions.dart';
 class MenuScreen extends StatefulWidget {
   const MenuScreen({Key? key}) : super(key: key);
 
@@ -711,13 +713,24 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   }
 
   /// Logout = reset app ke kondisi awal. Bila masih ada data belum
-  /// tersinkron / sesi tracking, user diberi pilihan Sync dulu / Batal /
-  /// Hapus & Logout (ketik HAPUS).
+  /// tersinkron / sesi tracking, user diberi pilihan Save backup / Sync first
+  /// / Cancel / Delete & log out (ketik DELETE).
   void _logout(BuildContext context) async {
     var confirm = false;
     while (!confirm) {
-      final pending = await countPendingLogoutData();
-      logInfo('Logout diminta; tertunda: $pending', tag: 'AUTH');
+      final PendingLogoutData pending;
+      try {
+        pending = await countPendingLogoutData();
+      } catch (e, st) {
+        // Tak bisa memastikan data aman → jangan lanjut logout.
+        if (context.mounted) {
+          showErrorFeedback(context,
+              'Could not check for unsynced data, so logout was stopped',
+              error: e, stack: st, tag: 'AUTH');
+        }
+        return;
+      }
+      logInfo('Logout requested; pending: $pending', tag: 'AUTH');
       if (!context.mounted) return;
       final choice = await showLogoutGuardDialog(context, pending);
       if (!context.mounted) return;
@@ -727,32 +740,19 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
         case LogoutChoice.sync:
           await _syncBeforeLogout(context);
           if (!context.mounted) return;
+        case LogoutChoice.backup:
+          await createAndShareBackup(context);
+          if (!context.mounted) return;
         case LogoutChoice.wipe:
           if (!pending.isEmpty) {
-            logWarn('Logout paksa dengan data tertunda: $pending', tag: 'AUTH');
+            logWarn('Forced logout with pending data: $pending', tag: 'AUTH');
           }
           confirm = true;
       }
     }
 
     // Reset app ke kondisi awal (hapus data user ini) lalu ke layar login.
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(children: [
-            SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5)),
-            SizedBox(width: 16),
-            Expanded(child: Text('Logout & menghapus data di HP…')),
-          ]),
-        ),
-      ),
-    );
+    _showBlockingProgress(context, 'Logging out and clearing this phone…');
     final report = await AppResetService().reset();
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -761,45 +761,55 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     );
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(report.success
-          ? 'Logout berhasil — data di HP sudah dibersihkan'
-          : 'Logout selesai, sebagian data gagal dibersihkan '
+          ? 'Logged out — data on this phone was cleared'
+          : 'Logged out, but some data could not be cleared '
               '(${report.failed.keys.join(', ')})'),
     ));
+  }
+
+  /// Dialog progres yang tak bisa ditutup user (tutup lewat rootNavigator).
+  void _showBlockingProgress(BuildContext context, String message) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(children: [
+            const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5)),
+            const SizedBox(width: 16),
+            Expanded(child: Text(message)),
+          ]),
+        ),
+      ),
+    );
   }
 
   /// Jalankan sync semua data tertunda dengan dialog progres, lalu kembali ke
   /// dialog logout (jumlah dihitung ulang).
   Future<void> _syncBeforeLogout(BuildContext context) async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(children: [
-            SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5)),
-            SizedBox(width: 16),
-            Expanded(child: Text('Menyinkronkan data…')),
-          ]),
-        ),
-      ),
-    );
+    _showBlockingProgress(context, 'Syncing data…');
     String message;
+    var ok = false;
     try {
       final result = await SyncService().syncAllUnsyncedData();
-      message = result.abortedDueToConnection
-          ? 'Server tidak terjangkau — sync gagal, data belum terkirim'
-          : result.summary;
+      ok = !result.hasErrors && !result.abortedDueToConnection &&
+          !result.abortedDueToAuth;
+      message = result.abortedDueToAuth
+          ? 'Your session expired — sign in again, then sync.'
+          : result.abortedDueToConnection
+              ? 'The server could not be reached — nothing was uploaded.'
+              : result.summary;
     } catch (e, st) {
-      logError('Sync sebelum logout gagal', tag: 'AUTH', error: e, stack: st);
-      message = 'Sync gagal: $e';
+      logError('Sync before logout failed', tag: 'AUTH', error: e, stack: st);
+      message = 'Sync failed. ${friendlyErrorMessage(e)}';
     }
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    showInfoFeedback(context, message, success: ok, warning: !ok,
+        duration: const Duration(seconds: 5));
   }
 }

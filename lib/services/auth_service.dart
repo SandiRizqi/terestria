@@ -82,7 +82,7 @@ class AuthService {
 
     // Save credentials
     await _saveCredentials(user);
-    _sessionExpiredPending = false;
+    _clearSessionExpiry();
     logInfo('Login succeeded for ${user.username}', tag: 'AUTH');
 
     await _afterLogin(user);
@@ -205,23 +205,64 @@ class AuthService {
   /// Logout TIDAK dipakai di sini karena logout menghapus semua data lokal.
   final ValueNotifier<int> sessionExpired = ValueNotifier<int>(0);
   bool _sessionExpiredPending = false;
+  bool _tokenRejected = false;
+  DateTime? _reloginSnoozedUntil;
 
   /// True selama dialog login ulang belum diselesaikan.
   bool get isSessionExpired => _sessionExpiredPending;
 
+  /// True sejak server menolak token sampai login ulang berhasil — dipakai UI
+  /// sync untuk menawarkan "Sign in again" meski dialog ditunda.
+  bool get tokenRejected => _tokenRejected;
+
   /// Dipanggil [ApiService] saat server membalas 401 untuk request bertoken.
-  /// Satu sinyal per kejadian (tak membanjiri UI bila banyak request gagal).
+  /// Satu sinyal per kejadian (tak membanjiri UI bila banyak request gagal);
+  /// setelah "Later" dialog tak muncul lagi sampai jeda [dismissSessionExpired]
+  /// habis — kecuali user memintanya lewat [requestReLogin].
   void reportUnauthorized(String endpoint) {
     if (_cachedToken == null && _cachedUser == null) return;
     if (_sessionExpiredPending) return;
+    final firstRejection = !_tokenRejected;
+    _tokenRejected = true;
+    final snoozed = _reloginSnoozedUntil != null &&
+        DateTime.now().isBefore(_reloginSnoozedUntil!);
+    if (snoozed) {
+      logDebug('401 at $endpoint (re-login prompt snoozed)', tag: 'AUTH');
+      return;
+    }
+    if (firstRejection) {
+      logWarn('Server rejected the session token (401) at $endpoint',
+          tag: 'AUTH');
+    }
     _sessionExpiredPending = true;
-    logWarn('Server rejected the session token (401) at $endpoint',
-        tag: 'AUTH');
     sessionExpired.value++;
   }
 
-  /// User menunda login ulang ("Later"): sinyal berikutnya boleh muncul lagi.
-  void dismissSessionExpired() => _sessionExpiredPending = false;
+  /// User menunda login ulang ("Later"): dialog tak muncul lagi selama
+  /// [snooze] agar sync otomatis tak terus memunculkannya.
+  void dismissSessionExpired(
+      {Duration snooze = const Duration(minutes: 10)}) {
+    _sessionExpiredPending = false;
+    _reloginSnoozedUntil = DateTime.now().add(snooze);
+    logInfo('Re-login postponed for ${snooze.inMinutes} min', tag: 'AUTH');
+  }
+
+  /// Tampilkan dialog login ulang sekarang (tombol "Sign in again").
+  void requestReLogin() {
+    _reloginSnoozedUntil = null;
+    if (_sessionExpiredPending) return;
+    _sessionExpiredPending = true;
+    sessionExpired.value++;
+  }
+
+  void _clearSessionExpiry() {
+    _sessionExpiredPending = false;
+    _tokenRejected = false;
+    _reloginSnoozedUntil = null;
+  }
+
+  @visibleForTesting
+  void debugResetSessionExpiry() => _clearSessionExpiry();
 
   /// Login ulang untuk user yang SAMA; project, data, dan foto lokal tetap
   /// utuh. Menolak bila server mengembalikan akun lain.
@@ -243,7 +284,7 @@ class AuthService {
     }
     await _saveCredentials(
         current.copyWith(token: user.token, scope: user.scope));
-    _sessionExpiredPending = false;
+    _clearSessionExpiry();
     logInfo('Re-login succeeded for ${current.username}', tag: 'AUTH');
     await _afterLogin(user);
     return auth;
@@ -291,7 +332,7 @@ class AuthService {
     // 2. Clear local state DULU — ini yang membuat logout terasa instan
     _cachedToken = null;
     _cachedUser = null;
-    _sessionExpiredPending = false;
+    _clearSessionExpiry();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);

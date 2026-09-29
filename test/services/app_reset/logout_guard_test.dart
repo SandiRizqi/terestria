@@ -89,15 +89,15 @@ void main() {
       final result = <LogoutChoice>[];
       await _open(tester, const PendingLogoutData(), result);
 
-      expect(find.textContaining('dihapus dari HP ini'), findsOneWidget);
-      expect(find.text('Sync dulu'), findsNothing);
-      await tester.tap(find.widgetWithText(TextButton, 'Logout'));
+      expect(find.textContaining('deleted from this phone'), findsOneWidget);
+      expect(find.text('Sync first'), findsNothing);
+      await tester.tap(find.widgetWithText(TextButton, 'Log out'));
       await tester.pumpAndSettle();
       expect(result, [LogoutChoice.wipe]);
     });
 
     testWidgets(
-        'ada data tertunda: tampilkan jumlah; Hapus nonaktif sampai HAPUS '
+        'ada data tertunda: tampilkan jumlah; Hapus nonaktif sampai DELETE '
         'diketik', (tester) async {
       final result = <LogoutChoice>[];
       await _open(
@@ -107,41 +107,48 @@ void main() {
           result);
 
       expect(find.text('1 project'), findsOneWidget);
-      expect(find.text('12 data'), findsOneWidget);
-      expect(find.text('30 foto'), findsOneWidget);
-      expect(find.text('2 sesi tracking aktif'), findsOneWidget);
+      expect(find.text('12 records'), findsOneWidget);
+      expect(find.text('30 photos'), findsOneWidget);
+      expect(find.text('2 active tracking sessions'), findsOneWidget);
       expect(tester.takeException(), isNull); // muat di 360 dp
 
       FilledButton wipe() => tester.widget<FilledButton>(
-          find.widgetWithText(FilledButton, 'Hapus & Logout'));
+          find.widgetWithText(FilledButton, 'Delete & log out'));
       expect(wipe().onPressed, isNull);
 
-      await tester.enterText(find.byType(TextField), 'hapus');
+      await tester.enterText(find.byType(TextField), 'delete');
       await tester.pump();
-      expect(wipe().onPressed, isNull, reason: 'harus persis HAPUS');
+      expect(wipe().onPressed, isNull, reason: 'harus persis DELETE');
 
-      await tester.enterText(find.byType(TextField), ' HAPUS ');
+      await tester.enterText(find.byType(TextField), ' DELETE ');
       await tester.pump();
       expect(wipe().onPressed, isNotNull);
 
-      await tester.tap(find.text('Hapus & Logout'));
+      await tester.tap(find.text('Delete & log out'));
       await tester.pumpAndSettle();
       expect(result, [LogoutChoice.wipe]);
     });
 
-    testWidgets('Sync dulu → sync; Batal → cancel', (tester) async {
+    testWidgets('Sync first → sync; Save backup → backup; Cancel → cancel',
+        (tester) async {
       final result = <LogoutChoice>[];
       const data = PendingLogoutData(geoData: 3);
       await _open(tester, data, result);
       expect(find.text('1 project'), findsNothing); // nol tak ditampilkan
-      await tester.tap(find.text('Sync dulu'));
+      await tester.tap(find.text('Sync first'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('logout'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Batal'));
+      await tester.tap(find.text('Save a backup file'));
       await tester.pumpAndSettle();
-      expect(result, [LogoutChoice.sync, LogoutChoice.cancel]);
+
+      await tester.tap(find.text('logout'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(result,
+          [LogoutChoice.sync, LogoutChoice.backup, LogoutChoice.cancel]);
     });
   });
 }

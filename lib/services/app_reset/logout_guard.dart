@@ -27,8 +27,8 @@ class PendingLogoutData {
       projects == 0 && geoData == 0 && photos == 0 && trackingSessions == 0;
 
   @override
-  String toString() => 'project=$projects data=$geoData foto=$photos '
-      'sesi=$trackingSessions';
+  String toString() => 'projects=$projects records=$geoData photos=$photos '
+      'sessions=$trackingSessions';
 }
 
 /// Hitung [PendingLogoutData]. Sumber data bisa disuntik (test); default
@@ -79,11 +79,16 @@ Future<PendingLogoutData> countPendingLogoutData({
   );
 }
 
-enum LogoutChoice { cancel, sync, wipe }
+/// [backup]: buat berkas cadangan (ZIP) lalu kembali ke dialog ini.
+enum LogoutChoice { cancel, sync, backup, wipe }
+
+/// Kata yang harus diketik untuk logout tanpa sync.
+const logoutConfirmWord = 'DELETE';
 
 /// Konfirmasi logout. Tanpa data tertunda: konfirmasi biasa yang menjelaskan
 /// semua data di HP akan dihapus. Ada data tertunda: tampilkan jumlahnya +
-/// **Sync dulu** / **Batal** / **Hapus & Logout** (wajib ketik `HAPUS`).
+/// **Save backup** / **Sync first** / **Cancel** / **Delete & log out**
+/// (wajib ketik [logoutConfirmWord]).
 Future<LogoutChoice> showLogoutGuardDialog(
     BuildContext context, PendingLogoutData data) async {
   final choice = await showDialog<LogoutChoice>(
@@ -95,9 +100,12 @@ Future<LogoutChoice> showLogoutGuardDialog(
   return choice ?? LogoutChoice.cancel;
 }
 
-const _wipeNote = 'Semua data aplikasi (project, data, foto, basemap, layer, '
-    'cache peta, dan log) akan dihapus dari HP ini agar pengguna berikutnya '
-    'mulai dari kondisi awal.';
+const _wipeNote = 'All app data (projects, records, photos, basemaps, layers, '
+    'map cache and logs) will be deleted from this phone so the next user '
+    'starts fresh.';
+
+String _plural(int n, String one, [String? many]) =>
+    '$n ${n == 1 ? one : (many ?? '${one}s')}';
 
 class _PlainLogoutDialog extends StatelessWidget {
   const _PlainLogoutDialog();
@@ -105,17 +113,17 @@ class _PlainLogoutDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Logout'),
-      content: const Text('$_wipeNote\n\nLanjutkan logout?'),
+      title: const Text('Log out'),
+      content: const Text('$_wipeNote\n\nLog out now?'),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, LogoutChoice.cancel),
-          child: const Text('Batal'),
+          child: const Text('Cancel'),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, LogoutChoice.wipe),
           style: TextButton.styleFrom(foregroundColor: Colors.red),
-          child: const Text('Logout'),
+          child: const Text('Log out'),
         ),
       ],
     );
@@ -133,7 +141,7 @@ class _PendingLogoutDialog extends StatefulWidget {
 class _PendingLogoutDialogState extends State<_PendingLogoutDialog> {
   final _confirm = TextEditingController();
 
-  bool get _confirmed => _confirm.text.trim() == 'HAPUS';
+  bool get _confirmed => _confirm.text.trim() == logoutConfirmWord;
 
   @override
   void dispose() {
@@ -145,23 +153,27 @@ class _PendingLogoutDialogState extends State<_PendingLogoutDialog> {
   Widget build(BuildContext context) {
     final d = widget.data;
     final items = [
-      if (d.projects > 0) (Icons.folder_outlined, '${d.projects} project'),
-      if (d.geoData > 0) (Icons.place_outlined, '${d.geoData} data'),
-      if (d.photos > 0) (Icons.photo_outlined, '${d.photos} foto'),
+      if (d.projects > 0)
+        (Icons.folder_outlined, _plural(d.projects, 'project')),
+      if (d.geoData > 0) (Icons.place_outlined, _plural(d.geoData, 'record')),
+      if (d.photos > 0) (Icons.photo_outlined, _plural(d.photos, 'photo')),
       if (d.trackingSessions > 0)
-        (Icons.route_outlined, '${d.trackingSessions} sesi tracking aktif'),
+        (
+          Icons.route_outlined,
+          _plural(d.trackingSessions, 'active tracking session')
+        ),
     ];
     return AlertDialog(
       icon: const Icon(Icons.warning_amber_rounded,
           color: Colors.orange, size: 36),
-      title: const Text('Data belum tersinkron'),
+      title: const Text('Unsynced data'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Data berikut belum ada di server dan akan HILANG bila '
-                'logout sekarang:'),
+            const Text('This data is not on the server yet and will be LOST '
+                'if you log out now:'),
             const SizedBox(height: 8),
             for (final (icon, label) in items)
               Padding(
@@ -177,18 +189,28 @@ class _PendingLogoutDialogState extends State<_PendingLogoutDialog> {
               ),
             if (d.trackingSessions > 0) ...[
               const SizedBox(height: 6),
-              Text('Sesi tracking tidak ikut sync — simpan dulu dari panel '
-                  'Tracking Aktif.',
+              Text('Tracking sessions are not synced — save them first from '
+                  'the Active Tracking panel.',
                   style: TextStyle(fontSize: 12, color: Colors.grey[700])),
             ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pop(context, LogoutChoice.backup),
+                icon: const Icon(Icons.archive_outlined, size: 18),
+                label: const Text('Save a backup file'),
+              ),
+            ),
             const SizedBox(height: 12),
             const Text(_wipeNote, style: TextStyle(fontSize: 12)),
             const SizedBox(height: 12),
             TextField(
               controller: _confirm,
               onChanged: (_) => setState(() {}),
+              textCapitalization: TextCapitalization.characters,
               decoration: const InputDecoration(
-                labelText: 'Ketik HAPUS untuk logout tanpa sync',
+                labelText: 'Type $logoutConfirmWord to log out without syncing',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -200,18 +222,18 @@ class _PendingLogoutDialogState extends State<_PendingLogoutDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, LogoutChoice.cancel),
-          child: const Text('Batal'),
+          child: const Text('Cancel'),
         ),
         OutlinedButton(
           onPressed: () => Navigator.pop(context, LogoutChoice.sync),
-          child: const Text('Sync dulu'),
+          child: const Text('Sync first'),
         ),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: Colors.red),
           onPressed: _confirmed
               ? () => Navigator.pop(context, LogoutChoice.wipe)
               : null,
-          child: const Text('Hapus & Logout'),
+          child: const Text('Delete & log out'),
         ),
       ],
     );

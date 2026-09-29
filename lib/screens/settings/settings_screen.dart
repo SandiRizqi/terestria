@@ -5,6 +5,7 @@ import '../../models/settings/app_settings.dart';
 import '../../services/background/background_tracking_service.dart';
 import '../../services/settings_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/backup/backup_actions.dart';
 import '../../widgets/settings/diagnostic_log_section.dart';
 import 'gps_settings_screen.dart';
 
@@ -368,6 +369,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => const GpsSettingsScreen()),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Cadangan data lokal (ZIP) — sama dengan opsi di dialog logout.
+            _buildSectionTitle('Data'),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: AppTheme.getCardDecoration,
+              child: Builder(
+                // Context tile sendiri → share sheet berasal dari tile ini.
+                builder: (tileContext) => ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.brown.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.archive_outlined,
+                        color: Colors.brown, size: 20),
+                  ),
+                  title: const Text('Back up data to a file',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                      'Projects, records, unsent photos and unsaved tracks '
+                      'as one ZIP (GeoJSON inside)',
+                      style: TextStyle(fontSize: 12)),
+                  trailing: const Icon(Icons.ios_share_rounded,
+                      size: 18, color: Colors.grey),
+                  onTap: () => createAndShareBackup(tileContext),
                 ),
               ),
             ),
