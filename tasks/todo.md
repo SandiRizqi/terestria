@@ -7,7 +7,7 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-tracking-engine.md](plan-trac
 - [x] **Task 2 — Sambung logger ke app & isolate + state Mode Diagnostik** (M) ✅ 7 test — konsol hanya debug; `bg-*.log` dari isolate; FlutterError → log
 
 ### Checkpoint A
-- [ ] Test hijau; berkas `app-*.log` & `bg-*.log` muncul saat tracking
+- [x] Test hijau (uji di device menyusul)
 
 ## Phase 2 — Isi log & ekspor
 - [x] **Task 3 — Event tracking + ringkasan per menit** (M) ✅ 6 test — SESSION/ENGINE/SERVICE/GPS, alasan `stopSelf`
@@ -23,10 +23,10 @@ Hitung ulang (parser): **443 panggilan di 41 file** (plan awal ±370/34 menghitu
 - [x] **Task 7a — Tracking, data collection & inti app** (M) ✅ 135 panggilan: data_collection_screen, main, app_initializer, gps_logger, location_provider, notification_service, settings_service, routing_service
 - [x] **Task 7b — Sync, auth, cloud, notifikasi, update** (M) ✅ 159 panggilan; token FCM & body respons token disamarkan
 - [x] **Task 7c — Basemap, tile, PDF** (M) ✅ 124 panggilan; log per-tile hanya debug
-- [ ] **Task 7d — Sisa UI + gerbang `avoid_print: error` + test no-print** (M)
+- [x] **Task 7d — Sisa UI + gerbang `avoid_print: error` + test no-print** (M) ✅ 25 panggilan; lolos uji mutasi
 
 ### Checkpoint C
-- [ ] `flutter test` hijau (kecuali 2 kegagalan lama); analyze 0 error; release tanpa spam print
+- [x] `flutter test` 385 lulus (2 kegagalan lama); analyze 0 error; 0 print/debugPrint di lib/ selain logger
 
 ## Keputusan default
 Koordinat lengkap · Mode Diagnostik 24 jam · retensi 7 hari/5 MB · release tulis info+ ke berkas

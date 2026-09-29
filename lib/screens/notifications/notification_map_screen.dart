@@ -33,6 +33,7 @@ import '../data_collection/widgets/user_location_marker.dart';
 import '../navigation/widgets/instruction_bar.dart';
 import '../navigation/widgets/step_list_sheet.dart';
 
+import '../../utils/app_logger.dart';
 /// Fullscreen map viewer for notification GeoJSON data.
 /// Supports basemap switching, user GeoJSON layers, click-to-inspect,
 /// notification overlay, and GraphHopper turn-by-turn routing.
@@ -208,7 +209,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
       await _locationService.initialize();
       await _locationService.loadLocationSettings();
     } catch (e) {
-      debugPrint('Location init failed (offline?): $e');
+      logWarn('Location init failed (offline?): $e', tag: 'NOTIF');
       return;
     }
 
@@ -217,13 +218,13 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
       final loc = await _locationService.getCurrentLocation();
       if (loc != null && mounted) setState(() => _currentLocation = loc);
     } catch (e) {
-      debugPrint('One-shot location failed: $e');
+      logWarn('One-shot location failed: $e', tag: 'NOTIF');
     }
 
     // Continuous stream → routing logic
     _locationSubscription = _locationService.getActiveLocationStream().listen(
       _onLocationUpdate,
-      onError: (e) => debugPrint('Location stream error: $e'),
+      onError: (e) => logWarn('Location stream error: $e', tag: 'NOTIF'),
     );
   }
 
@@ -1021,7 +1022,7 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
         ),
       );
     } catch (e) {
-      debugPrint('Error fitting bounds: $e');
+      logWarn('Error fitting bounds: $e', tag: 'NOTIF');
     }
   }
 

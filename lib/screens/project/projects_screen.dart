@@ -20,6 +20,7 @@ import 'dart:async';
 import '../../widgets/project/cloud_project_dialog.dart';
 import '../../theme/app_theme.dart';
 
+import '../../utils/app_logger.dart';
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({Key? key}) : super(key: key);
 
@@ -166,7 +167,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 updatedProjectCount++;
               }
             } catch (e) {
-              print('Error processing project from server: $e');
+              logWarn('Error processing project from server: $e', tag: 'PROJECT');
             }
           }
 
@@ -176,9 +177,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               try {
                 await _storageService.deleteProject(existingProject.id);
                 deletedProjectCount++;
-                print('Deleted local project not found on server: ${existingProject.name}');
+                logDebug('Deleted local project not found on server: ${existingProject.name}', tag: 'PROJECT');
               } catch (e) {
-                print('Error deleting local project: $e');
+                logWarn('Error deleting local project: $e', tag: 'PROJECT');
               }
             }
           }

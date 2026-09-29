@@ -5,6 +5,7 @@ import '../../services/scope_topic_service.dart';
 import '../auth/login_screen.dart';
 import '../menu_screen.dart';
 
+import '../../utils/app_logger.dart';
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
 
@@ -86,7 +87,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           final user = await _authService.getUser();
           ScopeTopicService().syncTopicsInBackground(user?.scope ?? []);
         } catch (e) {
-          print('⚠️ [Splash] FCM topic sync failed: $e');
+          logWarn('⚠️ [Splash] FCM topic sync failed: $e', tag: 'UI');
         }
 
         // Go to home

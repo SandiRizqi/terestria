@@ -23,6 +23,7 @@ import '../../services/auth_service.dart';
 import '../../services/project_template_service.dart';
 import 'package:file_picker/file_picker.dart';
 
+import '../../utils/app_logger.dart';
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
 
@@ -463,7 +464,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         );
       }
     } catch (e) {
-      print('Error syncing geodata from server: $e');
+      logWarn('Error syncing geodata from server: $e', tag: 'PROJECT');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -10,6 +10,7 @@ import 'package:geoform_app/config/api_config.dart';
 import 'package:geoform_app/services/crashlytics_service.dart';
 import 'package:geoform_app/services/settings_service.dart';
 
+import '../utils/app_logger.dart';
 /// Photo metadata for form data
 class PhotoData {
   final String name;
@@ -130,7 +131,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       _cachedLogo = frame.image;
       return _cachedLogo;
     } catch (e) {
-      print('⚠️ Watermark: failed to load logo: $e');
+      logWarn('⚠️ Watermark: failed to load logo: $e', tag: 'PHOTO');
       return null;
     }
   }
@@ -188,7 +189,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
             try {
               _photos.add(PhotoData.fromJson(Map<String, dynamic>.from(item)));
             } catch (e) {
-              print('Error parsing PhotoData: $e');
+              logWarn('Error parsing PhotoData: $e', tag: 'PHOTO');
             }
           } else if (item is String && item.isNotEmpty) {
             _photos.add(PhotoData.fromPath(item));
@@ -207,7 +208,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
         });
       }
     } catch (e) {
-      print('⚠️ Could not load device ID: $e');
+      logWarn('⚠️ Could not load device ID: $e', tag: 'PHOTO');
       _deviceId = 'N/A';
     }
   }
@@ -220,17 +221,17 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
     try {
       if (!mounted) return;
 
-      print('🔄 Checking for lost photo data (Activity recreation)...');
+      logDebug('🔄 Checking for lost photo data (Activity recreation)...', tag: 'PHOTO');
       final LostDataResponse response = await _picker.retrieveLostData();
 
       if (!mounted) return;
       if (response.isEmpty) {
-        print('ℹ️ No lost photo data found');
+        logDebug('ℹ️ No lost photo data found', tag: 'PHOTO');
         return;
       }
 
       if (response.file != null) {
-        print('📸 Lost photo recovered! Processing...');
+        logDebug('📸 Lost photo recovered! Processing...', tag: 'PHOTO');
         final persistentPath = await _processAndSavePhoto(response.file!.path);
 
         if (!mounted) return; // P1: mounted check after heavy async
@@ -250,12 +251,12 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
             ),
           );
         }
-        print('✅ Lost photo recovered and saved');
+        logDebug('✅ Lost photo recovered and saved', tag: 'PHOTO');
       } else if (response.exception != null) {
-        print('⚠️ Lost data had an exception: ${response.exception}');
+        logWarn('⚠️ Lost data had an exception: ${response.exception}', tag: 'PHOTO');
       }
     } catch (e) {
-      print('❌ Error recovering lost photo: $e');
+      logError('❌ Error recovering lost photo: $e', tag: 'PHOTO');
     }
   }
 
@@ -280,10 +281,10 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
       } catch (e) {
         attempt++;
         if (attempt > maxRetries) {
-          print('❌ Photo save failed after $maxRetries retries: $e');
+          logError('❌ Photo save failed after $maxRetries retries: $e', tag: 'PHOTO');
           rethrow;
         }
-        print('⚠️ Photo save attempt $attempt failed – retrying in ${300 * attempt}ms: $e');
+        logWarn('⚠️ Photo save attempt $attempt failed – retrying in ${300 * attempt}ms: $e', tag: 'PHOTO');
         await Future.delayed(Duration(milliseconds: 300 * attempt));
       }
     }
@@ -503,9 +504,9 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
             await finalImage.toByteData(format: ui.ImageByteFormat.png);
         await File(newPath)
             .writeAsBytes(byteData!.buffer.asUint8List());
-        print('✅ Photo saved'
+        logDebug('✅ Photo saved'
             '${SettingsService().settings.photoWatermark ? ' with watermark' : ''}'
-            ': $newPath');
+            ': $newPath', tag: 'PHOTO');
         return newPath;
       } finally {
         finalImage.dispose();
@@ -552,8 +553,8 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
         // P4: Validate temp file exists (guard against Activity recreation)
         final tempFile = File(photo.path);
         if (!await tempFile.exists()) {
-          print(
-              '⚠️ Camera temp file missing – photo may arrive via retrieveLostData');
+          logWarn(
+              '⚠️ Camera temp file missing – photo may arrive via retrieveLostData', tag: 'PHOTO');
           return;
         }
 
@@ -624,7 +625,7 @@ class _PhotoFieldWidgetState extends State<PhotoFieldWidget>
         // P4: Validate source file
         final srcFile = File(image.path);
         if (!await srcFile.exists()) {
-          print('⚠️ Gallery source file missing');
+          logWarn('⚠️ Gallery source file missing', tag: 'PHOTO');
           return;
         }
 

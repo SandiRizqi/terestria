@@ -23,6 +23,7 @@ import 'navigation/navigation_screen.dart';
 import '../utils/page_routes.dart';
 import 'dart:async';
 
+import '../utils/app_logger.dart';
 class MenuScreen extends StatefulWidget {
   const MenuScreen({Key? key}) : super(key: key);
 
@@ -64,7 +65,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
         });
       }
     } catch (e) {
-      debugPrint('⚠️ Could not load current user: $e');
+      logWarn('⚠️ Could not load current user: $e', tag: 'UI');
     }
   }
 
@@ -123,7 +124,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
         });
       }
     } catch (e) {
-      print('Error loading unread notification count: $e');
+      logWarn('Error loading unread notification count: $e', tag: 'UI');
     }
   }
 
