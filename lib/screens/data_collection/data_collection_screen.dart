@@ -47,6 +47,7 @@ import '../../models/layer_model.dart';
 import '../../services/layer_service.dart';
 
 
+import '../../utils/app_logger.dart';
 enum CollectionMode { tracking, drawing }
 
 class DataCollectionScreen extends StatefulWidget {
@@ -225,18 +226,18 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
-    print('📱 App lifecycle changed to: $state');
+    logDebug('📱 App lifecycle changed to: $state', tag: 'COLLECT');
 
     switch (state) {
       case AppLifecycleState.resumed:
         // App came back to foreground
-        print('✅ App resumed - location stream continues');
+        logDebug('✅ App resumed - location stream continues', tag: 'COLLECT');
         // P2: Skip stream restart if camera/gallery is open —
         // PhotoFieldWidget will handle retrieveLostData internally.
         // Restarting the stream here triggers a setState that can race
         // with the photo-save async chain.
         if (PhotoFieldWidget.isCameraActive) {
-          print('📷 Camera is active — skipping stream restart');
+          logDebug('📷 Camera is active — skipping stream restart', tag: 'COLLECT');
           break;
         }
         // ✅ FIX: DON'T restart stream if already tracking
@@ -251,32 +252,32 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
       case AppLifecycleState.paused:
         // App went to background
-        print('⏸️ App paused - keeping background tracking alive');
+        logDebug('⏸️ App paused - keeping background tracking alive', tag: 'COLLECT');
         // Jangan batalkan apa pun: TrackingEngine (app-level) menjaga service
         // + heartbeat selama ada sesi merekam.
         break;
 
       case AppLifecycleState.inactive:
         // App is inactive (e.g., during phone call)
-        print('😴 App inactive');
+        logDebug('😴 App inactive', tag: 'COLLECT');
         break;
 
       case AppLifecycleState.detached:
         // App is detached (about to be killed)
-        print('💀 App detached - cleaning up');
+        logDebug('💀 App detached - cleaning up', tag: 'COLLECT');
         _cleanupBeforeTermination();
         break;
 
       case AppLifecycleState.hidden:
         // App is hidden (iOS specific)
-        print('🙈 App hidden');
+        logDebug('🙈 App hidden', tag: 'COLLECT');
         break;
     }
   }
 
 
   void _cleanupBeforeTermination() {
-    print('🧹 Performing cleanup before app termination...');
+    logDebug('🧹 Performing cleanup before app termination...', tag: 'COLLECT');
 
     // Cancel all streams that exist in data_collection_screen
     _unifiedLocationSubscription?.cancel();
@@ -284,19 +285,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // Service background dihentikan terpusat di main.dart (detached): flush
     // sesi ke SQLite lalu stop — berlaku walau layar ini tidak terbuka.
-    print('✅ Cleanup completed');
+    logDebug('✅ Cleanup completed', tag: 'COLLECT');
   }
 
   // ✅ NEW METHOD: Override didPopRoute to stop tracking when user exits
   @override
   Future<bool> didPopRoute() async {
-    print('🚪 User is exiting DataCollectionScreen...');
+    logDebug('🚪 User is exiting DataCollectionScreen...', tag: 'COLLECT');
     
     // Multi-project: meninggalkan layar TIDAK menghentikan tracking. Sesi terus
     // berjalan di background (titik tetap terkumpul); user mengelola stop/simpan
     // dari daftar project lewat banner/panel "Tracking Aktif".
     if (_isTracking) {
-      print('▶️ Keluar layar — tracking lanjut di background (multi-project)');
+      logDebug('▶️ Keluar layar — tracking lanjut di background (multi-project)', tag: 'COLLECT');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -318,14 +319,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     try {
       final status = await Permission.locationAlways.status;
       if (status.isGranted) {
-        print('✅ Background location already granted – skip rationale modal');
+        logDebug('✅ Background location already granted – skip rationale modal', tag: 'COLLECT');
         return false;
       }
-      print('ℹ️ Background location not granted (status: $status) – will show rationale');
+      logDebug('ℹ️ Background location not granted (status: $status) – will show rationale', tag: 'COLLECT');
       return true;
     } catch (e) {
       // Jika permission_handler error (misalnya di iOS simulator), skip modal
-      print('⚠️ Could not check locationAlways status: $e – skipping rationale');
+      logWarn('⚠️ Could not check locationAlways status: $e – skipping rationale', tag: 'COLLECT');
       return false;
     }
   }
@@ -340,7 +341,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       final proceed = await _showBackgroundLocationRationale();
       if (!proceed) {
         // User pilih "Nanti saja" – lanjut tanpa background, foreground saja
-        print('⚠️ User skip background rationale – lanjut foreground only');
+        logWarn('⚠️ User skip background rationale – lanjut foreground only', tag: 'COLLECT');
         await _initializeLocation();
         return;
       }
@@ -348,7 +349,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // 2. Initialize LocationServiceV2 dengan proper error handling
     try {
-      print('🚀 Initializing LocationService...');
+      logDebug('🚀 Initializing LocationService...', tag: 'COLLECT');
       final initialized = await _locationService.initialize();
 
       if (!initialized) {
@@ -356,9 +357,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             'LocationService initialization failed - permissions may not be granted');
       }
 
-      print('✅ LocationService initialized successfully');
+      logDebug('✅ LocationService initialized successfully', tag: 'COLLECT');
     } catch (e) {
-      print('❌ Error initializing LocationServiceV2: $e');
+      logError('❌ Error initializing LocationServiceV2: $e', tag: 'COLLECT');
 
       if (mounted) {
         // Show detailed error dialog with troubleshooting steps
@@ -922,7 +923,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       });
       _buildMarkerCache(); // P0+P1: build cache setelah data loaded
     } catch (e) {
-      print('Error loading existing data: $e');
+      logWarn('Error loading existing data: $e', tag: 'COLLECT');
       setState(() => _isLoadingData = false);
     }
   }
@@ -1247,7 +1248,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   @override
   void dispose() {
-    print('🗑️ DataCollectionScreen dispose called');
+    logDebug('🗑️ DataCollectionScreen dispose called', tag: 'COLLECT');
 
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
@@ -1264,12 +1265,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // Cancel location stream
     _unifiedLocationSubscription?.cancel();
-    print('🗑️ Location stream cancelled');
+    logDebug('🗑️ Location stream cancelled', tag: 'COLLECT');
 
     // Dispose marker animation controller
     _markerAnimController.removeListener(_onMarkerAnimationTick);
     _markerAnimController.dispose();
-    print('🗑️ Marker animation controller disposed');
+    logDebug('🗑️ Marker animation controller disposed', tag: 'COLLECT');
 
     // Hapus settings listener
     _settingsService.removeListener(_onSettingsChanged);
@@ -1285,8 +1286,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
       // Jika PDF basemap dengan georeferencing, zoom ke bounds PDF
       if (basemap.type == BasemapType.pdf && basemap.hasPdfGeoreferencing) {
-        print('PDF Basemap loaded, will zoom to bounds...');
-        print('Bounds: Lat[${basemap.pdfMinLat}, ${basemap.pdfMaxLat}] Lon[${basemap.pdfMinLon}, ${basemap.pdfMaxLon}]');
+        logDebug('PDF Basemap loaded, will zoom to bounds...', tag: 'COLLECT');
+        logDebug('Bounds: Lat[${basemap.pdfMinLat}, ${basemap.pdfMaxLat}] Lon[${basemap.pdfMinLon}, ${basemap.pdfMaxLon}]', tag: 'COLLECT');
 
         // PENTING: Delay lebih lama dan pastikan map controller ready
         Future.delayed(const Duration(milliseconds: 1000), () {
@@ -1302,9 +1303,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     basemap.pdfMaxLat!, basemap.pdfMaxLon!), // northeast corner
               );
 
-              print('🔍 Fitting map to PDF bounds...');
-              print('   Southwest: ${bounds.southWest}');
-              print('   Northeast: ${bounds.northEast}');
+              logDebug('🔍 Fitting map to PDF bounds...', tag: 'COLLECT');
+              logDebug('   Southwest: ${bounds.southWest}', tag: 'COLLECT');
+              logDebug('   Northeast: ${bounds.northEast}', tag: 'COLLECT');
 
               // Fit bounds dengan padding
               _mapController.fitCamera(
@@ -1314,9 +1315,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                 ),
               );
 
-              print('✅ Map zoomed to PDF bounds');
+              logDebug('✅ Map zoomed to PDF bounds', tag: 'COLLECT');
             } catch (e) {
-              print('❌ Error fitting bounds: $e');
+              logError('❌ Error fitting bounds: $e', tag: 'COLLECT');
             }
           }
         });
@@ -1345,7 +1346,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               .timeout(const Duration(seconds: 3))
               .first;
         } catch (e) {
-          print('Waiting for Emlid data: $e');
+          logDebug('Waiting for Emlid data: $e', tag: 'COLLECT');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -1410,7 +1411,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             );
             _hasInitialZoom = true;
           } catch (e) {
-            print('⚠️ Could not move map on init: $e');
+            logWarn('⚠️ Could not move map on init: $e', tag: 'COLLECT');
           }
         }
       });
@@ -1419,21 +1420,21 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   // ✅ FIXED: Unified persistent location stream
   void _startUnifiedLocationStream() {
-    print('═══════════════════════════════════════');
-    print('🔄 Restarting unified location stream...');
+    logDebug('═══════════════════════════════════════', tag: 'COLLECT');
+    logDebug('🔄 Restarting unified location stream...', tag: 'COLLECT');
     
     _unifiedLocationSubscription?.cancel();
-    print('✅ Previous subscription cancelled');
+    logDebug('✅ Previous subscription cancelled', tag: 'COLLECT');
 
     Stream<GeoPoint> locationStream;
 
     if (_locationService.currentProvider == LocationProvider.emlid) {
       if (_locationService.isEmlidConnected) {
         locationStream = _locationService.trackEmlidLocation();
-        print('📡 ✅ Using Emlid location stream');
+        logDebug('📡 ✅ Using Emlid location stream', tag: 'COLLECT');
       } else {
-        print('⚠️ Emlid not connected, stream will be empty');
-        print('═══════════════════════════════════════');
+        logWarn('⚠️ Emlid not connected, stream will be empty', tag: 'COLLECT');
+        logDebug('═══════════════════════════════════════', tag: 'COLLECT');
         return;
       }
     } else {
@@ -1442,10 +1443,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       // service dimatikan → pakai stream foreground agar marker tetap jalan.
       if (TrackingSessionManager.instance.recordingCount > 0) {
         locationStream = _locationService.backgroundLocationStream;
-        print('📱 ✅ Using BACKGROUND location stream (tracking active)');
+        logDebug('📱 ✅ Using BACKGROUND location stream (tracking active)', tag: 'COLLECT');
       } else {
         locationStream = _locationService.trackLocation();
-        print('📱 ✅ Using FOREGROUND location stream (not tracking)');
+        logDebug('📱 ✅ Using FOREGROUND location stream (not tracking)', tag: 'COLLECT');
       }
     }
 
@@ -1469,7 +1470,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         }
       },
       onError: (error) {
-        print('❌ Error in location stream: $error');
+        logError('❌ Error in location stream: $error', tag: 'COLLECT');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1481,8 +1482,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       },
     );
     
-    print('✅ Stream listener setup complete');
-    print('═══════════════════════════════════════');
+    logDebug('✅ Stream listener setup complete', tag: 'COLLECT');
+    logDebug('═══════════════════════════════════════', tag: 'COLLECT');
   }
 
   void _toggleTracking() {
@@ -1589,9 +1590,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         throw Exception('Background tracking service failed to start');
       }
 
-      print('✅ Background tracking service started successfully');
+      logDebug('✅ Background tracking service started successfully', tag: 'COLLECT');
     } catch (e, stack) {
-      print('❌ Error starting background tracking: $e');
+      logError('❌ Error starting background tracking: $e', tag: 'COLLECT');
       crashlytics.log('Tracking start failed: $e');
       crashlytics.setContext('project_id', widget.project.id);
       crashlytics.setContext('geometry_type',
@@ -1616,7 +1617,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       return;
     }
 
-    print('✅ Tracking started successfully (provider: ${_locationService.currentProvider.name})');
+    logDebug('✅ Tracking started successfully (provider: ${_locationService.currentProvider.name})', tag: 'COLLECT');
 
     // 4. Show success message
     if (mounted) {
@@ -1638,7 +1639,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // 5. ✅ CRITICAL FIX: Restart stream untuk switch ke background stream
     await Future.delayed(const Duration(milliseconds: 500));
     _startUnifiedLocationStream();
-    print('✅ Stream restarted to use background location stream');
+    logDebug('✅ Stream restarted to use background location stream', tag: 'COLLECT');
   }
 
 // ✅ NEW METHOD: Show Emlid connection error dialog
@@ -1797,7 +1798,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     TrackingSessionManager.instance.pause(widget.project.id);
     _startUnifiedLocationStream(); // pilih ulang stream (bg ↔ fg)
 
-    print('⏸️ Tracking paused');
+    logDebug('⏸️ Tracking paused', tag: 'COLLECT');
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1825,7 +1826,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     }
     _startUnifiedLocationStream(); // pilih ulang stream (fg → bg)
 
-    print('▶️ Tracking resumed');
+    logDebug('▶️ Tracking resumed', tag: 'COLLECT');
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1841,7 +1842,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // merekam). Simpan/Buang melepas sesi sepenuhnya.
     TrackingSessionManager.instance.finish(widget.project.id);
 
-    print('⏹️ Tracking finished (stream continues for blue marker)');
+    logDebug('⏹️ Tracking finished (stream continues for blue marker)', tag: 'COLLECT');
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3077,11 +3078,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       // VALIDASI: Cek min < max untuk latitude dan longitude
       if (basemap.pdfMinLat! >= basemap.pdfMaxLat! ||
           basemap.pdfMinLon! >= basemap.pdfMaxLon!) {
-        print('❌ ERROR: Invalid bounds (min >= max)');
-        print(
-            '   MinLat (${basemap.pdfMinLat}) should be < MaxLat (${basemap.pdfMaxLat})');
-        print(
-            '   MinLon (${basemap.pdfMinLon}) should be < MaxLon (${basemap.pdfMaxLon})');
+        logError('❌ ERROR: Invalid bounds (min >= max)', tag: 'COLLECT');
+        logDebug(
+            '   MinLat (${basemap.pdfMinLat}) should be < MaxLat (${basemap.pdfMaxLat})', tag: 'COLLECT');
+        logDebug(
+            '   MinLon (${basemap.pdfMinLon}) should be < MaxLon (${basemap.pdfMaxLon})', tag: 'COLLECT');
         return [
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -3092,7 +3093,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
       try {
         // Use OverlayImageLayer for PDF overlay mode (FAST!)
-        print('✅ Creating OverlayImageLayer...');
+        logDebug('✅ Creating OverlayImageLayer...', tag: 'COLLECT');
 
         // FIX: LatLngBounds constructor order is (southwest, northeast)
         final bounds = LatLngBounds(
@@ -3102,19 +3103,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               basemap.pdfMaxLon!), // northeast corner (maxLat, maxLon)
         );
 
-        print('✅ Bounds created successfully');
-        print('   Southwest corner: ${bounds.southWest}');
-        print('   Northeast corner: ${bounds.northEast}');
-        print('📷 Current map center: ${_mapController.camera.center}');
-        print('📷 Current map zoom: ${_mapController.camera.zoom}');
+        logDebug('✅ Bounds created successfully', tag: 'COLLECT');
+        logDebug('   Southwest corner: ${bounds.southWest}', tag: 'COLLECT');
+        logDebug('   Northeast corner: ${bounds.northEast}', tag: 'COLLECT');
+        logDebug('📷 Current map center: ${_mapController.camera.center}', tag: 'COLLECT');
+        logDebug('📷 Current map zoom: ${_mapController.camera.zoom}', tag: 'COLLECT');
 
         // Cek apakah image bisa di-decode
         try {
           final bytes = imageFile.readAsBytesSync();
-          print('🖼️ Image bytes read: ${bytes.length}');
-          print('🖼️ First bytes: ${bytes.take(20).toList()}');
+          logDebug('🖼️ Image bytes read: ${bytes.length}', tag: 'COLLECT');
+          logDebug('🖼️ First bytes: ${bytes.take(20).toList()}', tag: 'COLLECT');
         } catch (e) {
-          print('❌ Error reading image bytes: $e');
+          logError('❌ Error reading image bytes: $e', tag: 'COLLECT');
         }
 
         return [
@@ -3137,8 +3138,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           ),
         ];
       } catch (e, stackTrace) {
-        print('❌ ERROR creating OverlayImageLayer: $e');
-        print('Stack trace: $stackTrace');
+        logError('❌ ERROR creating OverlayImageLayer: $e', tag: 'COLLECT');
+        logDebug('Stack trace: $stackTrace', tag: 'COLLECT');
 
         // Fallback ke OSM
         return [

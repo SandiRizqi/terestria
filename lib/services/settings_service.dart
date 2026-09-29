@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../models/settings/app_settings.dart';
 import 'tracking/tracking_session_manager.dart';
 
+import '../utils/app_logger.dart';
 class SettingsService extends ChangeNotifier {
   static final SettingsService _instance = SettingsService._internal();
   factory SettingsService() => _instance;
@@ -40,7 +41,7 @@ class SettingsService extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      debugPrint('Error loading settings: $e');
+      logWarn('Error loading settings: $e', tag: 'CONFIG');
       _settings = AppSettings.defaults();
     }
   }
@@ -60,7 +61,7 @@ class SettingsService extends ChangeNotifier {
           _settings.maxConcurrentTracking;
       notifyListeners();
     } catch (e) {
-      debugPrint('Error saving settings: $e');
+      logWarn('Error saving settings: $e', tag: 'CONFIG');
       rethrow;
     }
   }

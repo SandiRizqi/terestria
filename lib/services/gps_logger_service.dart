@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../models/geo_data_model.dart';
 
+import '../utils/app_logger.dart';
 /// Logs GPS points to a per-session CSV file, mirroring the APK's GpsLogger.
 /// File name: gps_YYYYMMDD_HHmmss.csv in app documents directory.
 /// Buffer 10 entries before each flush to minimise IO overhead.
@@ -35,9 +36,9 @@ class GpsLoggerService {
       _buffer.clear();
       _isActive = true;
 
-      print('📝 GpsLogger: session started → ${_logFile!.path}');
+      logDebug('📝 GpsLogger: session started → ${_logFile!.path}', tag: 'GPSLOG');
     } catch (e) {
-      print('❌ GpsLogger: failed to start session: $e');
+      logError('❌ GpsLogger: failed to start session: $e', tag: 'GPSLOG');
     }
   }
 
@@ -65,7 +66,7 @@ class GpsLoggerService {
 
     await _flush();
     _isActive = false;
-    print('📝 GpsLogger: session stopped → ${_logFile?.path}');
+    logDebug('📝 GpsLogger: session stopped → ${_logFile?.path}', tag: 'GPSLOG');
     _logFile = null;
   }
 
@@ -85,7 +86,7 @@ class GpsLoggerService {
       files.sort((a, b) => b.path.compareTo(a.path));
       return files;
     } catch (e) {
-      print('❌ GpsLogger: failed to list files: $e');
+      logError('❌ GpsLogger: failed to list files: $e', tag: 'GPSLOG');
       return [];
     }
   }
@@ -100,11 +101,11 @@ class GpsLoggerService {
         final stat = await file.stat();
         if (stat.modified.isBefore(cutoff)) {
           await file.delete();
-          print('🗑️ GpsLogger: deleted old log ${file.path}');
+          logDebug('🗑️ GpsLogger: deleted old log ${file.path}', tag: 'GPSLOG');
         }
       }
     } catch (e) {
-      print('❌ GpsLogger: error deleting old logs: $e');
+      logError('❌ GpsLogger: error deleting old logs: $e', tag: 'GPSLOG');
     }
   }
 
@@ -115,7 +116,7 @@ class GpsLoggerService {
       await _logFile!.writeAsString(content, mode: FileMode.append);
       _buffer.clear();
     } catch (e) {
-      print('❌ GpsLogger: flush error: $e');
+      logError('❌ GpsLogger: flush error: $e', tag: 'GPSLOG');
     }
   }
 

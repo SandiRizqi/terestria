@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +12,7 @@ import 'api_service.dart';
 import 'routing_dart/engine.dart';
 import 'tile_cache_sqlite_service.dart';
 
+import '../utils/app_logger.dart';
 /// Gate ketersediaan routing lintas-platform: Android selalu (GraphHopper); iOS
 /// bila mesin Dart offline diaktifkan. Dipakai RoutingService & RoutingDataManager.
 bool routingAvailable({
@@ -179,10 +179,10 @@ class RoutingService {
       // (di-regenerate lazy dari .pbf baru).
       await clearRoadTileCache(null);
 
-      debugPrint('✅ RoutingService: OSM file imported → ${dest.path}');
+      logDebug('✅ RoutingService: OSM file imported → ${dest.path}', tag: 'ROUTING');
       return dest.path;
     } catch (e) {
-      debugPrint('❌ RoutingService: importOsmFile error — $e');
+      logError('❌ RoutingService: importOsmFile error — $e', tag: 'ROUTING');
       return null;
     }
   }
@@ -198,7 +198,7 @@ class RoutingService {
     _isInitialized = false;
     // Hapus data jalan lokal → hapus juga cache road-tile-nya.
     await clearRoadTileCache(null);
-    debugPrint('🗑️ RoutingService: OSM file deleted');
+    logDebug('🗑️ RoutingService: OSM file deleted', tag: 'ROUTING');
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ class RoutingService {
       if (resp.statusCode != 200) return [];
       return parseCompanies(resp.body);
     } catch (e) {
-      debugPrint('❌ RoutingService: fetchDownloadableCompanies — $e');
+      logError('❌ RoutingService: fetchDownloadableCompanies — $e', tag: 'ROUTING');
       return [];
     }
   }
@@ -349,7 +349,7 @@ class RoutingService {
       }
       return const RoadPrepareResult(RoadPrepareStatus.ready, 'Routing siap digunakan');
     } catch (e) {
-      debugPrint('❌ RoutingService: downloadAndPrepareRoads — $e');
+      logError('❌ RoutingService: downloadAndPrepareRoads — $e', tag: 'ROUTING');
       return RoadPrepareResult(RoadPrepareStatus.error, 'Error: $e');
     }
   }
@@ -370,12 +370,12 @@ class RoutingService {
 
     final osmPath = await getOsmFilePath();
     if (osmPath == null) {
-      debugPrint('⚠️ RoutingService: No OSM data — import a .pbf file first');
+      logWarn('⚠️ RoutingService: No OSM data — import a .pbf file first', tag: 'ROUTING');
       return false;
     }
 
     try {
-      debugPrint('🗺️ RoutingService: Initializing GraphHopper… (forceRebuild=$forceRebuild)');
+      logDebug('🗺️ RoutingService: Initializing GraphHopper… (forceRebuild=$forceRebuild)', tag: 'ROUTING');
       // 3-minute safety-net timeout. GraphHopper without CH finishes in seconds
       // for typical local PBF files; this guard prevents indefinite UI hang if
       // the Kotlin side crashes silently.
@@ -387,18 +387,22 @@ class RoutingService {
           .timeout(
             const Duration(minutes: 3),
             onTimeout: () {
-              debugPrint('⏰ RoutingService: Initialize timeout (3 min)');
+              logDebug('⏰ RoutingService: Initialize timeout (3 min)', tag: 'ROUTING');
               return null;
             },
           ) ?? false;
       _isInitialized = ok;
-      debugPrint(ok ? '✅ RoutingService: Ready' : '❌ RoutingService: Init failed');
+      if (ok) {
+        logInfo('RoutingService siap', tag: 'ROUTING');
+      } else {
+        logError('RoutingService: init gagal', tag: 'ROUTING');
+      }
       return ok;
     } on PlatformException catch (e) {
-      debugPrint('❌ RoutingService: Platform error — ${e.code}: ${e.message}');
+      logError('❌ RoutingService: Platform error — ${e.code}: ${e.message}', tag: 'ROUTING');
       return false;
     } on TimeoutException {
-      debugPrint('⏰ RoutingService: Init timed out');
+      logDebug('⏰ RoutingService: Init timed out', tag: 'ROUTING');
       return false;
     }
   }
@@ -417,20 +421,20 @@ class RoutingService {
   /// [iosEngineEnabled] false → tetap graceful (false), tanpa efek ke Android.
   Future<bool> _initializeIos({bool forceRebuild = false}) async {
     if (!iosEngineEnabled) {
-      debugPrint('ℹ️ RoutingService: iOS Dart engine disabled');
+      logDebug('ℹ️ RoutingService: iOS Dart engine disabled', tag: 'ROUTING');
       return false;
     }
     if (_isInitialized && !forceRebuild) return true;
 
     final osmPath = await getOsmFilePath();
     if (osmPath == null) {
-      debugPrint('⚠️ RoutingService(iOS): No OSM data — import a .pbf first');
+      logWarn('⚠️ RoutingService(iOS): No OSM data — import a .pbf first', tag: 'ROUTING');
       return false;
     }
     _isInitialized = await _iosEngine.initialize(osmPath, forceRebuild: forceRebuild);
-    debugPrint(_isInitialized
+    logError((_isInitialized
         ? '✅ RoutingService(iOS): Dart engine ready'
-        : '❌ RoutingService(iOS): Dart engine init failed');
+        : '❌ RoutingService(iOS): Dart engine init failed').toString(), tag: 'ROUTING');
     return _isInitialized;
   }
 
@@ -476,7 +480,7 @@ class RoutingService {
     }
 
     try {
-      debugPrint('🗺️ RoutingService: Calculating route $profile ${from.latitude},${from.longitude} → ${to.latitude},${to.longitude}');
+      logDebug('🗺️ RoutingService: Calculating route $profile ${from.latitude},${from.longitude} → ${to.latitude},${to.longitude}', tag: 'ROUTING');
       final raw = await _channel.invokeMethod<Map>('calculateRoute', {
         'fromLat': from.latitude,
         'fromLon': from.longitude,
@@ -486,10 +490,10 @@ class RoutingService {
       });
       if (raw == null) return null;
       final result = RouteResult.fromMap(raw);
-      debugPrint('✅ RoutingService: Route ${result.formattedDistance} / ${result.formattedTime}');
+      logDebug('✅ RoutingService: Route ${result.formattedDistance} / ${result.formattedTime}', tag: 'ROUTING');
       return result;
     } on PlatformException catch (e) {
-      debugPrint('❌ RoutingService: Route error — ${e.message}');
+      logError('❌ RoutingService: Route error — ${e.message}', tag: 'ROUTING');
       return null;
     }
   }

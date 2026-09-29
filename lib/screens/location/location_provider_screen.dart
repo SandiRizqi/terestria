@@ -9,6 +9,7 @@ import '../../models/geo_data_model.dart';
 import '../../theme/app_theme.dart';
 import 'dart:async';
 
+import '../../utils/app_logger.dart';
 class LocationProviderScreen extends StatefulWidget {
   const LocationProviderScreen({Key? key}) : super(key: key);
 
@@ -81,19 +82,19 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
         _lastDataReceived = _locationService.lastEmlidDataTime;
       });
 
-      print(
-          'DEBUG UI: Loaded provider=${_selectedProvider.name}, fix=${_requiredFixQuality.name}');
-      print(
-          'DEBUG UI: Emlid settings - host=${_hostController.text}, port=${_portController.text}, format=${_coordinateFormat.name}');
-      print(
-          'DEBUG UI: Emlid connected=${_isConnected}, streaming=${_isReceivingData}');
+      logDebug(
+          'DEBUG UI: Loaded provider=${_selectedProvider.name}, fix=${_requiredFixQuality.name}', tag: 'GPS');
+      logDebug(
+          'DEBUG UI: Emlid settings - host=${_hostController.text}, port=${_portController.text}, format=${_coordinateFormat.name}', tag: 'GPS');
+      logDebug(
+          'DEBUG UI: Emlid connected=${_isConnected}, streaming=${_isReceivingData}', tag: 'GPS');
 
       // Auto-reconnect if Emlid was selected but not connected
       if (_selectedProvider == LocationProvider.emlid &&
           !_isConnected &&
           savedEmlidSettings['host'] != null &&
           savedEmlidSettings['port'] != null) {
-        print('DEBUG UI: Auto-reconnecting to Emlid...');
+        logDebug('DEBUG UI: Auto-reconnecting to Emlid...', tag: 'GPS');
         _showSuccess('Auto-reconnecting to Emlid GPS...');
         await _connectToEmlid();
       }
@@ -165,8 +166,8 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
       final portText = _portController.text.trim();
       final port = int.tryParse(portText);
 
-      print(
-          'DEBUG: Attempting to connect to $host:$portText (parsed as $port)');
+      logDebug(
+          'DEBUG: Attempting to connect to $host:$portText (parsed as $port)', tag: 'GPS');
 
       if (port == null || port < 1 || port > 65535) {
         throw Exception('Invalid port number: $portText');

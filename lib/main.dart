@@ -38,23 +38,23 @@ void main() async {
       // 1. Initialize Firebase FIRST (CRITICAL!)
       try {
         await Firebase.initializeApp();
-        debugPrint('✅ Firebase initialized successfully');
+        logDebug('✅ Firebase initialized successfully', tag: 'APP');
 
         // 2. Initialize Crashlytics (wires up all error handlers)
         await CrashlyticsService.instance.initialize();
-        debugPrint('✅ Crashlytics initialized');
+        logDebug('✅ Crashlytics initialized', tag: 'APP');
 
         // 3. Register FCM background handler
         FirebaseMessaging.onBackgroundMessage(
             firebaseMessagingBackgroundHandler);
-        debugPrint('✅ Background message handler registered');
+        logDebug('✅ Background message handler registered', tag: 'APP');
 
         _runPhotoMigration();
       } catch (e, stack) {
-        debugPrint('⚠️ Firebase initialization failed: $e');
-        debugPrint('⚠️ App will continue without Firebase features');
+        logWarn('⚠️ Firebase initialization failed: $e', tag: 'APP');
+        logWarn('⚠️ App will continue without Firebase features', tag: 'APP');
         // Crashlytics may not be ready yet, so just log locally
-        debugPrint(stack.toString());
+        logDebug(stack.toString(), tag: 'APP');
       }
       // Error tak tertangkap juga ke berkas log (handler Crashlytics tetap),
       // dan warn/error log menjadi breadcrumb Crashlytics.
@@ -76,7 +76,7 @@ void main() async {
         await trackingPersistence!.restore();
         trackingPersistence!.attach();
       } catch (e) {
-        debugPrint('⚠️ Gagal restore/attach tracking persistence: $e');
+        logWarn('⚠️ Gagal restore/attach tracking persistence: $e', tag: 'APP');
       }
       TrackingEngine.instance.attach();
 
@@ -98,13 +98,13 @@ Future<void> _runPhotoMigration() async {
   final migrationService = PhotoMigrationService();
 
   if (!await migrationService.isMigrationCompleted()) {
-    print('🔄 Running photo migration...');
+    logDebug('🔄 Running photo migration...', tag: 'APP');
     final result =
         await migrationService.migratePhotosToPersistentStorage();
     if (result.hasErrors) {
-      print('⚠️ Migration had errors: ${result.summary}');
+      logWarn('⚠️ Migration had errors: ${result.summary}', tag: 'APP');
     } else {
-      print('✅ Migration completed: ${result.summary}');
+      logDebug('✅ Migration completed: ${result.summary}', tag: 'APP');
     }
   }
 }
@@ -126,7 +126,7 @@ class _TerestriaAppState extends State<TerestriaApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    debugPrint('✅ App lifecycle observer added');
+    logDebug('✅ App lifecycle observer added', tag: 'APP');
 
     // Cek apakah ada flexible update yang sudah didownload saat app resume
     // (misal user menutup app saat download berlangsung, lalu buka lagi)
@@ -145,7 +145,7 @@ class _TerestriaAppState extends State<TerestriaApp>
           .timeout(const Duration(seconds: 8));
 
       if (info.installStatus == InstallStatus.downloaded) {
-        debugPrint('🔄 [Main] Flexible update sudah didownload, tampilkan snackbar');
+        logDebug('🔄 [Main] Flexible update sudah didownload, tampilkan snackbar', tag: 'APP');
         final ctx = _navigatorKey.currentContext;
         if (ctx != null && ctx.mounted) {
           UpdateService().showInstallSnackbar(ctx);
@@ -153,24 +153,24 @@ class _TerestriaAppState extends State<TerestriaApp>
       }
     } catch (e) {
       // Offline atau Play Store tidak tersedia → skip
-      debugPrint('⚠️ [Main] Install status check dilewati: $e');
+      logWarn('⚠️ [Main] Install status check dilewati: $e', tag: 'APP');
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    debugPrint('🗑️ App lifecycle observer removed');
+    logDebug('🗑️ App lifecycle observer removed', tag: 'APP');
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    debugPrint('📱 [MAIN APP] Lifecycle changed to: $state');
+    logDebug('📱 [MAIN APP] Lifecycle changed to: $state', tag: 'APP');
 
     if (state == AppLifecycleState.detached) {
-      debugPrint('⚠️ [MAIN APP] App is being killed - ensuring cleanup...');
+      logWarn('⚠️ [MAIN APP] App is being killed - ensuring cleanup...', tag: 'APP');
       _ensureBackgroundTrackingStopped();
     }
   }
@@ -184,15 +184,15 @@ class _TerestriaAppState extends State<TerestriaApp>
       logInfo('App ditutup (detached)', tag: 'APP');
       await AppLogger.flush();
       if (TrackingEngine.instance.isActive) {
-        debugPrint('⚠️ [MAIN APP] Stopping active background tracking...');
+        logWarn('⚠️ [MAIN APP] Stopping active background tracking...', tag: 'APP');
         await LocationServiceV2().stopBackgroundTracking();
         await LocationServiceV2().stopGpsLog();
-        debugPrint('✅ [MAIN APP] Background tracking stopped');
+        logDebug('✅ [MAIN APP] Background tracking stopped', tag: 'APP');
       } else {
-        debugPrint('✅ [MAIN APP] No active tracking detected');
+        logDebug('✅ [MAIN APP] No active tracking detected', tag: 'APP');
       }
     } catch (e, stack) {
-      debugPrint('❌ [MAIN APP] Error stopping background tracking: $e');
+      logError('❌ [MAIN APP] Error stopping background tracking: $e', tag: 'APP');
       crashlytics.recordError(
         e,
         stack,

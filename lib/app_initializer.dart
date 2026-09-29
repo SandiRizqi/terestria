@@ -1,10 +1,10 @@
-import 'package:flutter/material.dart';
 import 'services/migration_service.dart';
 import 'services/database_service.dart';
 import 'services/firebase_messaging_service.dart';
 import 'services/settings_service.dart';
 import 'services/update_service.dart';
 
+import 'utils/app_logger.dart';
 /// Initialize app services and perform migrations if needed
 class AppInitializer {
   static final AppInitializer _instance = AppInitializer._internal();
@@ -26,26 +26,26 @@ class AppInitializer {
     try {
       // 1. Initialize database
       await _databaseService.database;
-      debugPrint('✅ Database initialized');
+      logDebug('✅ Database initialized', tag: 'APP');
 
       // 2. Initialize Settings Service
       await _settingsService.initialize();
-      debugPrint('✅ Settings initialized');
+      logDebug('✅ Settings initialized', tag: 'APP');
 
       // 3. Check and perform migration from SharedPreferences to SQLite
       final hasMigrated = await _migrationService.hasMigrated();
       
       if (!hasMigrated) {
-        debugPrint('🔄 Starting migration from SharedPreferences to SQLite...');
+        logDebug('🔄 Starting migration from SharedPreferences to SQLite...', tag: 'APP');
         final migrationResult = await _migrationService.migrate();
         
         if (migrationResult.success) {
-          debugPrint('✅ Migration completed: ${migrationResult.projectsCount} projects, ${migrationResult.geoDataCount} geo data');
+          logDebug('✅ Migration completed: ${migrationResult.projectsCount} projects, ${migrationResult.geoDataCount} geo data', tag: 'APP');
         } else {
-          debugPrint('❌ Migration failed: ${migrationResult.message}');
+          logError('❌ Migration failed: ${migrationResult.message}', tag: 'APP');
         }
       } else {
-        debugPrint('✅ Already migrated to SQLite');
+        logDebug('✅ Already migrated to SQLite', tag: 'APP');
       }
 
       // 3b. Pulihkan record yang terlanjur "synced" padahal fotonya belum
@@ -55,22 +55,22 @@ class AppInitializer {
 
       // 4. Cek in-app update (fire-and-forget, aman saat offline)
       UpdateService().startUpdateCheck(null);
-      debugPrint('✅ Update check initiated');
+      logDebug('✅ Update check initiated', tag: 'APP');
 
       // 5. Initialize Firebase Messaging (lazy initialization)
       try {
         _fcmService = FirebaseMessagingService();
         await _fcmService!.initialize(authToken: authToken);
-        debugPrint('✅ Firebase Messaging initialized');
+        logDebug('✅ Firebase Messaging initialized', tag: 'APP');
       } catch (e) {
-        debugPrint('⚠️ Firebase Messaging initialization failed: $e');
+        logWarn('⚠️ Firebase Messaging initialization failed: $e', tag: 'APP');
         // Don't throw error, app can continue without FCM
       }
 
       _isInitialized = true;
-      debugPrint('✅ App initialization completed');
+      logDebug('✅ App initialization completed', tag: 'APP');
     } catch (e) {
-      debugPrint('❌ App initialization error: $e');
+      logError('❌ App initialization error: $e', tag: 'APP');
       rethrow;
     }
   }
@@ -81,10 +81,10 @@ class AppInitializer {
     try {
       final result = await _migrationService.recoverIncompletePhotoSyncs();
       if (!result.alreadyRun) {
-        debugPrint('✅ Photo-sync recovery: $result');
+        logDebug('✅ Photo-sync recovery: $result', tag: 'APP');
       }
     } catch (e) {
-      debugPrint('⚠️ Photo-sync recovery failed (non-fatal): $e');
+      logWarn('⚠️ Photo-sync recovery failed (non-fatal): $e', tag: 'APP');
     }
   }
 
@@ -92,14 +92,14 @@ class AppInitializer {
   Future<void> updateFCMAuthToken(String authToken) async {
     try {
       if (_fcmService == null) {
-        debugPrint('⚠️ FCM service not initialized, initializing now...');
+        logWarn('⚠️ FCM service not initialized, initializing now...', tag: 'APP');
         _fcmService = FirebaseMessagingService();
         await _fcmService!.initialize(authToken: authToken);
       }
       await _fcmService!.updateAuthToken(authToken);
-      debugPrint('✅ FCM auth token updated');
+      logDebug('✅ FCM auth token updated', tag: 'APP');
     } catch (e) {
-      debugPrint('⚠️ Failed to update FCM auth token: $e');
+      logWarn('⚠️ Failed to update FCM auth token: $e', tag: 'APP');
     }
   }
 
@@ -108,12 +108,12 @@ class AppInitializer {
     try {
       if (_fcmService != null) {
         await _fcmService!.deactivateToken(authToken);
-        debugPrint('✅ FCM token deactivated');
+        logDebug('✅ FCM token deactivated', tag: 'APP');
       } else {
-        debugPrint('⚠️ FCM service not initialized, skipping deactivation');
+        logWarn('⚠️ FCM service not initialized, skipping deactivation', tag: 'APP');
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to deactivate FCM token: $e');
+      logWarn('⚠️ Failed to deactivate FCM token: $e', tag: 'APP');
     }
   }
 

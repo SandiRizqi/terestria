@@ -19,8 +19,9 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-tracking-engine.md](plan-trac
 - [ ] Device: Mode Diagnostik ON → tracking 5 menit → Bagikan Log → zip berisi event + ringkasan
 
 ## Phase 3 — Hilangkan print()
-- [ ] **Task 7a — Tracking & data collection** (M)
-- [ ] **Task 7b — Sync, auth, cloud, notifikasi** (M) — tanpa nilai token
+Hitung ulang (parser): **443 panggilan di 41 file** (plan awal ±370/34 menghitung per baris).
+- [x] **Task 7a — Tracking, data collection & inti app** (M) ✅ 135 panggilan: data_collection_screen, main, app_initializer, gps_logger, location_provider, notification_service, settings_service, routing_service
+- [ ] **Task 7b — Sync, auth, cloud, notifikasi, update** (M) — tanpa nilai token
 - [ ] **Task 7c — Basemap, tile, PDF** (M)
 - [ ] **Task 7d — Sisa UI + gerbang `avoid_print: error` + test no-print** (M)
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../../utils/app_logger.dart';
 /// Service untuk mengelola notifikasi Android
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications = 
@@ -15,7 +16,7 @@ class NotificationService {
   static Future<void> initialize() async {
     if (!Platform.isAndroid) return;
     
-    print('📱 Initializing notification service...');
+    logDebug('📱 Initializing notification service...', tag: 'NOTIF');
     
     // Create notification channel untuk Android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -44,7 +45,7 @@ class NotificationService {
     
     await _notifications.initialize(initSettings);
     
-    print('✅ Notification service initialized');
+    logDebug('✅ Notification service initialized', tag: 'NOTIF');
   }
   
   /// Update notifikasi yang sedang aktif
