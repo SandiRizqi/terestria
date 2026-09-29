@@ -74,9 +74,12 @@ void logDebug(String message, {String tag = 'APP'}) =>
 void logInfo(String message, {String tag = 'APP'}) =>
     AppLogger.log(LogLevel.info, message, tag: tag);
 
-/// Kondisi tak normal yang masih bisa dipulihkan.
-void logWarn(String message, {String tag = 'APP'}) =>
-    AppLogger.log(LogLevel.warn, message, tag: tag);
+/// Kondisi tak normal yang masih bisa dipulihkan. [error]/[stack] opsional
+/// agar penyebab teknis tetap tercatat di berkas log.
+void logWarn(String message,
+        {String tag = 'APP', Object? error, StackTrace? stack}) =>
+    AppLogger.log(LogLevel.warn, message,
+        tag: tag, error: error, stack: stack);
 
 /// Kegagalan. Sertakan [error]/[stack] bila ada.
 void logError(String message,

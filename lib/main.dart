@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:in_app_update/in_app_update.dart';
+import 'screens/app/init_failure_screen.dart';
 import 'screens/auth/splash_screen.dart';
 import 'theme/app_theme.dart';
 import 'services/firebase_messaging_service.dart';
@@ -65,24 +66,7 @@ void main() async {
             crashlytics.recordError(e, s, reason: reason),
       ).call;
 
-      // 4. Initialize app services (includes FCM if Firebase is ready)
-      await AppInitializer().initialize();
-
-      // 5. Pulihkan sesi tracking multi-project dari SQLite + mulai persistensi,
-      //    lalu pasang TrackingEngine: pemilik tunggal feed GPS (service +
-      //    heartbeat) selama ada sesi merekam — bukan lagi layar collection.
-      trackingPersistence = TrackingPersistenceCoordinator();
-      try {
-        await trackingPersistence!.restore();
-      } catch (e, st) {
-        logError('Tracking session restore failed', tag: 'APP', error: e, stack: st);
-      }
-      // Selalu pasang persistensi, walau restore gagal — tanpa ini sesi baru
-      // tak pernah dicadangkan ke SQLite selama app berjalan.
-      trackingPersistence!.attach();
-      TrackingEngine.instance.attach();
-
-      runApp(const TerestriaApp());
+      await _bootstrap();
     },
     // Zone-level catcher: records as fatal so it groups like a crash
     (error, stack) {
@@ -94,6 +78,38 @@ void main() async {
       );
     },
   );
+}
+
+/// Inisialisasi layanan app lalu tampilkan UI. Bila gagal (mis. database tak
+/// bisa dibuka karena penyimpanan penuh) tampilkan layar pemulihan dengan
+/// "Try again" & "Share diagnostic log" — dulu `runApp` tak pernah dipanggil
+/// dan app macet di splash native.
+Future<void> _bootstrap() async {
+  // 4. Initialize app services (includes FCM if Firebase is ready)
+  try {
+    await AppInitializer().initialize();
+  } catch (e, st) {
+    logError('App initialization failed', tag: 'APP', error: e, stack: st);
+    await AppLogger.flush();
+    runApp(InitFailureApp(error: e, onRetry: _bootstrap));
+    return;
+  }
+
+  // 5. Pulihkan sesi tracking multi-project dari SQLite + mulai persistensi,
+  //    lalu pasang TrackingEngine: pemilik tunggal feed GPS (service +
+  //    heartbeat) selama ada sesi merekam — bukan lagi layar collection.
+  trackingPersistence = TrackingPersistenceCoordinator();
+  try {
+    await trackingPersistence!.restore();
+  } catch (e, st) {
+    logError('Tracking session restore failed', tag: 'APP', error: e, stack: st);
+  }
+  // Selalu pasang persistensi, walau restore gagal — tanpa ini sesi baru
+  // tak pernah dicadangkan ke SQLite selama app berjalan.
+  trackingPersistence!.attach();
+  TrackingEngine.instance.attach();
+
+  runApp(const TerestriaApp());
 }
 
 Future<void> _runPhotoMigration() async {

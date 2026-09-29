@@ -18,6 +18,9 @@ class MainActivity: FlutterActivity() {
 
         // GraphHopper offline routing
         RoutingPlugin(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
+
+        // Free storage & battery optimization status (field readiness)
+        DeviceHealthPlugin(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
         
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {

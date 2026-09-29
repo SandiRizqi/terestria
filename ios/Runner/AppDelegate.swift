@@ -15,7 +15,34 @@ import Firebase
     }
     
     GeneratedPluginRegistrant.register(with: self)
+    registerDeviceHealthChannel()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // Free storage for field readiness checks (Dart: DeviceHealthService).
+  // Battery-optimization methods are Android-only and return "not implemented".
+  private func registerDeviceHealthChannel() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "io.github.sandirizqi.terestria/device_health",
+      binaryMessenger: controller.binaryMessenger)
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getFreeDiskBytes":
+        let url = URL(fileURLWithPath: NSHomeDirectory())
+        if let values = try? url.resourceValues(
+             forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+           let capacity = values.volumeAvailableCapacityForImportantUsage {
+          result(NSNumber(value: capacity))
+        } else {
+          result(nil)
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
   
   // Handle notification when app is in foreground
