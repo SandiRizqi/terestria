@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +5,10 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/layer_model.dart';
+import '../../services/layer_import/layer_importer.dart';
 import '../../services/layer_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/app_logger.dart';
 
 class LayersScreen extends StatefulWidget {
   const LayersScreen({Key? key}) : super(key: key);
@@ -42,10 +42,12 @@ class _LayersScreenState extends State<LayersScreen> {
   }
 
   // ────────────────────────────────────────────
-  // Import GeoJSON
+  // Import layer (GeoJSON / SHP zip / GPX / KML)
   // ────────────────────────────────────────────
 
   Future<void> _importLayer() async {
+    // FileType.any: Android tak mengenali MIME .geojson/.kml/.gpx; format
+    // divalidasi LayerImporter (ekstensi + isi).
     final result = await FilePicker.platform.pickFiles(
       type: FileType.any,
     );
@@ -54,39 +56,30 @@ class _LayersScreenState extends State<LayersScreen> {
     final sourcePath = result.files.single.path!;
     final fileName = result.files.single.name;
 
-    // Validasi ekstensi manual (.json dan .geojson)
-    // FileType.custom dipakai karena Android tidak mengenali MIME type .geojson
-    final ext = fileName.split('.').last.toLowerCase();
-    if (ext != 'json' && ext != 'geojson') {
-      _showError('File harus berekstensi .json atau .geojson');
-      return;
-    }
-
-    String content;
+    final LayerImportResult imported;
     try {
-      content = await File(sourcePath).readAsString();
-    } catch (e) {
-      _showError('Cannot read file: $e');
+      imported = await _runWithProgress(
+          () => importLayerFile(sourcePath, fileName: fileName));
+    } on LayerImportException catch (e) {
+      logWarn('Impor layer "$fileName" ditolak: ${e.message}', tag: 'LAYER');
+      _showError(e.message);
+      return;
+    } catch (e, st) {
+      logError('Impor layer "$fileName" gagal',
+          tag: 'LAYER', error: e, stack: st);
+      _showError('Gagal membaca berkas: $e');
       return;
     }
+    logInfo(
+        'Impor layer "$fileName" (${imported.format.name}): '
+        '${imported.featureCount} fitur ${imported.geometryType}',
+        tag: 'LAYER');
 
-    Map<String, dynamic> geoJson;
-    try {
-      geoJson = jsonDecode(content) as Map<String, dynamic>;
-    } catch (e) {
-      _showError('Invalid GeoJSON: $e');
-      return;
-    }
-
-    final geometryType = LayerService.detectGeometryType(geoJson);
-    final propKeys = LayerService.detectPropertyKeys(geoJson);
-    final defaultName = fileName.replaceAll(
-        RegExp(r'\.(json|geojson)$', caseSensitive: false), '');
-
+    final geometryType = imported.geometryType;
     final layerId = _uuid.v4();
     final newLayer = LayerModel(
       id: layerId,
-      name: defaultName,
+      name: imported.defaultName,
       filePath: sourcePath, // temp; replaced after import
       geometryType: geometryType,
       style: _defaultStyleForType(geometryType),
@@ -96,12 +89,12 @@ class _LayersScreenState extends State<LayersScreen> {
 
     if (!mounted) return;
     final edited = await _showStyleEditor(
-        layer: newLayer, propKeys: propKeys, isNew: true);
+        layer: newLayer, propKeys: imported.propertyKeys, isNew: true);
     if (edited == null) return;
 
     try {
       final storedPath =
-          await _service.importGeoJsonFile(sourcePath, edited.id);
+          await _service.saveGeoJsonText(imported.geoJsonText, edited.id);
       final saved = edited.copyWith(filePath: storedPath);
       await _service.saveLayer(saved);
       _load();
@@ -117,6 +110,32 @@ class _LayersScreenState extends State<LayersScreen> {
       }
     } catch (e) {
       _showError('Error saving layer: $e');
+    }
+  }
+
+  /// Tampilkan dialog "Memproses berkas…" selama [task] berjalan.
+  Future<T> _runWithProgress<T>(Future<T> Function() task) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(children: [
+            SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5)),
+            SizedBox(width: 16),
+            Expanded(child: Text('Memproses berkas…')),
+          ]),
+        ),
+      ),
+    );
+    try {
+      return await task();
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
     }
   }
 

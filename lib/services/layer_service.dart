@@ -106,6 +106,15 @@ class LayerService {
     return dest.path;
   }
 
+  /// Simpan GeoJSON hasil konversi impor (GeoJSON/GPX/KML/SHP) ke storage
+  /// privat app. Returns the new internal path.
+  Future<String> saveGeoJsonText(String geoJsonText, String layerId) async {
+    final dir = await _layerDirectory();
+    final dest = File('${dir.path}/$layerId.geojson');
+    await dest.writeAsString(geoJsonText, flush: true);
+    return dest.path;
+  }
+
   /// Read and parse a GeoJSON file; returns null on any error.
   Future<Map<String, dynamic>?> readGeoJson(String filePath) async {
     try {
