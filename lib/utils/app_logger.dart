@@ -21,7 +21,8 @@ class AppLogger {
   static bool consoleEnabled = kDebugMode;
 
   /// Diteruskan untuk warn/error (mis. breadcrumb Crashlytics di isolate app).
-  static void Function(LogLevel level, String tag, String message)? onWarnOrError;
+  static void Function(LogLevel level, String tag, String message,
+      [Object? error, StackTrace? stack])? onWarnOrError;
 
   static AppLogSink? get sink => _sink;
   static void attach(AppLogSink sink) => _sink = sink;
@@ -32,14 +33,28 @@ class AppLogger {
   static bool get diagnosticActive =>
       DiagnosticMode.isActive(_diagnosticUntil, now());
 
-  static void log(LogLevel level, String message, {String tag = 'APP'}) {
-    if (consoleEnabled) debugPrint('[$tag] $message');
+  /// [forward] false = jangan teruskan ke [onWarnOrError] (dipakai
+  /// CrashlyticsService sendiri agar tak berputar kembali ke Crashlytics).
+  static void log(
+    LogLevel level,
+    String message, {
+    String tag = 'APP',
+    Object? error,
+    StackTrace? stack,
+    bool forward = true,
+  }) {
+    final detail = [
+      message,
+      if (error != null) '$error',
+      if (stack != null && stack != StackTrace.empty) '$stack',
+    ].join('\n');
+    if (consoleEnabled) debugPrint('[$tag] $detail');
     final sink = _sink;
     if (sink != null && (level != LogLevel.debug || diagnosticActive)) {
-      sink.write(level, tag, message);
+      sink.write(level, tag, detail);
     }
-    if (level == LogLevel.warn || level == LogLevel.error) {
-      onWarnOrError?.call(level, tag, message);
+    if (forward && (level == LogLevel.warn || level == LogLevel.error)) {
+      onWarnOrError?.call(level, tag, message, error, stack);
     }
   }
 
@@ -65,11 +80,6 @@ void logWarn(String message, {String tag = 'APP'}) =>
 
 /// Kegagalan. Sertakan [error]/[stack] bila ada.
 void logError(String message,
-    {String tag = 'APP', Object? error, StackTrace? stack}) {
-  final detail = [
-    message,
-    if (error != null) '$error',
-    if (stack != null) '$stack',
-  ].join('\n');
-  AppLogger.log(LogLevel.error, detail, tag: tag);
-}
+        {String tag = 'APP', Object? error, StackTrace? stack}) =>
+    AppLogger.log(LogLevel.error, message,
+        tag: tag, error: error, stack: stack);

@@ -33,16 +33,20 @@ Future<void> initAppLogging({required String source}) async {
 /// handler yang sudah ada (Crashlytics tetap menerima). Panggil setelah
 /// Crashlytics dipasang.
 void installErrorLogging() {
+  // forward:false — handler Crashlytics sebelumnya sudah merekamnya; jangan
+  // sampai forwarder mengirim laporan ganda.
   final previousFlutter = FlutterError.onError;
   FlutterError.onError = (details) {
-    logError('Flutter error: ${details.exceptionAsString()}',
-        tag: 'FLUTTER', stack: details.stack);
+    AppLogger.log(LogLevel.error,
+        'Flutter error: ${details.exceptionAsString()}',
+        tag: 'FLUTTER', stack: details.stack, forward: false);
     previousFlutter?.call(details);
   };
 
   final previousPlatform = PlatformDispatcher.instance.onError;
   PlatformDispatcher.instance.onError = (error, stack) {
-    logError('Uncaught async error', tag: 'APP', error: error, stack: stack);
+    AppLogger.log(LogLevel.error, 'Uncaught async error',
+        tag: 'APP', error: error, stack: stack, forward: false);
     return previousPlatform?.call(error, stack) ?? false;
   };
 }

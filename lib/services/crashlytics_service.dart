@@ -1,6 +1,8 @@
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 
+import '../utils/app_logger.dart';
+
 /// Singleton wrapper around Firebase Crashlytics.
 ///
 /// Centralises all error reporting so:
@@ -44,8 +46,7 @@ class CrashlyticsService {
       return true; // Handled
     };
 
-    debugPrint('✅ CrashlyticsService initialized '
-        '(sending: ${!kDebugMode})');
+    logInfo('Crashlytics siap (kirim: ${!kDebugMode})', tag: 'CRASH');
   }
 
   // ─────────────────────────────────────────────────────────
@@ -98,8 +99,17 @@ class CrashlyticsService {
   /// Add a breadcrumb log message that appears before a crash in the
   /// Crashlytics dashboard. Max 64 KB total across all logs.
   void log(String message) {
-    _c.log('[${DateTime.now().toIso8601String()}] $message');
-    debugPrint('🔵 [Crashlytics] $message');
+    addBreadcrumb(message);
+    // Ikut ke berkas log; forward:false → tak dikirim ulang ke Crashlytics.
+    AppLogger.log(LogLevel.info, message, tag: 'CRASH', forward: false);
+  }
+
+  /// Breadcrumb mentah (tanpa log berkas) — dipakai forwarder AppLogger.
+  /// Aman dipanggil walau Firebase gagal init.
+  void addBreadcrumb(String message) {
+    try {
+      _c.log('[${DateTime.now().toIso8601String()}] $message');
+    } catch (_) {}
   }
 
   // ─────────────────────────────────────────────────────────
@@ -142,13 +152,18 @@ class CrashlyticsService {
     String? reason,
     List<String> information = const [],
   }) {
-    if (kDebugMode) {
-      // In debug mode just print; don't fill up the Crashlytics quota
-      debugPrint('🔴 [Crashlytics${fatal ? " FATAL" : ""}] '
-          '${reason != null ? "[$reason] " : ""}$error');
-      if (stack != null) debugPrint(stack.toString());
-      return;
-    }
+    // Selalu ke berkas log (debug & release); forward:false agar error ini tak
+    // diteruskan balik ke Crashlytics oleh forwarder AppLogger.
+    AppLogger.log(
+      fatal ? LogLevel.error : LogLevel.warn,
+      '${fatal ? "FATAL " : ""}${reason ?? "error"}',
+      tag: 'CRASH',
+      error: error,
+      stack: stack,
+      forward: false,
+    );
+    // Debug build: jangan habiskan kuota Crashlytics.
+    if (kDebugMode) return;
 
     _c.recordError(
       error,
