@@ -1,4 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
@@ -62,10 +66,9 @@ class AuthService {
         id: 'local_${username}',
         username: username,
       );
-      
-      // Save credentials locally
+
       await _saveCredentials(user);
-      
+
       return AuthResult(
         success: true,
         message: 'Login successful (offline mode)',
@@ -73,71 +76,177 @@ class AuthService {
       );
     }
 
-    try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.authUrl),
-        headers: ApiConfig.defaultHeaders,
-        body: jsonEncode({
-          'username': username,
-          'password': password,
-        }),
-      ).timeout(ApiConfig.connectionTimeout);
+    final auth = await _authenticate(username, password);
+    final user = auth.user;
+    if (user == null) return auth;
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        
-        // Parse response sesuai format backend Anda:
-        // {
-        //   "message": "Login successful",
-        //   "username": "anugrah.sandi",
-        //   "scope": [4, 6, 7, ...],
-        //   "token": "13129765796f84d3e946e428879c1c328b129d6c"
-        // }
-        
+    // Save credentials
+    await _saveCredentials(user);
+    _sessionExpiredPending = false;
+    logInfo('Login succeeded for ${user.username}', tag: 'AUTH');
+
+    await _afterLogin(user);
+    return auth;
+  }
+
+  /// Minta token ke server TANPA menyimpan apa pun. Pesan error ramah untuk
+  /// UI; detail teknis ke log.
+  Future<AuthResult> _authenticate(String username, String password) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse(ApiConfig.authUrl),
+            headers: ApiConfig.defaultHeaders,
+            body: jsonEncode({
+              'username': username,
+              'password': password,
+            }),
+          )
+          .timeout(ApiConfig.loginTimeout);
+
+      Map<String, dynamic>? data;
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } on FormatException {
+        data = null; // mis. halaman HTML proxy / hotspot
+      }
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          data != null &&
+          data['token'] != null) {
+        // Format backend:
+        // {"message": "Login successful", "username": "anugrah.sandi",
+        //  "scope": [4, 6, 7, ...], "token": "1312…"}
         final user = User(
           id: data['username'] ?? username, // Gunakan username sebagai ID
           username: data['username'] ?? username,
           token: data['token'],
-          scope: data['scope'] != null ? List<int>.from(data['scope']) : null,
+          scope: data['scope'] is List
+              ? (data['scope'] as List)
+                  .map((e) => int.tryParse(e.toString()))
+                  .whereType<int>()
+                  .toList()
+              : null,
         );
-        
-        // Save credentials
-        await _saveCredentials(user);
-        
-        // Register FCM token after successful login
-        if (user.token != null) {
-          try {
-            await AppInitializer().updateFCMAuthToken(user.token!);
-            logDebug('✅ FCM token registered after login', tag: 'AUTH');
-          } catch (e) {
-            logWarn('⚠️ Failed to register FCM token: $e', tag: 'AUTH');
-            // Don't fail login if FCM registration fails
-          }
-        }
-
-        // Sync FCM topic subscriptions based on scope — fire-and-forget di
-        // background (antrean serial di service) supaya login tidak menunggu
-        // round-trip FCM per scope. Gagal pun tak menggagalkan login.
-        _scopeTopicService.syncTopicsInBackground(user.scope ?? []);
-        
         return AuthResult(
           success: true,
-          message: data['message'] ?? 'Login successful',
+          message: data['message']?.toString() ?? 'Login successful',
           user: user,
         );
-      } else {
-        final errorData = jsonDecode(response.body);
-        return AuthResult(
-          success: false,
-          message: errorData['message'] ?? 'Login failed',
-        );
       }
-    } catch (e) {
+
+      logWarn(
+          'Login rejected: HTTP ${response.statusCode}'
+          '${data == null ? ' (non-JSON response)' : ''}',
+          tag: 'AUTH');
+      final String message;
+      if (data != null && data['message'] != null) {
+        message = data['message'].toString();
+      } else if (response.statusCode == 400 || response.statusCode == 401) {
+        message = 'Incorrect username or password.';
+      } else if (data == null && response.statusCode < 300) {
+        message = 'Unexpected response from the server. If you are on a '
+            'hotspot or office Wi-Fi, sign in to the network first.';
+      } else {
+        message = 'Login failed (server error ${response.statusCode}). '
+            'Please try again later.';
+      }
+      return AuthResult(success: false, message: message);
+    } on TimeoutException catch (e) {
+      logWarn('Login timed out after ${ApiConfig.loginTimeout.inSeconds}s: $e',
+          tag: 'AUTH');
       return AuthResult(
         success: false,
-        message: 'Connection error: $e',
+        message: 'The server did not respond in time. '
+            'Check your connection and try again.',
+      );
+    } on SocketException catch (e) {
+      logWarn('Login failed: no connection ($e)', tag: 'AUTH');
+      return AuthResult(
+        success: false,
+        message: 'No connection to the server. Check your internet connection.',
+      );
+    } on http.ClientException catch (e) {
+      logWarn('Login failed: client error ($e)', tag: 'AUTH');
+      return AuthResult(
+        success: false,
+        message: 'No connection to the server. Check your internet connection.',
+      );
+    } catch (e, st) {
+      logError('Login failed unexpectedly', tag: 'AUTH', error: e, stack: st);
+      return AuthResult(
+        success: false,
+        message: 'Login failed. Please try again.',
       );
     }
+  }
+
+  /// FCM token & topik scope setelah login/re-login. Gagal tak menggagalkan login.
+  Future<void> _afterLogin(User user) async {
+    if (user.token != null) {
+      try {
+        await AppInitializer().updateFCMAuthToken(user.token!);
+        logDebug('✅ FCM token registered after login', tag: 'AUTH');
+      } catch (e) {
+        logWarn('⚠️ Failed to register FCM token: $e', tag: 'AUTH');
+      }
+    }
+    // Sync FCM topic subscriptions based on scope — fire-and-forget di
+    // background (antrean serial di service) supaya login tidak menunggu
+    // round-trip FCM per scope. Gagal pun tak menggagalkan login.
+    _scopeTopicService.syncTopicsInBackground(user.scope ?? []);
+  }
+
+  // ─── Sesi kedaluwarsa (HTTP 401) ─────────────────────────────────────────
+
+  /// Naik setiap kali server menolak token (HTTP 401). Didengar oleh
+  /// `SessionExpiryListener` di root app yang menampilkan dialog login ulang.
+  /// Logout TIDAK dipakai di sini karena logout menghapus semua data lokal.
+  final ValueNotifier<int> sessionExpired = ValueNotifier<int>(0);
+  bool _sessionExpiredPending = false;
+
+  /// True selama dialog login ulang belum diselesaikan.
+  bool get isSessionExpired => _sessionExpiredPending;
+
+  /// Dipanggil [ApiService] saat server membalas 401 untuk request bertoken.
+  /// Satu sinyal per kejadian (tak membanjiri UI bila banyak request gagal).
+  void reportUnauthorized(String endpoint) {
+    if (_cachedToken == null && _cachedUser == null) return;
+    if (_sessionExpiredPending) return;
+    _sessionExpiredPending = true;
+    logWarn('Server rejected the session token (401) at $endpoint',
+        tag: 'AUTH');
+    sessionExpired.value++;
+  }
+
+  /// User menunda login ulang ("Later"): sinyal berikutnya boleh muncul lagi.
+  void dismissSessionExpired() => _sessionExpiredPending = false;
+
+  /// Login ulang untuk user yang SAMA; project, data, dan foto lokal tetap
+  /// utuh. Menolak bila server mengembalikan akun lain.
+  Future<AuthResult> reauthenticate(String password) async {
+    final current = await getUser();
+    if (current == null) {
+      return AuthResult(success: false, message: 'No signed-in user.');
+    }
+    final auth = await _authenticate(current.username, password);
+    final user = auth.user;
+    if (user == null) return auth;
+    if (user.username.trim().toLowerCase() !=
+        current.username.trim().toLowerCase()) {
+      logWarn('Re-login returned a different account; ignored', tag: 'AUTH');
+      return AuthResult(
+        success: false,
+        message: 'Signed in as a different account. Use ${current.username}.',
+      );
+    }
+    await _saveCredentials(
+        current.copyWith(token: user.token, scope: user.scope));
+    _sessionExpiredPending = false;
+    logInfo('Re-login succeeded for ${current.username}', tag: 'AUTH');
+    await _afterLogin(user);
+    return auth;
   }
 
   // Save credentials locally
@@ -182,6 +291,7 @@ class AuthService {
     // 2. Clear local state DULU — ini yang membuat logout terasa instan
     _cachedToken = null;
     _cachedUser = null;
+    _sessionExpiredPending = false;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);

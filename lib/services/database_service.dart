@@ -5,6 +5,7 @@ import '../models/project_model.dart';
 import '../models/geo_data_model.dart';
 import '../models/form_field_model.dart';
 import '../models/notification_model.dart';
+import '../utils/app_logger.dart';
 import 'tracking/session_repository.dart';
 
 class DatabaseService {
@@ -229,7 +230,7 @@ class DatabaseService {
       orderBy: 'updatedAt DESC',
     );
 
-    return maps.map((map) => _projectFromMap(map)).toList();
+    return _mapRows(maps, _projectFromMap, 'project');
   }
 
   Future<Project?> getProjectById(String id) async {
@@ -286,32 +287,60 @@ class DatabaseService {
       orderBy: 'updatedAt DESC',
     );
 
-    return maps.map((map) => _projectFromMap(map)).toList();
+    return _mapRows(maps, _projectFromMap, 'project');
+  }
+
+  Future<int> getUnsyncedProjectCount() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM projects WHERE isSynced = 0',
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
   }
 
   // ==================== GEO DATA OPERATIONS ====================
 
   Future<void> saveGeoData(GeoData geoData) async {
     final db = await database;
-    
-    final geoDataMap = {
-      'id': geoData.id,
-      'projectId': geoData.projectId,
-      'formData': jsonEncode(geoData.formData),
-      'points': jsonEncode(geoData.points.map((p) => p.toJson()).toList()),
-      'createdAt': geoData.createdAt.millisecondsSinceEpoch,
-      'updatedAt': geoData.updatedAt.millisecondsSinceEpoch,
-      'isSynced': geoData.isSynced ? 1 : 0,
-      'syncedAt': geoData.syncedAt?.millisecondsSinceEpoch,
-      'collectedBy': geoData.collectedBy,
-    };
-
     await db.insert(
       'geo_data',
-      geoDataMap,
+      geoDataToRow(geoData),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
+
+  /// Tulis [geoData] HANYA bila record di DB masih ber-`updatedAt`
+  /// [expectedUpdatedAt] (belum diedit sejak snapshot diambil). Dipakai setelah
+  /// upload: edit user selama upload tidak tertimpa & tak ikut ditandai synced.
+  /// Mengembalikan false bila record sudah berubah (atau terhapus).
+  Future<bool> saveGeoDataIfUnchanged(
+    GeoData geoData, {
+    required DateTime expectedUpdatedAt,
+  }) async {
+    final db = await database;
+    final row = geoDataToRow(geoData)..remove('id');
+    final count = await db.update(
+      'geo_data',
+      row,
+      where: 'id = ? AND updatedAt = ?',
+      whereArgs: [geoData.id, expectedUpdatedAt.millisecondsSinceEpoch],
+    );
+    return count > 0;
+  }
+
+  /// Baris SQLite untuk [geoData]. `collectedBy` kosong disimpan sebagai ''
+  /// karena kolomnya NOT NULL (skema lama) — data server boleh tanpa kolektor.
+  static Map<String, Object?> geoDataToRow(GeoData geoData) => {
+        'id': geoData.id,
+        'projectId': geoData.projectId,
+        'formData': jsonEncode(geoData.formData),
+        'points': jsonEncode(geoData.points.map((p) => p.toJson()).toList()),
+        'createdAt': geoData.createdAt.millisecondsSinceEpoch,
+        'updatedAt': geoData.updatedAt.millisecondsSinceEpoch,
+        'isSynced': geoData.isSynced ? 1 : 0,
+        'syncedAt': geoData.syncedAt?.millisecondsSinceEpoch,
+        'collectedBy': geoData.collectedBy ?? '',
+      };
 
   Future<List<GeoData>> loadGeoData(String projectId) async {
     final db = await database;
@@ -322,7 +351,7 @@ class DatabaseService {
       orderBy: 'createdAt DESC',
     );
 
-    return maps.map((map) => _geoDataFromMap(map)).toList();
+    return _mapRows(maps, _geoDataFromMap, 'geo data');
   }
 
   Future<GeoData?> getGeoDataById(String id) async {
@@ -379,7 +408,7 @@ class DatabaseService {
       orderBy: 'createdAt DESC',
     );
 
-    return maps.map((map) => _geoDataFromMap(map)).toList();
+    return _mapRows(maps, _geoDataFromMap, 'geo data');
   }
 
   Future<List<GeoData>> getSyncedGeoData({String? projectId}) async {
@@ -400,7 +429,7 @@ class DatabaseService {
       orderBy: 'createdAt DESC',
     );
 
-    return maps.map((map) => _geoDataFromMap(map)).toList();
+    return _mapRows(maps, _geoDataFromMap, 'geo data');
   }
 
   Future<int> getGeoDataCount(String projectId) async {
@@ -457,6 +486,26 @@ class DatabaseService {
 
   // ==================== HELPER METHODS ====================
 
+  /// Petakan baris → model satu per satu. Baris rusak DILEWATI dan dicatat di
+  /// log (bukan menggagalkan seluruh daftar: dulu satu baris korup membuat
+  /// daftar project/data kosong). Baris tetap ada di DB untuk diperiksa.
+  static List<T> _mapRows<T>(
+    List<Map<String, dynamic>> rows,
+    T Function(Map<String, dynamic>) convert,
+    String what,
+  ) {
+    final out = <T>[];
+    for (final row in rows) {
+      try {
+        out.add(convert(row));
+      } catch (e, st) {
+        logError('Skipping unreadable $what row id=${row['id']}',
+            tag: 'DB', error: e, stack: st);
+      }
+    }
+    return out;
+  }
+
   Project _projectFromMap(Map<String, dynamic> map) {
     final formFieldsList = jsonDecode(map['formFields']) as List;
 
@@ -478,11 +527,9 @@ class DatabaseService {
       id: map['id'],
       name: map['name'],
       description: map['description'],
-      geometryType: GeometryType.values.firstWhere(
-        (e) => e.toString().split('.').last == map['geometryType'],
-      ),
+      geometryType: geometryTypeFromName(map['geometryType']),
       formFields: formFieldsList
-          .map((f) => FormFieldModel.fromJson(f))
+          .map((f) => FormFieldModel.fromJson(Map<String, dynamic>.from(f as Map)))
           .toList(),
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt']),
@@ -498,19 +545,23 @@ class DatabaseService {
   GeoData _geoDataFromMap(Map<String, dynamic> map) {
     final formData = jsonDecode(map['formData']) as Map<String, dynamic>;
     final pointsList = jsonDecode(map['points']) as List;
-    
+    final collectedBy = map['collectedBy'] as String?;
+
     return GeoData(
       id: map['id'],
       projectId: map['projectId'],
       formData: formData,
-      points: pointsList.map((p) => GeoPoint.fromJson(p)).toList(),
+      points: pointsList
+          .map((p) => GeoPoint.fromJson(Map<String, dynamic>.from(p as Map)))
+          .toList(),
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt']),
       isSynced: map['isSynced'] == 1,
       syncedAt: map['syncedAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['syncedAt'])
           : null,
-      collectedBy: map['collectedBy'],
+      collectedBy:
+          (collectedBy == null || collectedBy.isEmpty) ? null : collectedBy,
     );
   }
 

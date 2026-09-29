@@ -33,6 +33,13 @@ class _FakeStorageService implements StorageService {
   Future<void> saveGeoData(GeoData geoData) async => saved.add(geoData);
 
   @override
+  Future<bool> saveGeoDataIfUnchanged(GeoData geoData,
+      {required DateTime expectedUpdatedAt}) async {
+    saved.add(geoData);
+    return true;
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) =>
       super.noSuchMethod(invocation);
 }

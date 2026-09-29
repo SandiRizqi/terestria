@@ -59,11 +59,19 @@ class ApiService {
   static ApiException _buildApiException(String method, Object e) {
     if (_isConnectionError(e)) {
       return ApiException(
-        'Tidak ada koneksi ke server',
+        'No connection to the server',
         isConnectionError: true,
       );
     }
     return ApiException('$method request failed: $e');
+  }
+
+  /// Server menolak token (401) → minta UI menampilkan login ulang. Tidak
+  /// melempar: pemanggil tetap menerima respons 401 & menangani sendiri.
+  void _checkAuth(http.Response response, String endpoint) {
+    if (response.statusCode == 401) {
+      _authService.reportUnauthorized(endpoint);
+    }
   }
 
   /// Membuat headers dengan token authorization otomatis
@@ -104,10 +112,10 @@ class ApiService {
     final requestHeaders = await _getHeaders(additionalHeaders: headers);
     
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: requestHeaders,
-      ).timeout(ApiConfig.connectionTimeout);
+      final response = await _client
+          .get(Uri.parse(url), headers: requestHeaders)
+          .timeout(ApiConfig.requestTimeout);
+      _checkAuth(response, endpoint);
       return response;
     } catch (e, stack) {
       crashlytics.setContext('http_method', 'GET');
@@ -127,11 +135,14 @@ class ApiService {
     final requestHeaders = await _getHeaders(additionalHeaders: headers);
     
     try {
-      final response = await http.post(
-        Uri.parse(url),
-        headers: requestHeaders,
-        body: body is String ? body : jsonEncode(body),
-      ).timeout(ApiConfig.connectionTimeout);
+      final response = await _client
+          .post(
+            Uri.parse(url),
+            headers: requestHeaders,
+            body: body is String ? body : jsonEncode(body),
+          )
+          .timeout(ApiConfig.requestTimeout);
+      _checkAuth(response, endpoint);
       return response;
     } catch (e, stack) {
       crashlytics.setContext('http_method', 'POST');
@@ -151,11 +162,14 @@ class ApiService {
     final requestHeaders = await _getHeaders(additionalHeaders: headers);
     
     try {
-      final response = await http.put(
-        Uri.parse(url),
-        headers: requestHeaders,
-        body: body is String ? body : jsonEncode(body),
-      ).timeout(ApiConfig.connectionTimeout);
+      final response = await _client
+          .put(
+            Uri.parse(url),
+            headers: requestHeaders,
+            body: body is String ? body : jsonEncode(body),
+          )
+          .timeout(ApiConfig.requestTimeout);
+      _checkAuth(response, endpoint);
       return response;
     } catch (e, stack) {
       crashlytics.setContext('http_method', 'PUT');
@@ -175,12 +189,14 @@ class ApiService {
     final requestHeaders = await _getHeaders(additionalHeaders: headers);
     
     try {
-      final response = await http.patch(
-        Uri.parse(url),
-        headers: requestHeaders,
-        body: body is String ? body : jsonEncode(body),
-      ).timeout(ApiConfig.connectionTimeout);
-      
+      final response = await _client
+          .patch(
+            Uri.parse(url),
+            headers: requestHeaders,
+            body: body is String ? body : jsonEncode(body),
+          )
+          .timeout(ApiConfig.requestTimeout);
+      _checkAuth(response, endpoint);
       return response;
     } catch (e) {
       throw _buildApiException('PATCH', e);
@@ -197,11 +213,16 @@ class ApiService {
     final requestHeaders = await _getHeaders(additionalHeaders: headers);
     
     try {
-      final response = await http.delete(
-        Uri.parse(url),
-        headers: requestHeaders,
-        body: body != null ? (body is String ? body : jsonEncode(body)) : null,
-      ).timeout(ApiConfig.connectionTimeout);
+      final response = await _client
+          .delete(
+            Uri.parse(url),
+            headers: requestHeaders,
+            body: body != null
+                ? (body is String ? body : jsonEncode(body))
+                : null,
+          )
+          .timeout(ApiConfig.requestTimeout);
+      _checkAuth(response, endpoint);
       return response;
     } catch (e, stack) {
       crashlytics.setContext('http_method', 'DELETE');
@@ -298,6 +319,9 @@ class ApiService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return jsonDecode(response.body);
+      }
+      if (response.statusCode == 401) {
+        _authService.reportUnauthorized(url);
       }
 
       crashlytics.recordError(

@@ -1,3 +1,5 @@
+import 'json_parse.dart';
+
 class GeoPoint {
   final double latitude;
   final double longitude;
@@ -34,22 +36,51 @@ class GeoPoint {
       'altitude': altitude,
       'accuracy': accuracy,
       'speed': speed,
-      'timestamp': timestamp.toIso8601String(),
+      // UTC eksplisit (akhiran Z) — tak bergeser bila zona waktu HP berubah.
+      'timestamp': timestamp.toUtc().toIso8601String(),
       'fixQuality': fixQuality,
       'satelliteCount': satelliteCount,
     };
   }
 
+  /// Toleran: angka boleh int/double/string (server lama), `fixQuality` /
+  /// `satelliteCount` boleh camelCase atau snake_case. Lat/lon/timestamp wajib;
+  /// bila rusak melempar [FormatException] yang menyebut field-nya.
   factory GeoPoint.fromJson(Map<String, dynamic> json) {
     return GeoPoint(
-      latitude: json['latitude'],
-      longitude: json['longitude'],
-      altitude: json['altitude'],
-      accuracy: json['accuracy'],
-      speed: json['speed'] != null ? (json['speed'] as num).toDouble() : null,
-      timestamp: DateTime.parse(json['timestamp']),
-      fixQuality: json['fixQuality'],
-      satelliteCount: json['satelliteCount'],
+      latitude: requireDouble(json['latitude'], 'latitude'),
+      longitude: requireDouble(json['longitude'], 'longitude'),
+      altitude: parseDouble(json['altitude']),
+      accuracy: parseDouble(json['accuracy']),
+      speed: parseDouble(json['speed']),
+      timestamp: requireDateTime(json['timestamp'], 'timestamp'),
+      fixQuality: parseString(json['fixQuality'] ?? json['fix_quality']),
+      satelliteCount:
+          parseInt(json['satelliteCount'] ?? json['satellite_count']),
+    );
+  }
+
+  GeoPoint copyWith({
+    double? latitude,
+    double? longitude,
+    double? altitude,
+    double? accuracy,
+    double? speed,
+    DateTime? timestamp,
+    String? fixQuality,
+    int? satelliteCount,
+    bool? recordable,
+  }) {
+    return GeoPoint(
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      altitude: altitude ?? this.altitude,
+      accuracy: accuracy ?? this.accuracy,
+      speed: speed ?? this.speed,
+      timestamp: timestamp ?? this.timestamp,
+      fixQuality: fixQuality ?? this.fixQuality,
+      satelliteCount: satelliteCount ?? this.satelliteCount,
+      recordable: recordable ?? this.recordable,
     );
   }
 
@@ -88,27 +119,42 @@ class GeoData {
       'projectId': projectId,
       'formData': formData,
       'points': points.map((p) => p.toJson()).toList(),
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt.toIso8601String(),
+      'createdAt': createdAt.toUtc().toIso8601String(),
+      'updatedAt': updatedAt.toUtc().toIso8601String(),
       'isSynced': isSynced,
-      'syncedAt': syncedAt?.toIso8601String(),
+      'syncedAt': syncedAt?.toUtc().toIso8601String(),
       'collectedBy': collectedBy, // Save as camelCase for local storage consistency
     };
   }
 
+  /// Mendukung camelCase (lokal) dan snake_case (server). Field wajib yang
+  /// rusak melempar [FormatException] yang menyebut field-nya; field opsional
+  /// yang rusak diperlakukan sebagai kosong.
   factory GeoData.fromJson(Map<String, dynamic> json) {
+    final id = parseString(json['id']);
+    final projectId = parseString(json['projectId'] ?? json['project_id']);
+    if (id == null) throw const FormatException('Missing "id"');
+    if (projectId == null) {
+      throw FormatException('Missing "project_id" for record $id');
+    }
+    final rawForm = json['formData'] ?? json['form_data'];
+    final rawPoints = json['points'];
     return GeoData(
-      id: json['id'],
-      projectId: json['projectId'] ?? json['project_id'], // Support both formats
-      formData: json['formData'] ?? json['form_data'] ?? {}, // Support both formats
-      points: (json['points'] as List).map((p) => GeoPoint.fromJson(p)).toList(),
-      createdAt: DateTime.parse(json['createdAt'] ?? json['created_at']), // Support both formats
-      updatedAt: DateTime.parse(json['updatedAt'] ?? json['updated_at']), // Support both formats
-      isSynced: json['isSynced'] ?? json['is_synced'] ?? false, // Support both formats
-      syncedAt: (json['syncedAt'] ?? json['synced_at']) != null 
-          ? DateTime.parse(json['syncedAt'] ?? json['synced_at']) 
-          : null,
-      collectedBy: json['collectedBy'] ?? json['collected_by'], // Support both snake_case and camelCase
+      id: id,
+      projectId: projectId,
+      formData: rawForm is Map ? Map<String, dynamic>.from(rawForm) : {},
+      points: rawPoints is List
+          ? rawPoints
+              .map((p) => GeoPoint.fromJson(Map<String, dynamic>.from(p as Map)))
+              .toList()
+          : <GeoPoint>[],
+      createdAt: requireDateTime(
+          json['createdAt'] ?? json['created_at'], 'created_at'),
+      updatedAt: requireDateTime(
+          json['updatedAt'] ?? json['updated_at'], 'updated_at'),
+      isSynced: parseBool(json['isSynced'] ?? json['is_synced']),
+      syncedAt: parseDateTime(json['syncedAt'] ?? json['synced_at']),
+      collectedBy: parseString(json['collectedBy'] ?? json['collected_by']),
     );
   }
 

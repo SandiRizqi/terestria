@@ -46,11 +46,23 @@ class StorageService {
     return await _db.getUnsyncedProjects();
   }
 
+  /// Jumlah project belum tersinkron (hitung SQL — ikut menghitung baris yang
+  /// tak bisa di-parse, supaya tak terlewat oleh pengaman logout).
+  Future<int> getUnsyncedProjectCount() => _db.getUnsyncedProjectCount();
+
   // ==================== GEO DATA OPERATIONS ====================
 
   /// Save or update a single geo data
   Future<void> saveGeoData(GeoData geoData) async {
     await _db.saveGeoData(geoData);
+  }
+
+  /// Simpan hanya bila record belum diedit sejak snapshot ([expectedUpdatedAt]).
+  /// False = record berubah/terhapus selama proses (mis. upload) → tak ditimpa.
+  Future<bool> saveGeoDataIfUnchanged(GeoData geoData,
+      {required DateTime expectedUpdatedAt}) {
+    return _db.saveGeoDataIfUnchanged(geoData,
+        expectedUpdatedAt: expectedUpdatedAt);
   }
 
   /// Load all geo data for a specific project

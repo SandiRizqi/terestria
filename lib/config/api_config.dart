@@ -32,13 +32,27 @@ class ApiConfig {
   static const String fcmTokenDeactivateAllEndpoint = '/mobile/fcm-tokens/deactivate_all/';
   
   // Timeout settings
-  static const Duration connectionTimeout = Duration(seconds: 300);
-  static const Duration receiveTimeout = Duration(seconds: 600);
+  /// Batas satu request JSON (koneksi + respons). Dulu 300 dtk → di sinyal
+  /// lemah app tampak macet 5 menit sebelum gagal. 90 dtk masih cukup untuk
+  /// satu halaman pull berisi track panjang di jaringan ±64 kbps.
+  static const Duration requestTimeout = Duration(seconds: 90);
 
-  /// Timeout khusus upload file (foto). Lebih longgar dari request biasa karena
-  /// foto bisa besar dan jaringan lapangan lambat, tapi tetap dibatasi supaya
-  /// upload tidak menggantung tanpa batas.
+  /// Login: user menunggu di layar login → gagal cepat & beri pesan jelas.
+  static const Duration loginTimeout = Duration(seconds: 30);
+
+  /// Nama lama dipertahankan untuk kompatibilitas; kini = [requestTimeout].
+  static const Duration connectionTimeout = requestTimeout;
+
+  /// Timeout upload bawaan bila ukuran file tak diketahui.
   static const Duration uploadTimeout = Duration(seconds: 120);
+
+  /// Timeout upload berdasar ukuran file: 30 dtk dasar + waktu kirim pada
+  /// ±8 KB/s (≈64 kbps, sinyal lapangan buruk), dibatasi 60 dtk–10 menit.
+  /// Foto 500 KB → ±90 dtk; foto PNG lama 5 MB → 10 menit (bukan gagal di 120 dtk).
+  static Duration uploadTimeoutFor(int bytes) {
+    final seconds = 30 + (bytes / (8 * 1024)).ceil();
+    return Duration(seconds: seconds.clamp(60, 600));
+  }
   
   // API Keys (jika diperlukan)
   static const String? apiKey = null; // Ganti dengan API key Anda

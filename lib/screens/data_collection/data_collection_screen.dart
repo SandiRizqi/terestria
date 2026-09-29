@@ -1230,8 +1230,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Data'),
-        content: const Text('Are you sure you want to delete this data?'),
+        title: const Text('Delete record?'),
+        content: Text(data.isSynced
+            ? 'This record is already on the server. Deleting it here only '
+                'removes it from this device — it stays on the server and can '
+                'come back after a full download. Ask an administrator to '
+                'delete it on the server.'
+            : 'This record has not been uploaded yet. Deleting it removes it '
+                'permanently.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

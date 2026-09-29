@@ -1,3 +1,5 @@
+import 'json_parse.dart';
+
 enum FieldType { text, number, decimal, date, dropdown, checkbox, photo }
 
 class FormFieldModel {
@@ -34,18 +36,33 @@ class FormFieldModel {
     };
   }
 
+  /// Toleran: tipe tak dikenal → [FieldType.text] (bukan melempar dan
+  /// menggagalkan seluruh project), angka boleh int/string, key boleh
+  /// camelCase atau snake_case.
   factory FormFieldModel.fromJson(Map<String, dynamic> json) {
+    final label = parseString(json['label']) ?? '';
+    final rawOptions = json['options'];
     return FormFieldModel(
-      id: json['id'],
-      label: json['label'],
-      type: FieldType.values.firstWhere(
-        (e) => e.toString().split('.').last == json['type'],
-      ),
-      required: json['required'] ?? false,
-      options: json['options'] != null ? List<String>.from(json['options']) : null,
-      defaultValue: json['defaultValue'],
-      maxPhotos: json['maxPhotos'],
-      minPhotos: json['minPhotos'],
+      id: parseString(json['id']) ?? label,
+      label: label,
+      type: fieldTypeFromName(json['type']),
+      required: parseBool(json['required']),
+      options: rawOptions is List
+          ? rawOptions.map((e) => e.toString()).toList()
+          : null,
+      defaultValue: parseString(json['defaultValue'] ?? json['default_value']),
+      maxPhotos: parseInt(json['maxPhotos'] ?? json['max_photos']),
+      minPhotos: parseInt(json['minPhotos'] ?? json['min_photos']),
     );
   }
+}
+
+/// Nama tipe field (server/lokal, tak peka huruf besar) → [FieldType].
+/// Tipe tak dikenal (mis. tipe baru dari server) → [FieldType.text].
+FieldType fieldTypeFromName(Object? name) {
+  final n = name?.toString().trim().toLowerCase();
+  for (final t in FieldType.values) {
+    if (t.name == n) return t;
+  }
+  return FieldType.text;
 }

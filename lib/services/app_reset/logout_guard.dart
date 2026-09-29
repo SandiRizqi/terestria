@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../models/geo_data_model.dart';
@@ -31,16 +33,32 @@ class PendingLogoutData {
 
 /// Hitung [PendingLogoutData]. Sumber data bisa disuntik (test); default
 /// memakai StorageService + TrackingSessionManager milik app.
+///
+/// Jumlah project/data juga dihitung lewat COUNT SQL (bila sumber default):
+/// baris yang tak bisa di-parse tetap terhitung, jadi tak ikut terhapus
+/// diam-diam saat logout.
 Future<PendingLogoutData> countPendingLogoutData({
   Future<List<Project>> Function()? unsyncedProjects,
   Future<List<GeoData>> Function()? unsyncedGeoData,
   Future<List<Project>> Function()? allProjects,
   int Function()? liveTrackingSessions,
+  Future<int> Function()? unsyncedProjectCount,
+  Future<int> Function()? unsyncedGeoDataCount,
 }) async {
   final storage = StorageService();
   final projects =
       await (unsyncedProjects ?? storage.getUnsyncedProjects)();
   final geoData = await (unsyncedGeoData ?? storage.getUnsyncedGeoData)();
+  final projectCount = unsyncedProjectCount != null
+      ? await unsyncedProjectCount()
+      : (unsyncedProjects == null
+          ? await storage.getUnsyncedProjectCount()
+          : projects.length);
+  final geoDataCount = unsyncedGeoDataCount != null
+      ? await unsyncedGeoDataCount()
+      : (unsyncedGeoData == null
+          ? await storage.getUnsyncedGeoDataCount()
+          : geoData.length);
   final byId = {
     for (final p in await (allProjects ?? storage.loadProjects)()) p.id: p,
   };
@@ -54,8 +72,8 @@ Future<PendingLogoutData> countPendingLogoutData({
   final sessions = (liveTrackingSessions ??
       () => TrackingSessionManager.instance.activeCount)();
   return PendingLogoutData(
-    projects: projects.length,
-    geoData: geoData.length,
+    projects: math.max(projects.length, projectCount),
+    geoData: math.max(geoData.length, geoDataCount),
     photos: photos,
     trackingSessions: sessions,
   );
