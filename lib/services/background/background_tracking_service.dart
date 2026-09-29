@@ -13,9 +13,31 @@ import '../gps_settings_service.dart';
 import '../gps/gps_filter_pipeline.dart';
 import '../../utils/app_logger.dart';
 
+/// Keputusan saat [BackgroundTrackingService.start] dipanggil.
+enum ServiceStartDecision { alreadyRunning, restartStale, freshStart }
+
 /// Service untuk background tracking dengan proper isolate communication
 @pragma('vm:entry-point')
 class BackgroundTrackingService {
+  /// Cache `_isRunning` bisa basi karena isolate bisa `stopSelf()` sendiri.
+  /// Keputusan start mengikuti status NYATA dari plugin ([actualRunning]).
+  static ServiceStartDecision decideServiceStart({
+    required bool cachedRunning,
+    required bool actualRunning,
+  }) {
+    if (actualRunning) return ServiceStartDecision.alreadyRunning;
+    return cachedRunning
+        ? ServiceStartDecision.restartStale
+        : ServiceStartDecision.freshStart;
+  }
+
+  /// Baca flag `isRunning` dari event `service_status`; null bila event rusak.
+  static bool? runningFromStatusEvent(Object? event) {
+    if (event is! Map) return null;
+    final v = event['isRunning'];
+    return v is bool ? v : null;
+  }
+
   static final BackgroundTrackingService _instance = BackgroundTrackingService._internal();
   factory BackgroundTrackingService() => _instance;
   BackgroundTrackingService._internal();
@@ -132,10 +154,16 @@ class BackgroundTrackingService {
     });
     
     // Setup status listener
+    // Isolate melapor `isRunning:false` sebelum stopSelf() (heartbeat timeout,
+    // lokasi mati, error) → cache ikut mati, Start berikutnya menyalakan ulang.
     _statusSubscription = _service.on('service_status').listen((event) {
-      if (event != null && event is Map) {
-        _isRunning = event['isRunning'] as bool? ?? false;
-        logDebug('📊 Service status: ${_isRunning ? "Running" : "Stopped"}');
+      final running = runningFromStatusEvent(event);
+      if (running == null) return;
+      final wasRunning = _isRunning;
+      _isRunning = running;
+      if (wasRunning && !running) {
+        logError('⚠️ Background service berhenti sendiri (dilaporkan isolate)');
+        if (Platform.isAndroid) WakelockPlus.disable();
       }
     });
     
@@ -185,11 +213,23 @@ class BackgroundTrackingService {
       await initialize();
     }
     
-    if (_isRunning) {
-      logDebug('⚠️ Background service already running');
-      return true;
+    final cached = _isRunning;
+    switch (decideServiceStart(
+        cachedRunning: cached, actualRunning: await _queryActualRunning())) {
+      case ServiceStartDecision.alreadyRunning:
+        logDebug('✅ Background service already running');
+        _isRunning = true;
+        // Cache mati tapi service masih hidup (mis. dari sesi app sebelumnya)
+        // → listener belum terpasang di proses ini.
+        if (!cached) _setupListeners();
+        return true;
+      case ServiceStartDecision.restartStale:
+        logError('⚠️ Status "running" basi — service sudah mati, start ulang');
+        _isRunning = false;
+      case ServiceStartDecision.freshStart:
+        break;
     }
-    
+
     try {
       // Verifikasi permission di foreground sebelum start background service
       logDebug('🔑 Verifying location permission in foreground...');
@@ -291,9 +331,19 @@ class BackgroundTrackingService {
     }
   }
   
+  /// Status nyata dari plugin; fallback ke cache bila query gagal.
+  Future<bool> _queryActualRunning() async {
+    try {
+      return await _service.isRunning();
+    } catch (e) {
+      logError('⚠️ Gagal query status service: $e');
+      return _isRunning;
+    }
+  }
+
   /// Stop background tracking
   Future<void> stop() async {
-    if (!_isRunning) {
+    if (!_isRunning && !await _queryActualRunning()) {
       logDebug('⚠️ Background service not running');
       return;
     }
@@ -352,6 +402,13 @@ class BackgroundTrackingService {
     );
   }
   
+  /// Laporkan ke app bahwa service berhenti SEBELUM stopSelf(), agar cache
+  /// `_isRunning` di app tidak basi (Start berikutnya menyalakan ulang).
+  static void _reportStoppedAndStop(ServiceInstance service) {
+    service.invoke('service_status', {'isRunning': false});
+    service.stopSelf();
+  }
+
   /// Background service entry point
   @pragma('vm:entry-point')
   static Future<void> _onStart(ServiceInstance service) async {
@@ -386,7 +443,7 @@ class BackgroundTrackingService {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         logError('❌ Location service not enabled');
-        service.stopSelf();
+        _reportStoppedAndStop(service);
         return;
       }
       
@@ -409,7 +466,7 @@ class BackgroundTrackingService {
         heartbeatTimer?.cancel();
         await subscription?.cancel();
         await NotificationService.cancelNotification();
-        service.stopSelf();
+        _reportStoppedAndStop(service);
       });
       
       service.on('pause_tracking').listen((event) {
@@ -439,7 +496,7 @@ class BackgroundTrackingService {
           timer.cancel();
           await subscription?.cancel();
           await NotificationService.cancelNotification();
-          service.stopSelf();
+          _reportStoppedAndStop(service);
         } else {
           logDebug('💚 Service alive - last heartbeat ${timeSinceLastHeartbeat.inSeconds}s ago');
         }
@@ -561,7 +618,7 @@ class BackgroundTrackingService {
       
     } catch (e) {
       logError('❌ Error in background service: $e');
-      service.stopSelf();
+      _reportStoppedAndStop(service);
     }
   }
   
