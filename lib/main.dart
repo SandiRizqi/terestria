@@ -14,6 +14,7 @@ import "services/photo_migration_service.dart";
 import 'services/update_service.dart';
 import 'app_initializer.dart';
 import 'services/settings_service.dart';
+import 'services/tracking/tracking_engine.dart';
 import 'services/tracking/tracking_persistence_coordinator.dart';
 
 /// Koordinator persistensi sesi tracking (restore + flush ke SQLite). Disimpan
@@ -52,21 +53,17 @@ void main() async {
       // 4. Initialize app services (includes FCM if Firebase is ready)
       await AppInitializer().initialize();
 
-      // 5. Pulihkan sesi tracking multi-project dari SQLite + mulai persistensi.
-      //    Saat sesi TERAKHIR berhenti, hentikan background service terpusat
-      //    (bukan lagi tiap layar collection ditutup).
+      // 5. Pulihkan sesi tracking multi-project dari SQLite + mulai persistensi,
+      //    lalu pasang TrackingEngine: pemilik tunggal feed GPS (service +
+      //    heartbeat) selama ada sesi merekam — bukan lagi layar collection.
       try {
-        trackingPersistence = TrackingPersistenceCoordinator(
-          onAllSessionsStopped: () {
-            LocationServiceV2().stopBackgroundTracking();
-            LocationServiceV2().stopActiveTracking();
-          },
-        );
+        trackingPersistence = TrackingPersistenceCoordinator();
         await trackingPersistence!.restore();
         trackingPersistence!.attach();
       } catch (e) {
         debugPrint('⚠️ Gagal restore/attach tracking persistence: $e');
       }
+      TrackingEngine.instance.attach();
 
       runApp(const TerestriaApp());
     },

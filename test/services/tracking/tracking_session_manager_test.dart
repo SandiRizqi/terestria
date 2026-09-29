@@ -139,11 +139,14 @@ void main() {
       expect(m.sessionFor('a')!.points.length, 2);
     });
 
-    test('shouldStopBackgroundOnFinish: hanya bila ≤1 sesi', () {
-      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(0), isTrue);
-      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(1), isTrue);
-      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(2), isFalse);
-      expect(TrackingSessionManager.shouldStopBackgroundOnFinish(3), isFalse);
+    test('recordingCount = sesi yang tidak di-pause', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.start(_proj('b'));
+      expect(m.recordingCount, 2);
+      m.pause('a');
+      expect(m.recordingCount, 1);
+      expect(m.activeCount, 2);
     });
 
     test('notifyListeners terpanggil saat start & addPoint', () {

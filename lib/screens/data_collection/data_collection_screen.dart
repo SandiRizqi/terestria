@@ -21,6 +21,7 @@ import '../../models/basemap_model.dart';
 import '../../models/form_field_model.dart';
 import '../../services/location_service_v2.dart';
 import '../../services/storage_service.dart';
+import '../../services/tracking/tracking_engine.dart';
 import '../../services/tracking/tracking_session_manager.dart';
 import '../../services/basemap_service.dart';
 import '../../services/tile_cache_sqlite_service.dart';
@@ -87,7 +88,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   bool _isTracking = false;
   bool _isPaused = false;
   bool _isSaving = false;
-  Timer? _heartbeatTimer; // ✅ NEW: Heartbeat timer
   Map<String, dynamic> _formData = {};
   CollectionMode _collectionMode = CollectionMode.tracking;
   Basemap? _selectedBasemap;
@@ -224,8 +224,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       case AppLifecycleState.paused:
         // App went to background
         print('⏸️ App paused - keeping background tracking alive');
-        // ✅ FIX: DON'T cancel anything, let it run
-        // Heartbeat will keep background service alive
+        // Jangan batalkan apa pun: TrackingEngine (app-level) menjaga service
+        // + heartbeat selama ada sesi merekam.
         break;
 
       case AppLifecycleState.inactive:
@@ -1248,26 +1248,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // Cancel compass stream (UI only)
     _compassSubscription?.cancel();
-    
-    // ✅ Cancel heartbeat timer
-    _heartbeatTimer?.cancel();
-    print('💔 Heartbeat timer stopped');
 
     // Cancel viewport culling debounce
     _cullingDebounce?.cancel();
 
-    // Multi-project: JANGAN hentikan background service bila masih ada sesi
-    // aktif di manajer — titik harus tetap masuk walau layar ini ditutup.
-    // Service dihentikan terpusat oleh TrackingPersistenceCoordinator saat sesi
-    // terakhir berhenti (activeCount→0).
-    if (_isTracking && TrackingSessionManager.instance.activeCount == 0) {
-      print('⚠️ Dispose while tracking & tak ada sesi → emergency stop...');
-      _locationService.stopBackgroundTracking();
-      _locationService.stopActiveTracking();
-    } else if (_isTracking) {
-      print('ℹ️ Dispose: sesi masih aktif → tracking lanjut di background');
-    }
-    
+    // Tracking TIDAK dihentikan di sini: service + heartbeat dimiliki
+    // TrackingEngine (app-level) dan tetap hidup selama ada sesi merekam.
+
     // Cancel location stream
     _unifiedLocationSubscription?.cancel();
     print('🗑️ Location stream cancelled');
@@ -1443,8 +1430,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         return;
       }
     } else {
-      // ✅ CRITICAL: Use background stream when actively tracking
-      if (_locationService.isActivelyTracking) {
+      // Pakai stream background selama ADA sesi merekam (project mana pun) —
+      // saat itu TrackingEngine menjaga service hidup. Tanpa sesi merekam,
+      // service dimatikan → pakai stream foreground agar marker tetap jalan.
+      if (TrackingSessionManager.instance.recordingCount > 0) {
         locationStream = _locationService.backgroundLocationStream;
         print('📱 ✅ Using BACKGROUND location stream (tracking active)');
       } else {
@@ -1517,29 +1506,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     }
   }
 
-  // ✅ NEW: Start sending heartbeat to background service
-  void _startHeartbeat() {
-    _heartbeatTimer?.cancel();
-    
-    // Send heartbeat every 5 seconds
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_isTracking && mounted) {
-        _locationService.sendHeartbeat();
-        print('💓 Heartbeat sent to background service');
-      }
-    });
-    
-    // Send first heartbeat immediately
-    _locationService.sendHeartbeat();
-    print('💚 Heartbeat started');
-  }
-  
-  // ✅ NEW: Stop sending heartbeat
-  void _stopHeartbeat() {
-    _heartbeatTimer?.cancel();
-    print('💔 Heartbeat stopped');
-  }
-
   void _startTracking() async {
     // 1. Check Emlid connection first
     if (_locationService.currentProvider == LocationProvider.emlid) {
@@ -1587,12 +1553,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // Lanjutkan sesi bila sebelumnya di-pause (mis. re-start setelah finish).
     TrackingSessionManager.instance.resume(widget.project.id);
 
-    // 3. Start background tracking with detailed error handling
+    // 3. Pastikan feed GPS hidup. Service + heartbeat dimiliki TrackingEngine
+    //    (app-level) — tetap jalan walau layar ini ditutup.
     try {
       _locationService.startActiveTracking();
 
-      // Always use background tracking service for reliable tracking
-      final success = await _locationService.startBackgroundTracking();
+      final success = await TrackingEngine.instance.ensureRunning();
 
       if (!success) {
         throw Exception('Background tracking service failed to start');
@@ -1651,9 +1617,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     await Future.delayed(const Duration(milliseconds: 500));
     _startUnifiedLocationStream();
     print('✅ Stream restarted to use background location stream');
-    
-    // 6. ✅ NEW: Start heartbeat to keep background service alive
-    _startHeartbeat();
   }
 
 // ✅ NEW METHOD: Show Emlid connection error dialog
@@ -1807,12 +1770,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _pauseTracking() async {
-    // 🔧 FIX: Just set pause flag, stream keeps running
     setState(() => _isPaused = true);
     // Sinkronkan pause ke sesi manajer agar tak terus merekam saat di-pause.
+    // Bila ini sesi merekam terakhir, TrackingEngine mematikan service.
     TrackingSessionManager.instance.pause(widget.project.id);
+    _startUnifiedLocationStream(); // pilih ulang stream (bg ↔ fg)
 
-    print('⏸️ Tracking paused (stream continues)');
+    print('⏸️ Tracking paused');
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1823,9 +1787,24 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _resumeTracking() async {
-    // 🔧 FIX: Just clear pause flag, stream already running
     setState(() => _isPaused = false);
     TrackingSessionManager.instance.resume(widget.project.id);
+
+    // Resume bisa menyalakan service kembali (mis. sesi hasil restore).
+    final ok = await TrackingEngine.instance.ensureRunning();
+    if (!mounted) return;
+    if (!ok) {
+      TrackingSessionManager.instance.pause(widget.project.id);
+      setState(() => _isPaused = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gagal menyalakan GPS background. Cek izin lokasi.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    _startUnifiedLocationStream(); // pilih ulang stream (fg → bg)
 
     print('▶️ Tracking resumed');
 
@@ -1838,38 +1817,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _finishTracking() async {
-    // ✅ NEW: Stop heartbeat first
-    _stopHeartbeat();
-    
-    // 🔧 FIXED: Stop background service properly — TAPI hanya bila tak ada
-    // project lain yang masih tracking (multi-project). Menghentikan 1 project
-    // tak boleh mematikan feed background project lain.
-    if (TrackingSessionManager.shouldStopBackgroundOnFinish(
-        TrackingSessionManager.instance.activeCount)) {
-      try {
-        print('⏹️ Stopping background tracking...');
-        await _locationService.stopBackgroundTracking();
-        print('✅ Background tracking stopped');
-      } catch (e, stack) {
-        print('❌ Error stopping background tracking: $e');
-        crashlytics.recordError(e, stack,
-            reason: 'DataCollection: stopBackgroundTracking failed');
-      }
-    } else {
-      print('ℹ️ Background service tetap jalan (project lain masih tracking)');
-    }
-
-    // Stop persistent tracking in service
-    _locationService.stopActiveTracking();
-
     setState(() {
       _isTracking = false;
       _isPaused = false;
     });
 
-    // Pause sesi manajer agar TIDAK terus bertambah lewat feed background setelah
-    // user menghentikan tracking di layar ini (penting di multi-project: feed
-    // global masih jalan untuk project lain). Save akan melepas sesi sepenuhnya.
+    // Pause sesi manajer agar TIDAK terus bertambah setelah user menghentikan
+    // tracking di layar ini. Service dimatikan TrackingEngine hanya bila tak
+    // ada project lain yang masih merekam. Save melepas sesi sepenuhnya.
     TrackingSessionManager.instance.pause(widget.project.id);
 
     print('⏹️ Tracking finished (stream continues for blue marker)');

@@ -39,6 +39,9 @@ class TrackingSessionManager extends ChangeNotifier {
   Map<String, TrackingSession> get sessions => Map.unmodifiable(_sessions);
   List<TrackingSession> get activeSessions => _sessions.values.toList();
   int get activeCount => _sessions.length;
+
+  /// Sesi yang sedang merekam (tidak di-pause) — penentu nyala/mati feed GPS.
+  int get recordingCount => _sessions.values.where((s) => !s.paused).length;
   bool get hasActive => _sessions.isNotEmpty;
 
   bool isActive(String projectId) => _sessions.containsKey(projectId);
@@ -124,9 +127,4 @@ class TrackingSessionManager extends ChangeNotifier {
     }
     if (sessions.isNotEmpty) notifyListeners();
   }
-
-  /// Saat sebuah layar menghentikan tracking-nya, background service hanya boleh
-  /// dimatikan bila TAK ada sesi lain (≤1 aktif) — mencegah stop 1 project ikut
-  /// mematikan feed background project lain.
-  static bool shouldStopBackgroundOnFinish(int activeCount) => activeCount <= 1;
 }

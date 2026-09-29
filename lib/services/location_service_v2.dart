@@ -470,6 +470,10 @@ Future<bool> initialize() async {
     await _backgroundTracking.resume();
   }
   
+  /// Status background service (dilaporkan isolate, tak basi — lihat
+  /// [BackgroundTrackingService.decideServiceStart]).
+  bool get isBackgroundServiceRunning => _backgroundTracking.isRunning;
+
   /// Get background location stream
   Stream<GeoPoint> get backgroundLocationStream => 
       _backgroundTracking.locationStream;

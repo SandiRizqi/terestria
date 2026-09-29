@@ -4,7 +4,7 @@ Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Branch: `main`
 
 ## Phase 1 — Hotfix: titik terekam lagi (C1–C3)
 - [x] **Task 1 — Status background service nyata** (S) ✅ 7 test — isolate lapor `isRunning:false` sebelum `stopSelf`; `start()` verifikasi ke plugin
-- [ ] **Task 2 — TrackingEngine keep-alive app-level** (M) — heartbeat & start/stop service pindah dari layar ke engine (0→1 / 1→0)
+- [x] **Task 2 — TrackingEngine keep-alive app-level** (M) ✅ 8 test engine — heartbeat & start/stop service pindah dari layar ke engine (0→1 / 1→0)
 - [ ] **Task 3 — Restore & re-entry terhubung engine** (S) — restore = paused; `_isPaused` dipulihkan; Resume menyalakan engine
 
 ### Checkpoint A (device)
