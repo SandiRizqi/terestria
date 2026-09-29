@@ -139,6 +139,7 @@ class _AnalysisCompaniesScreenState extends State<AnalysisCompaniesScreen> {
           typeCode: widget.typeCode,
           companyId: company.companyId,
           title: company.compName,
+          projectName: widget.typeName,
           service: widget.service,
         ),
       ),

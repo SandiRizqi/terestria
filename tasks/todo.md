@@ -3,7 +3,7 @@
 Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-basemap-pdf.md](plan-basemap-pdf.md) · Branch: `main`
 
 ## Phase 1 — Nama basemap Analysis Report
-- [ ] **T1 — Prefix project pada nama basemap** (S) — `"<project> · <judul>"`, project = `AnalysisType.name`, tak dobel prefix
+- [x] **T1 — Prefix project pada nama basemap** (S) — `"<project> · <judul>"`, project = `AnalysisType.name`, tak dobel prefix
 
 ### Checkpoint 1
 - [ ] Test hijau; nama basemap lengkap di pemilih basemap

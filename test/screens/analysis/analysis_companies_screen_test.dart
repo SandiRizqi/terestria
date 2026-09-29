@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:geoform_app/screens/analysis/analysis_companies_screen.dart';
+import 'package:geoform_app/screens/analysis/analysis_files_screen.dart';
 import 'package:geoform_app/services/analysis_report_service.dart';
 
 typedef _Handler = Future<http.Response> Function(
@@ -59,6 +60,23 @@ void main() {
 
     expect(find.text('PT NPN'), findsOneWidget);
     expect(find.text('PT ABC'), findsOneWidget);
+  });
+
+  testWidgets('tap PT → daftar berkas membawa nama project (prefix basemap)',
+      (tester) async {
+    final service = _service((endpoint, query) async {
+      return _companiesPage(page: 1, totalPages: 1, names: ['PT NPN']);
+    });
+
+    await tester.pumpWidget(_wrap(service));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('PT NPN'));
+    await tester.pumpAndSettle();
+
+    final files =
+        tester.widget<AnalysisFilesScreen>(find.byType(AnalysisFilesScreen));
+    expect(files.title, 'PT NPN');
+    expect(files.projectName, 'Kerapatan');
   });
 
   testWidgets('shows empty state when no PTs', (tester) async {

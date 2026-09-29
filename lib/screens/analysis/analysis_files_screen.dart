@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/analysis/analysis_file_model.dart';
 import '../../models/basemap_model.dart';
+import '../../services/analysis/analysis_basemap_name.dart';
 import '../../services/analysis_report_service.dart';
 import '../../services/analysis_pdf_downloader.dart';
 import '../../services/basemap_service.dart';
@@ -21,6 +22,10 @@ class AnalysisFilesScreen extends StatefulWidget {
   final String typeCode;
   final int companyId;
   final String title;
+
+  /// Nama project (level pertama Analysis Report, `AnalysisType.name`) —
+  /// jadi prefix nama basemap agar asal project-nya jelas.
+  final String? projectName;
   final AnalysisReportService? service;
 
   const AnalysisFilesScreen({
@@ -28,6 +33,7 @@ class AnalysisFilesScreen extends StatefulWidget {
     required this.typeCode,
     required this.companyId,
     required this.title,
+    this.projectName,
     this.service,
   }) : super(key: key);
 
@@ -157,11 +163,12 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
       return;
     }
 
+    final name = analysisBasemapName(widget.projectName, file.title);
     final status = ValueNotifier<String>('Mengunduh PDF...');
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _AddBasemapProgressDialog(title: file.title, status: status),
+      builder: (_) => _AddBasemapProgressDialog(title: name, status: status),
     );
 
     String? basemapId;
@@ -171,7 +178,7 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
       basemapId = _uuid.v4();
       final base = Basemap(
         id: basemapId,
-        name: file.title,
+        name: name,
         type: BasemapType.pdf,
         urlTemplate: '',
         pdfPath: pdfPath,
@@ -191,7 +198,7 @@ class _AnalysisFilesScreenState extends State<AnalysisFilesScreen> {
 
       if (!mounted) return;
       Navigator.pop(context); // tutup dialog progress
-      _showSnack('Basemap "${file.title}" berhasil ditambahkan');
+      _showSnack('Basemap "$name" berhasil ditambahkan');
     } on TimeoutException catch (e) {
       await _cleanupFailed(basemapId);
       if (!mounted) return;
