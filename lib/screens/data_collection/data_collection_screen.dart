@@ -282,13 +282,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _unifiedLocationSubscription?.cancel();
     _compassSubscription?.cancel();
 
-    // ✅ CRITICAL: ALWAYS stop background service when app terminates
-    // Mencegah boros baterai karena tracking terus berjalan
-    print('⚠️ App terminating - stopping background tracking...');
-    _locationService.stopBackgroundTracking();
-    _locationService.stopActiveTracking();
-    
-    print('✅ Background tracking stopped on app termination');
+    // Service background dihentikan terpusat di main.dart (detached): flush
+    // sesi ke SQLite lalu stop — berlaku walau layar ini tidak terbuka.
     print('✅ Cleanup completed');
   }
 
@@ -1588,8 +1583,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // 3. Pastikan feed GPS hidup. Service + heartbeat dimiliki TrackingEngine
     //    (app-level) — tetap jalan walau layar ini ditutup.
     try {
-      _locationService.startActiveTracking();
-
       final success = await TrackingEngine.instance.ensureRunning();
 
       if (!success) {
@@ -1622,9 +1615,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
       return;
     }
-
-    // 3. Set persistent tracking state in service
-    _locationService.startActiveTracking();
 
     print('✅ Tracking started successfully (provider: ${_locationService.currentProvider.name})');
 

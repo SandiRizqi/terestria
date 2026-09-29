@@ -320,6 +320,17 @@ class BackgroundTrackingService {
     }
   }
   
+  /// Teks notifikasi ringkasan multi-project (dari TrackingEngine). Isolate
+  /// memakainya sebagai judul status, menggantikan teks default.
+  void setNotificationText(String text) {
+    if (!_isRunning) return;
+    try {
+      _service.invoke('set_notification_text', {'text': text});
+    } catch (e) {
+      logError('❌ Error sending notification text: $e');
+    }
+  }
+
   /// Send heartbeat to background service
   void sendHeartbeat() {
     if (!_isRunning) return;
@@ -435,6 +446,7 @@ class BackgroundTrackingService {
     StreamSubscription<Position>? subscription;
     Timer? heartbeatTimer;
     DateTime lastHeartbeat = DateTime.now();
+    String notificationLabel = 'Location tracking active';
     
     try {
       logDebug('📍 Setting up Geolocator for background tracking...');
@@ -469,6 +481,15 @@ class BackgroundTrackingService {
         _reportStoppedAndStop(service);
       });
       
+      // Ringkasan multi-project dari app ("Merekam 2 project · 1 jeda").
+      service.on('set_notification_text').listen((event) async {
+        final text = event?['text'];
+        if (text is! String || text == notificationLabel) return;
+        notificationLabel = text;
+        await NotificationService.updateNotification(
+            'Terestria Tracking', notificationLabel);
+      });
+
       service.on('pause_tracking').listen((event) {
         logDebug('⏸️ Pause command received in background');
         isPaused = true;
@@ -599,9 +620,11 @@ class BackgroundTrackingService {
           // Update notification setiap 5 detik untuk monitoring
           if (locationCount % 5 == 0) {
             final accuracy = position.accuracy.toStringAsFixed(1);
+            // Ringkasan project dari app + akurasi terkini (bukan jumlah fix
+            // mentah, yang tak sama dengan titik per project).
             await NotificationService.updateNotification(
               'Terestria Tracking',
-              'Accuracy: ${accuracy}m | Points: $locationCount',
+              '$notificationLabel · ±${accuracy} m',
             );
           }
           

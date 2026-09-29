@@ -53,12 +53,15 @@ class _FakeRepo extends SessionRepository {
 /// butuh DB/plugin → diverifikasi manual).
 void main() {
   group('trackingNotificationText', () {
-    test('0 sesi → null', () => expect(trackingNotificationText(0), isNull));
-    test('1 sesi', () {
-      expect(trackingNotificationText(1), 'Tracking 1 project aktif');
+    test('tak ada yang merekam → null (service mati, tak ada notifikasi)', () {
+      expect(trackingNotificationText(recording: 0, pending: 2), isNull);
     });
-    test('banyak sesi', () {
-      expect(trackingNotificationText(3), 'Tracking 3 project aktif');
+    test('hanya merekam', () {
+      expect(trackingNotificationText(recording: 1), 'Merekam 1 project');
+    });
+    test('ringkasan per status', () {
+      expect(trackingNotificationText(recording: 2, paused: 1, pending: 1),
+          'Merekam 2 project · 1 jeda · 1 belum disimpan');
     });
   });
 
@@ -153,7 +156,7 @@ void main() {
     final mgr = TrackingSessionManager(maxConcurrent: 3);
     final repo = _FakeRepo();
     final coord = TrackingPersistenceCoordinator(
-        manager: mgr, repo: repo, notify: (_) {});
+        manager: mgr, repo: repo);
     mgr.start(_proj('u'));
     mgr.addPointToActiveSessions(_pt(0));
     mgr.addPointToActiveSessions(_pt(1));
@@ -184,7 +187,7 @@ void main() {
             points: [_pt(0), _pt(1)]),
       ];
     final coord = TrackingPersistenceCoordinator(
-        manager: mgr, repo: repo, notify: (_) {});
+        manager: mgr, repo: repo);
 
     await coord.restore();
 
@@ -193,28 +196,5 @@ void main() {
     expect(s.points.length, 2);
     expect(mgr.recordingCount, 0); // engine tak menyalakan service saat launch
     mgr.stop('a');
-  });
-
-  test('notifikasi hanya di-update saat activeCount berubah (bukan tiap fix)',
-      () {
-    final mgr = TrackingSessionManager(maxConcurrent: 3);
-    mgr.stop('a');
-    mgr.stop('b');
-    var calls = 0;
-    final coord = TrackingPersistenceCoordinator(
-        manager: mgr, repo: _FakeRepo(), notify: (_) => calls++);
-
-    mgr.start(_proj('a'));
-    coord.maybeUpdateNotification(); // 1 → update
-    mgr.addPointToActiveSessions(_pt(0));
-    coord.maybeUpdateNotification(); // masih 1 → TIDAK update
-    mgr.addPointToActiveSessions(_pt(1));
-    coord.maybeUpdateNotification(); // masih 1 → TIDAK update
-    mgr.start(_proj('b'));
-    coord.maybeUpdateNotification(); // 2 → update
-    expect(calls, 2);
-
-    mgr.stop('a');
-    mgr.stop('b');
   });
 }

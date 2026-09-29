@@ -193,6 +193,71 @@ void main() {
     await rtk.close();
   });
 
+  group('notifikasi & log GPS', () {
+    late List<String> labels;
+    late List<String> logEvents;
+    late TrackingSessionManager m;
+    late TrackingEngine e;
+
+    setUp(() {
+      labels = [];
+      logEvents = [];
+      m = TrackingSessionManager(maxConcurrent: 3);
+      e = TrackingEngine(
+        manager: m,
+        startService: svc.start,
+        stopService: svc.stop,
+        sendHeartbeat: () {},
+        isServiceRunning: () => svc.running,
+        periodicTimer: (_, __) => _FakeTimer(),
+        setNotificationText: labels.add,
+        onFeedStart: () async => logEvents.add('start'),
+        onFeedStop: () async => logEvents.add('stop'),
+      )..attach();
+    });
+    tearDown(() => e.detach());
+
+    test('label mengikuti ringkasan status, bukan tiap titik', () async {
+      m.start(_proj('a'));
+      await settle();
+      m.addPointToActiveSessions(_gp(0));
+      m.addPointToActiveSessions(_gp(1));
+      m.start(_proj('b'));
+      m.finish('b');
+      await settle();
+
+      expect(labels.last, 'Merekam 1 project · 1 belum disimpan');
+      // Titik baru tak mengirim label ulang.
+      final before = labels.length;
+      m.addPointToActiveSessions(_gp(2));
+      expect(labels.length, before);
+    });
+
+    test('label dikirim ulang setelah service (re)start', () async {
+      m.start(_proj('a'));
+      await settle();
+      final before = labels.length;
+      svc.running = false; // isolate mati & dinyalakan ulang oleh tick
+      e.tick();
+      await settle();
+      expect(labels.length, before + 1);
+      expect(labels.last, 'Merekam 1 project');
+    });
+
+    test('sesi log GPS dibuka saat mulai merekam & ditutup saat berhenti',
+        () async {
+      m.start(_proj('a'));
+      m.start(_proj('b'));
+      await settle();
+      m.finish('a');
+      await settle();
+      expect(logEvents, ['start']);
+      m.finish('b');
+      await settle();
+      expect(logEvents, ['start', 'stop']);
+    });
+  });
+
   test('ensureRunning: panggilan bersamaan berbagi satu start', () async {
     svc.pendingStart = Completer<bool>();
     mgr.start(_proj('a')); // memicu start (belum selesai)

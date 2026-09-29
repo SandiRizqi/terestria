@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import '../background/notification_service.dart';
 import 'session_repository.dart';
-import 'tracking_notification.dart';
 import 'tracking_session.dart';
 import 'tracking_session_manager.dart';
 
@@ -49,7 +47,7 @@ Set<String> removedIds(Set<String> previous, Set<String> current) =>
     previous.difference(current);
 
 /// Menjembatani [TrackingSessionManager] ↔ [SessionRepository] (persistensi
-/// append-only untuk recovery) dan menjaga notifikasi persisten multi-sesi.
+/// append-only untuk recovery). Notifikasi dikelola TrackingEngine.
 ///
 /// Flush di-debounce agar tak menulis DB tiap fix (hemat I/O). Hot-path UI tetap
 /// in-memory di manajer; repo hanya cadangan tahan-lama.
@@ -57,25 +55,19 @@ class TrackingPersistenceCoordinator {
   final TrackingSessionManager manager;
   final SessionRepository repo;
   final Duration debounce;
-  final void Function(String text) _notify;
 
   TrackingPersistenceCoordinator({
     TrackingSessionManager? manager,
     SessionRepository? repo,
     this.debounce = const Duration(seconds: 2),
-    void Function(String text)? notify,
   })  : manager = manager ?? TrackingSessionManager.instance,
-        repo = repo ?? SessionRepository(),
-        _notify = notify ??
-            ((text) =>
-                NotificationService.updateNotification('Terestria Tracking', text));
+        repo = repo ?? SessionRepository();
 
   final Map<String, int> _flushed = {}; // projectId → jumlah titik ter-flush
   final Map<String, int> _flushedVersion = {}; // projectId → editVersion ter-flush
   Set<String> _knownIds = {};
   Timer? _debounceTimer;
   bool _attached = false;
-  int _lastNotifiedCount = -1;
 
   /// Pulihkan sesi tersimpan ke manajer saat app start. Sesi usang (lebih tua
   /// dari [kRestoreMaxAge]) atau melebihi cap DIBUANG (dihapus dari SQLite) agar
@@ -98,7 +90,6 @@ class TrackingPersistenceCoordinator {
       _flushed[s.projectId] = s.points.length;
     }
     _knownIds = manager.sessions.keys.toSet();
-    maybeUpdateNotification();
   }
 
   /// Mulai mengawasi perubahan manajer.
@@ -115,19 +106,8 @@ class TrackingPersistenceCoordinator {
   }
 
   void _onChanged() {
-    maybeUpdateNotification();
     _debounceTimer?.cancel();
     _debounceTimer = Timer(debounce, flushNow);
-  }
-
-  /// Update notifikasi HANYA saat jumlah sesi aktif berubah — bukan tiap fix GPS
-  /// (mencegah spam platform-channel ~1×/detik saat tracking).
-  void maybeUpdateNotification() {
-    final count = manager.activeCount;
-    if (count == _lastNotifiedCount) return;
-    _lastNotifiedCount = count;
-    final text = trackingNotificationText(count);
-    if (text != null) _notify(text);
   }
 
   /// Flush perubahan ke SQLite: hapus sesi yang berhenti, upsert + append titik baru.

@@ -72,14 +72,7 @@ class LocationServiceV2 {
   final PhoneGpsService _phoneGps = PhoneGpsService();
   final BackgroundTrackingService _backgroundTracking = BackgroundTrackingService();
   final GpsLoggerService _gpsLogger = GpsLoggerService();
-  
-  // Persistent tracking state
-  bool _isActivelyTracking = false;
-  bool get isActivelyTracking => _isActivelyTracking;
-  
-  List<GeoPoint> _activeTrackingPoints = [];
-  List<GeoPoint> get activeTrackingPoints => _activeTrackingPoints;
-  
+
   // Location provider settings
   LocationProvider _currentProvider = LocationProvider.phone;
   FixQuality _requiredFixQuality = FixQuality.any;
@@ -225,40 +218,17 @@ Future<bool> initialize() async {
   }
   
   // ============================================================================
-  // TRACKING STATE MANAGEMENT
+  // GPS LOG (CSV) — sesi log dibuka/ditutup oleh TrackingEngine: selama ada
+  // project merekam. Status tracking per project ada di TrackingSessionManager.
   // ============================================================================
-  
-  Future<void> startActiveTracking() async {
-    _isActivelyTracking = true;
-    _activeTrackingPoints.clear();
-    await _gpsLogger.startSession();
-    logDebug('✅ Active tracking started');
-  }
-  
-  void pauseActiveTracking() {
-    _isActivelyTracking = true; // Still tracking, just paused
-    logDebug('⏸️ Active tracking paused');
-  }
-  
-  void resumeActiveTracking() {
-    _isActivelyTracking = true;
-    logDebug('▶️ Active tracking resumed');
-  }
-  
-  Future<void> stopActiveTracking() async {
-    _isActivelyTracking = false;
-    await _gpsLogger.stopSession();
-    logDebug('⏹️ Active tracking stopped');
-  }
 
-  /// Buffer & log GPS lama. Titik ke sesi multi-project TIDAK lewat sini —
-  /// TrackingEngine berlangganan feed langsung (satu jalur, per sumber).
-  void addTrackingPoint(GeoPoint point) {
-    if (_isActivelyTracking) {
-      _activeTrackingPoints.add(point);
-      _gpsLogger.log(point);
-    }
-  }
+  Future<void> startGpsLog() => _gpsLogger.startSession();
+
+  Future<void> stopGpsLog() => _gpsLogger.stopSession();
+
+  /// Teks ringkasan multi-project untuk notifikasi service background.
+  void setTrackingNotificationText(String text) =>
+      _backgroundTracking.setNotificationText(text);
 
   /// Expose GPS log file listing for export / debug screens.
   Future<List<File>> getGpsLogFiles() => _gpsLogger.listLogFiles();
@@ -266,11 +236,7 @@ Future<bool> initialize() async {
   /// Delete logs older than [days] days (call on app startup for housekeeping).
   Future<void> cleanOldGpsLogs({int days = 30}) =>
       _gpsLogger.deleteOldLogs(days: days);
-  
-  void clearTrackingPoints() {
-    _activeTrackingPoints.clear();
-  }
-  
+
   // ============================================================================
   // LOCATION ACQUISITION
   // ============================================================================
@@ -405,11 +371,10 @@ Future<bool> initialize() async {
           logDebug('   Lat: ${point.latitude}');
           logDebug('   Lon: ${point.longitude}');
           logDebug('   Time: ${point.timestamp}');
-          
-          addTrackingPoint(point);
-          
-          // Debug: Print total points
-          logDebug('✅ Added to tracking points (Total: ${_activeTrackingPoints.length})');
+
+          // Hanya log CSV (aktif selama ada project merekam). Titik ke sesi
+          // diumpankan TrackingEngine dari stream yang sama.
+          _gpsLogger.log(point);
         },
         onError: (error) {
           logError('❌ Error in background location stream: $error');

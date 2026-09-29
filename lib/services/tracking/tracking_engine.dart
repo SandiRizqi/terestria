@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../models/geo_data_model.dart';
 import '../../utils/app_logger.dart';
 import '../location_service_v2.dart';
+import 'tracking_notification.dart';
 import 'tracking_session.dart';
 import 'tracking_session_manager.dart';
 
@@ -25,10 +26,16 @@ class TrackingEngine {
     DateTime Function()? now,
     Stream<GeoPoint>? phoneFeed,
     Stream<GeoPoint>? emlidFeed,
+    void Function(String text)? setNotificationText,
+    Future<void> Function()? onFeedStart,
+    Future<void> Function()? onFeedStop,
     this.heartbeatInterval = const Duration(seconds: 5),
     this.restartBackoff = const Duration(seconds: 30),
   })  : _phoneFeed = phoneFeed,
         _emlidFeed = emlidFeed,
+        _setNotificationText = setNotificationText,
+        _onFeedStart = onFeedStart,
+        _onFeedStop = onFeedStop,
         _startService = startService,
         _stopService = stopService,
         _sendHeartbeat = sendHeartbeat,
@@ -40,14 +47,14 @@ class TrackingEngine {
   static final TrackingEngine instance = TrackingEngine(
     manager: TrackingSessionManager.instance,
     startService: () => LocationServiceV2().startBackgroundTracking(),
-    stopService: () async {
-      await LocationServiceV2().stopBackgroundTracking();
-      await LocationServiceV2().stopActiveTracking();
-    },
+    stopService: () => LocationServiceV2().stopBackgroundTracking(),
     sendHeartbeat: () => LocationServiceV2().sendHeartbeat(),
     isServiceRunning: () => LocationServiceV2().isBackgroundServiceRunning,
     phoneFeed: LocationServiceV2().backgroundLocationStream,
     emlidFeed: LocationServiceV2().emlidLocationStream,
+    setNotificationText: (t) => LocationServiceV2().setTrackingNotificationText(t),
+    onFeedStart: () => LocationServiceV2().startGpsLog(),
+    onFeedStop: () => LocationServiceV2().stopGpsLog(),
   );
 
   final TrackingSessionManager manager;
@@ -61,7 +68,11 @@ class TrackingEngine {
   final DateTime Function() _now;
   final Stream<GeoPoint>? _phoneFeed;
   final Stream<GeoPoint>? _emlidFeed;
+  final void Function(String text)? _setNotificationText;
+  final Future<void> Function()? _onFeedStart;
+  final Future<void> Function()? _onFeedStop;
   final List<StreamSubscription<GeoPoint>> _feedSubs = [];
+  String? _lastLabel;
 
   bool _attached = false;
   bool _active = false;
@@ -90,19 +101,51 @@ class TrackingEngine {
 
   void _onChanged() {
     final want = manager.recordingCount > 0;
-    if (want == _active) return;
-    _active = want;
-    if (want) {
-      _heartbeat?.cancel();
-      _heartbeat = _periodicTimer(heartbeatInterval, (_) => tick());
-      _sendHeartbeat();
-      _subscribeFeeds();
-      unawaited(ensureRunning());
-    } else {
-      _heartbeat?.cancel();
-      _heartbeat = null;
-      _unsubscribeFeeds();
-      unawaited(_stop());
+    if (want != _active) {
+      _active = want;
+      if (want) {
+        _heartbeat?.cancel();
+        _heartbeat = _periodicTimer(heartbeatInterval, (_) => tick());
+        _sendHeartbeat();
+        _subscribeFeeds();
+        unawaited(_safely(_onFeedStart));
+        unawaited(ensureRunning());
+      } else {
+        _heartbeat?.cancel();
+        _heartbeat = null;
+        _unsubscribeFeeds();
+        unawaited(_safely(_onFeedStop));
+        unawaited(_stop());
+      }
+    }
+    _pushLabel();
+  }
+
+  /// Kirim ringkasan status ke notifikasi service — hanya bila teksnya
+  /// berubah (bukan tiap titik), atau [force] setelah service (re)start.
+  void _pushLabel({bool force = false}) {
+    final send = _setNotificationText;
+    if (send == null) return;
+    if (!_active) {
+      _lastLabel = null;
+      return;
+    }
+    final text = trackingNotificationText(
+      recording: manager.recordingCount,
+      paused: manager.liveCount - manager.recordingCount,
+      pending: manager.activeCount - manager.liveCount,
+    );
+    if (text == null || (!force && text == _lastLabel)) return;
+    _lastLabel = text;
+    send(text);
+  }
+
+  Future<void> _safely(Future<void> Function()? f) async {
+    if (f == null) return;
+    try {
+      await f();
+    } catch (e) {
+      logError('❌ TrackingEngine: $e');
     }
   }
 
@@ -152,7 +195,10 @@ class TrackingEngine {
 
   Future<bool> _startSafely() async {
     try {
-      return await _startService();
+      final ok = await _startService();
+      // Service baru menyala dengan teks default → kirim ulang ringkasan.
+      if (ok) _pushLabel(force: true);
+      return ok;
     } catch (e) {
       logError('❌ TrackingEngine: gagal menyalakan service: $e');
       return false;

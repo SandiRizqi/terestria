@@ -162,11 +162,14 @@ class _TerestriaAppState extends State<TerestriaApp>
 
   Future<void> _ensureBackgroundTrackingStopped() async {
     try {
-      final locationService = LocationServiceV2();
-      if (locationService.isActivelyTracking) {
+      // Simpan titik terakhir sesi ke SQLite dulu (dipulihkan sebagai paused
+      // saat app dibuka lagi), lalu hentikan service (kebijakan: app di-kill →
+      // GPS background berhenti, hemat baterai).
+      await trackingPersistence?.flushNow();
+      if (TrackingEngine.instance.isActive) {
         debugPrint('⚠️ [MAIN APP] Stopping active background tracking...');
-        await locationService.stopBackgroundTracking();
-        locationService.stopActiveTracking();
+        await LocationServiceV2().stopBackgroundTracking();
+        await LocationServiceV2().stopGpsLog();
         debugPrint('✅ [MAIN APP] Background tracking stopped');
       } else {
         debugPrint('✅ [MAIN APP] No active tracking detected');
