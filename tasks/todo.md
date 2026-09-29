@@ -3,7 +3,7 @@
 Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-tracking-engine.md](plan-tracking-engine.md) · Branch: `main`
 
 ## Phase 1 — Fondasi logger
-- [ ] **Task 1 — Inti logger berkas** (S–M) — format, redaksi rahasia, buffer, rotasi harian, prune 7 hari/5 MB
+- [x] **Task 1 — Inti logger berkas** (S–M) ✅ 12 test — format, redaksi rahasia, buffer, rotasi harian, prune 7 hari/5 MB
 - [ ] **Task 2 — Sambung logger ke app & isolate + state Mode Diagnostik** (M) — konsol hanya debug; `bg-*.log` dari isolate; FlutterError → log
 
 ### Checkpoint A
