@@ -163,7 +163,9 @@ class LocationServiceV2 {
   // ============================================================================
   // INITIALIZATION
   // ============================================================================
-Future<bool> initialize() async {
+/// [requestBackground] false = izin lokasi latar belakang tidak diminta
+/// (user memilih "Not now" pada penjelasan izin); GPS foreground tetap jalan.
+Future<bool> initialize({bool requestBackground = true}) async {
   logDebug('Initializing LocationService...');
  
   try {
@@ -173,13 +175,14 @@ Future<bool> initialize() async {
     
     if (!serviceEnabled) {
       logError('❌ Location service is disabled');
-      throw Exception('Location service is disabled. Please enable GPS in device settings.');
+      throw Exception('Location (GPS) is turned off. Turn it on in the phone settings.');
     }
     logDebug('✅ Location service is enabled');
     
     // 2. Request permissions
     logDebug('Requesting permissions...');
-    final hasPermission = await PermissionService.requestAllPermissions();
+    final hasPermission = await PermissionService.requestAllPermissions(
+        requestBackground: requestBackground);
     
     if (!hasPermission) {
       logError('❌ Failed to get required permissions');
@@ -188,7 +191,7 @@ Future<bool> initialize() async {
       final status = await PermissionService.getDetailedStatus();
       logDebug('📊 Detailed Status: $status');
       
-      throw Exception('Location permissions not granted. Please allow location access in Settings.');
+      throw Exception('Location permission was not granted. Allow location access in the phone settings.');
     }
     logDebug('✅ Permissions granted');
     

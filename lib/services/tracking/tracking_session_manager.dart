@@ -173,6 +173,20 @@ class TrackingSessionManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ganti seluruh titik sesi (Undo setelah "Clear"). Persistensi menulis
+  /// ulang titik karena [TrackingSession.editVersion] naik.
+  void replacePoints(String projectId, List<GeoPoint> points) {
+    final s = _sessions[projectId];
+    if (s == null) return;
+    s.points
+      ..clear()
+      ..addAll(points);
+    s.editVersion++;
+    logInfo('Pulihkan ${points.length} titik "${s.project.name}" (undo clear)',
+        tag: _tag);
+    notifyListeners();
+  }
+
   /// Stop perekaman → draft menunggu disimpan/dibuang (tak lagi menahan cap
   /// maupun service). Simpan/Buang memanggil [stop] untuk melepasnya.
   void finish(String projectId) {

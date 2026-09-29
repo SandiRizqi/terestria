@@ -8,8 +8,6 @@ import 'package:latlong2/latlong.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
-import 'dart:math' as math;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_compass/flutter_compass.dart';
 import '../../widgets/map/compass_button.dart';
 import '../../widgets/map/map_controls_column.dart';
@@ -26,10 +24,9 @@ import '../../services/storage_service.dart';
 import '../../services/tracking/tracking_engine.dart';
 import '../../services/tracking/tracking_session.dart';
 import '../../services/tracking/tracking_session_manager.dart';
+import '../../services/tracking/session_to_geodata.dart';
 import '../../services/basemap_service.dart';
-import '../../services/tile_cache_sqlite_service.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
-import '../../services/tile_providers/geopdf_overlay_provider.dart';
 import '../../widgets/dynamic_form.dart';
 import '../../widgets/photo_field_widget.dart';
 import '../../services/crashlytics_service.dart';
@@ -40,13 +37,19 @@ import 'widgets/user_location_marker.dart';
 import '../basemap/basemap_selector_sheet.dart';
 import '../location/location_provider_screen.dart';
 import '../../services/auth_service.dart';
+import '../../services/background/permission_service.dart';
 import '../../services/settings_service.dart';
 import '../project/edit_geo_data_screen.dart';
-import '../../models/settings/app_settings.dart';
 import '../../widgets/offline_download_dialog.dart';
 import '../../utils/lat_lng_bounds.dart' as custom_bounds;
 import '../../models/layer_model.dart';
 import '../../services/layer_service.dart';
+import '../../services/collection_draft_service.dart';
+import '../../services/device_health_service.dart';
+import '../../services/geometry_validation.dart';
+import '../../utils/ui_feedback.dart';
+import '../../widgets/collection/gps_status_banners.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 import '../../utils/app_logger.dart';
@@ -70,7 +73,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   final LocationServiceV2 _locationService = LocationServiceV2();
   final StorageService _storageService = StorageService();
   final BasemapService _basemapService = BasemapService();
-  final TileCacheSqliteService _tileCacheService = TileCacheSqliteService();
   final SettingsService _settingsService = SettingsService();
   final MapController _mapController = MapController();
   final _formKey = GlobalKey<FormState>();
@@ -78,7 +80,26 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   /// Titik mode manual/drawing saat project ini TIDAK punya sesi tracking.
   final List<GeoPoint> _manualPoints = [];
-  GeoPoint? _currentLocation;
+
+  /// Fix GPS terkini. Notifier (bukan setState) agar update 1 Hz & animasi
+  /// marker tak me-rebuild seluruh layar + semua layer peta.
+  final ValueNotifier<GeoPoint?> _locationNotifier = ValueNotifier(null);
+  GeoPoint? get _currentLocation => _locationNotifier.value;
+  set _currentLocation(GeoPoint? value) => _locationNotifier.value = value;
+
+  /// Arah kompas & tengah peta — juga notifier (sensor ±10 Hz / tiap frame geser).
+  final ValueNotifier<double> _bearingNotifier = ValueNotifier(0.0);
+  final ValueNotifier<LatLng> _centerNotifier =
+      ValueNotifier(const LatLng(-6.2088, 106.8456));
+
+  /// Draft titik manual + isian form (bertahan bila app dibunuh saat kamera).
+  final CollectionDraftService _draftService = CollectionDraftService();
+  Timer? _draftDebounce;
+  final DynamicFormController _formController = DynamicFormController();
+
+  /// Layer GeoJSON impor yang sudah dibangun (di-cache; tak bergantung zoom).
+  List<Widget> _geoJsonLayerWidgets = const [];
+  bool _emlidWasConnected = false;
 
   // ─── Layar = tampilan atas sesi ────────────────────────────────────────────
   // Sesi di TrackingSessionManager adalah SATU-SATUNYA sumber titik & status
@@ -112,21 +133,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   Map<String, dynamic> _formData = {};
   CollectionMode _collectionMode = CollectionMode.tracking;
   Basemap? _selectedBasemap;
-  bool _showForm = false;
   bool _isLoadingLocation = true;
   bool _hasInitialZoom = false;
-  double _currentBearing = 0.0;
   StreamSubscription<CompassEvent>? _compassSubscription;
-  // P3: Throttle compass setState to max once per 100ms
-  DateTime? _lastCompassUpdate;
   bool _isBottomSheetExpanded = true;
-  LatLng _centerCoordinates = const LatLng(-6.2088, 106.8456);
   // ✅ Prominent Disclosure: tidak perlu track manual —
   // cukup cek status permission langsung (Opsi C)
 
   // Existing data from project
   List<GeoData> _existingData = [];
-  bool _isLoadingData = true;
   String? _currentUsername;
 
   // P0+P1: Cached layers — computed once after data load, not on every build
@@ -154,13 +169,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     WidgetsBinding.instance.addObserver(this);
 
-    // Inisialisasi AnimationController untuk smooth marker movement
+    // Inisialisasi AnimationController untuk smooth marker movement. Hanya
+    // layer marker (AnimatedBuilder) yang ikut per frame, bukan seluruh layar.
     _markerAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    // Rebuild marker layer setiap frame animasi
-    _markerAnimController.addListener(_onMarkerAnimationTick);
 
     // Overlay PDF disiapkan sekali per ganti basemap (bukan di build).
     _pdfOverlay = PdfOverlayController(onProblem: _showBasemapProblem)
@@ -185,6 +199,23 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // Layar mengikuti sesi project ini (titik & status) secara live.
     TrackingSessionManager.instance.addListener(_onSessionsChanged);
     _onSessionsChanged();
+
+    // Emlid tersambung ulang otomatis → pasang ulang stream marker.
+    _emlidWasConnected = _locationService.isEmlidConnected;
+    _locationService.emlidStatus.addListener(_onEmlidStatusChanged);
+  }
+
+  void _onEmlidStatusChanged() {
+    if (!mounted) return;
+    final connected = _locationService.emlidStatus.value.connected;
+    if (connected &&
+        !_emlidWasConnected &&
+        _locationService.currentProvider == LocationProvider.emlid) {
+      logInfo('Emlid back online — restarting marker stream', tag: 'COLLECT');
+      _startUnifiedLocationStream();
+    }
+    _emlidWasConnected = connected;
+    setState(() {}); // ikon provider & banner
   }
 
   // Jejak terakhir yang dirender — manajer memberi notifikasi untuk SEMUA
@@ -207,12 +238,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _seenEditVersion = version;
     _seenState = s?.state;
     setState(() {});
-  }
-
-  /// Dipanggil setiap frame animasi marker — cukup trigger setState
-  /// agar posisi marker ter-interpolasi dari begin ke target.
-  void _onMarkerAnimationTick() {
-    if (mounted) setState(() {});
   }
 
   void _onPdfOverlayChanged() {
@@ -331,82 +356,86 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     return false; // selalu izinkan keluar
   }
 
-  // ✅ OPSI C: Cek status permission secara langsung.
-  // Modal hanya ditampilkan jika ACCESS_BACKGROUND_LOCATION belum granted.
-  // Jika sudah granted → skip modal sama sekali.
-  // Jika user cabut permission dari Settings → modal muncul lagi (benar secara UX).
+  static const _bgRationaleDeclinedKey = 'bg_location_rationale_declined';
+
+  /// Perlu menampilkan penjelasan izin lokasi latar belakang? Hanya bila izin
+  /// "Always" belum ada DAN user belum pernah memilih "Not now" (dulu dialog
+  /// muncul setiap kali layar dibuka & setiap Start).
   Future<bool> _shouldShowBackgroundRationale() async {
     try {
       final status = await Permission.locationAlways.status;
-      if (status.isGranted) {
-        logDebug('✅ Background location already granted – skip rationale modal', tag: 'COLLECT');
-        return false;
-      }
-      logDebug('ℹ️ Background location not granted (status: $status) – will show rationale', tag: 'COLLECT');
-      return true;
+      if (status.isGranted) return false;
+      final prefs = await SharedPreferences.getInstance();
+      return !(prefs.getBool(_bgRationaleDeclinedKey) ?? false);
     } catch (e) {
       // Jika permission_handler error (misalnya di iOS simulator), skip modal
-      logWarn('⚠️ Could not check locationAlways status: $e – skipping rationale', tag: 'COLLECT');
+      logWarn('Could not check background location status: $e', tag: 'COLLECT');
       return false;
     }
   }
 
-  // ✨ NEW METHOD: Initialize service BEFORE using it
+  Future<void> _rememberRationaleChoice(bool accepted) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_bgRationaleDeclinedKey, !accepted);
+    } catch (e) {
+      logWarn('Could not store background rationale choice: $e',
+          tag: 'COLLECT');
+    }
+  }
+
   Future<void> _initializeServiceAndLocation() async {
     setState(() => _isLoadingLocation = true);
 
-    // 1. ✅ GOOGLE PLAY: Tampilkan Prominent Disclosure hanya jika permission belum granted
-    final needRationale = await _shouldShowBackgroundRationale();
-    if (needRationale) {
-      final proceed = await _showBackgroundLocationRationale();
-      if (!proceed) {
-        // User pilih "Nanti saja" – lanjut tanpa background, foreground saja
-        logWarn('⚠️ User skip background rationale – lanjut foreground only', tag: 'COLLECT');
-        await _initializeLocation();
-        return;
+    // 1. GOOGLE PLAY: Prominent Disclosure sebelum meminta izin background.
+    //    "Not now" hanya melewatkan izin background — GPS di layar tetap jalan.
+    var requestBackground = true;
+    if (await _shouldShowBackgroundRationale()) {
+      if (!mounted) return;
+      requestBackground = await _showBackgroundLocationRationale();
+      await _rememberRationaleChoice(requestBackground);
+      if (!requestBackground) {
+        logInfo('Background location disclosure declined — foreground only',
+            tag: 'COLLECT');
       }
+    } else {
+      final status = await Permission.locationAlways.status;
+      requestBackground = status.isGranted;
     }
 
     // 2. Initialize LocationServiceV2 dengan proper error handling
     try {
-      logDebug('🚀 Initializing LocationService...', tag: 'COLLECT');
-      final initialized = await _locationService.initialize();
-
+      final initialized = await _locationService.initialize(
+          requestBackground: requestBackground);
       if (!initialized) {
-        throw Exception(
-            'LocationService initialization failed - permissions may not be granted');
+        throw Exception('Location permission was not granted or GPS is off.');
       }
-
       logDebug('✅ LocationService initialized successfully', tag: 'COLLECT');
-    } catch (e) {
-      logError('❌ Error initializing LocationServiceV2: $e', tag: 'COLLECT');
-
+    } catch (e, st) {
+      logError('Location service initialization failed',
+          tag: 'COLLECT', error: e, stack: st);
       if (mounted) {
-        // Show detailed error dialog with troubleshooting steps
-        await _showInitializationErrorDialog(e.toString());
-
-        setState(() => _isLoadingLocation = false);
-
-        // Don't proceed if initialization failed
-        return;
+        await _showInitializationErrorDialog(e);
+        if (mounted) setState(() => _isLoadingLocation = false);
       }
+      return;
     }
 
-    // 2. Only initialize location if service initialization succeeded
     await _initializeLocation();
   }
 
-// ✅ NEW METHOD: Show detailed error dialog
-  Future<void> _showInitializationErrorDialog(String error) async {
+  /// Dialog saat layanan lokasi gagal disiapkan (izin ditolak / GPS mati).
+  Future<void> _showInitializationErrorDialog(Object error) async {
+    final message = error.toString().replaceFirst('Exception: ', '');
     return showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.error_outline, color: Colors.red, size: 28),
+            Icon(Icons.location_off, color: Colors.red, size: 28),
             SizedBox(width: 12),
-            Text('Location Service Error'),
+            Expanded(child: Text('Location is not available')),
           ],
         ),
         content: SingleChildScrollView(
@@ -414,61 +443,22 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Failed to initialize location service:',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red[200]!),
-                ),
-                child: Text(
-                  error,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
+              Text(message, style: const TextStyle(fontSize: 15)),
               const SizedBox(height: 16),
               const Text(
                 'Please check:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              _buildChecklistItem('Location permissions granted'),
-              _buildChecklistItem('GPS is enabled on device'),
+              _buildChecklistItem('Location permission is allowed for Terestria'),
+              _buildChecklistItem('Location (GPS) is turned on'),
               _buildChecklistItem(
-                  'Background location permission (Android 10+)'),
-              _buildChecklistItem('Battery optimization disabled for app'),
+                  'Battery optimization is turned off for Terestria'),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline, size: 20, color: Colors.blue),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'You can continue without background tracking, but tracking features will be limited.',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
+              const Text(
+                'You can continue without GPS and add points on the map, '
+                'but tracking will not work.',
+                style: TextStyle(fontSize: 13),
               ),
             ],
           ),
@@ -476,35 +466,35 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               Navigator.pop(context); // Exit data collection screen
             },
             child: const Text('Exit'),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
+              await PermissionService.openAppSettings();
+            },
+            child: const Text('Open settings'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
               // Retry initialization
               await _initializeServiceAndLocation();
             },
             child: const Text('Retry'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Continue anyway with limited features
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-            ),
-            child: const Text('Continue Anyway'),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Continue'),
           ),
         ],
       ),
     );
   }
 
-// ✅ NEW METHOD: Build checklist item
   Widget _buildChecklistItem(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -535,7 +525,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Izin Lokasi Latar Belakang',
+                'Background location access',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
             ),
@@ -558,12 +548,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Fitur yang memerlukan izin ini:',
+                      'Why Terestria needs this:',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Pelacakan rute survei GPS secara real-time, termasuk saat layar terkunci atau saat beralih ke aplikasi lain.',
+                      'To record your survey track with GPS in real time, including while the screen is locked or you switch to another app.',
                       style: TextStyle(fontSize: 13),
                     ),
                   ],
@@ -572,13 +562,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               const SizedBox(height: 14),
               // Data yang dikumpulkan
               const Text(
-                'Data yang dikumpulkan:',
+                'What is collected:',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
               const SizedBox(height: 6),
-              _buildChecklistItem('Koordinat GPS (latitude & longitude)'),
-              _buildChecklistItem('Hanya saat sesi tracking aktif'),
-              _buildChecklistItem('Disimpan di perangkat, tidak dikirim ke server lain'),
+              _buildChecklistItem('GPS coordinates (latitude & longitude)'),
+              _buildChecklistItem('Only while a tracking session is active'),
+              _buildChecklistItem('Stored on this device and only sent to your organization\'s server when you sync'),
               const SizedBox(height: 14),
               // Cara mencabut
               Container(
@@ -592,12 +582,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Cara mencabut izin kapan saja:',
+                      'You can revoke it at any time:',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Pengaturan → Aplikasi → Terestria → Izin → Lokasi → Ganti ke "Hanya saat digunakan"',
+                      'Settings → Apps → Terestria → Permissions → Location → "Allow only while using the app"',
                       style: TextStyle(fontSize: 12, color: Colors.black87),
                     ),
                   ],
@@ -609,11 +599,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Nanti saja'),
+            child: const Text('Not now'),
           ),
           ElevatedButton.icon(
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Izinkan'),
+            label: const Text('Allow'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
@@ -641,6 +631,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   Future<void> _initializeSettingsThenLoadData() async {
     await _settingsService.initialize();
     if (mounted) await _loadExistingData();
+    if (mounted) await _restoreDraft();
   }
 
   /// Dipanggil setiap kali settings berubah (listener di SettingsService).
@@ -655,18 +646,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _initCompass() {
-    _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
-      if (!mounted || event.heading == null) return;
-      // P3: Throttle — rebuild at most every 100ms, not on every sensor tick
-      final now = DateTime.now();
-      if (_lastCompassUpdate == null ||
-          now.difference(_lastCompassUpdate!).inMilliseconds >= 100) {
-        _lastCompassUpdate = now;
-        setState(() {
-          _currentBearing = event.heading!;
-        });
-      }
-    });
+    // Notifier: hanya marker lokasi yang ikut berputar, bukan seluruh layar.
+    _compassSubscription = FlutterCompass.events?.listen(
+      (CompassEvent event) {
+        final heading = event.heading;
+        if (!mounted || heading == null) return;
+        _bearingNotifier.value = heading;
+      },
+      onError: (Object e) =>
+          logWarn('Compass unavailable: $e', tag: 'COLLECT'),
+    );
   }
 
   // ──────────────────────────────────────────────────────
@@ -674,40 +663,52 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   // ──────────────────────────────────────────────────────
 
   Future<void> _loadActiveLayers() async {
-    final layers = await _layerService.loadLayers();
-    // Pre-load GeoJSON for active layers
-    final cache = <String, Map<String, dynamic>>{};
-    for (final layer in layers) {
-      if (layer.isActive) {
-        final geoJson = await _layerService.readGeoJson(layer.filePath);
-        if (geoJson != null) cache[layer.id] = geoJson;
+    try {
+      final layers = await _layerService.loadLayers();
+      // Pre-load GeoJSON for active layers
+      final cache = <String, Map<String, dynamic>>{};
+      for (final layer in layers) {
+        if (layer.isActive) {
+          final geoJson = await _layerService.readGeoJson(layer.filePath);
+          if (geoJson != null) cache[layer.id] = geoJson;
+        }
       }
-    }
-    if (mounted) {
-      setState(() {
-        _layers = layers;
-        _layerGeoJsonCache.clear();
-        _layerGeoJsonCache.addAll(cache);
-      });
+      if (mounted) {
+        setState(() {
+          _layers = layers;
+          _layerGeoJsonCache.clear();
+          _layerGeoJsonCache.addAll(cache);
+          _geoJsonLayerWidgets = _buildGeoJsonLayers();
+        });
+      }
+    } catch (e, st) {
+      logError('Could not load overlay layers', tag: 'COLLECT', error: e, stack: st);
     }
   }
 
   Future<void> _toggleLayerActive(LayerModel layer, bool active) async {
-    await _layerService.toggleLayer(layer.id, active);
-    if (active) {
-      final geoJson = await _layerService.readGeoJson(layer.filePath);
-      if (geoJson != null) {
-        setState(() {
+    try {
+      await _layerService.toggleLayer(layer.id, active);
+      Map<String, dynamic>? geoJson;
+      if (active) geoJson = await _layerService.readGeoJson(layer.filePath);
+      if (!mounted) return;
+      setState(() {
+        if (active && geoJson != null) {
           _layerGeoJsonCache[layer.id] = geoJson;
-        });
+        } else if (!active) {
+          _layerGeoJsonCache.remove(layer.id);
+        }
+        _layers = _layers
+            .map((l) => l.id == layer.id ? l.copyWith(isActive: active) : l)
+            .toList();
+        _geoJsonLayerWidgets = _buildGeoJsonLayers();
+      });
+    } catch (e, st) {
+      if (mounted) {
+        showErrorFeedback(context, 'Could not show the layer "${layer.name}"',
+            error: e, stack: st, tag: 'COLLECT');
       }
-    } else {
-      setState(() => _layerGeoJsonCache.remove(layer.id));
     }
-    final updated = _layers.map((l) {
-      return l.id == layer.id ? l.copyWith(isActive: active) : l;
-    }).toList();
-    setState(() => _layers = updated);
   }
 
   void _showLayersPanel() {
@@ -735,59 +736,45 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       final markers   = <Marker>[];
       final labelMarkers = <Marker>[];
 
+      var badFeatures = 0;
       for (final f in features) {
-        final feature = f as Map<String, dynamic>;
-        final geom = feature['geometry'] as Map<String, dynamic>?;
-        final props = feature['properties'] as Map<String, dynamic>? ?? {};
-        if (geom == null) continue;
+        // Satu fitur rusak tak boleh menggagalkan build seluruh peta.
+        try {
+          final feature = f as Map<String, dynamic>;
+          final geom = feature['geometry'] as Map<String, dynamic>?;
+          final props = feature['properties'] as Map<String, dynamic>? ?? {};
+          if (geom == null) continue;
 
-        final type = geom['type'] as String? ?? '';
-        final label = layer.labelField != null
-            ? props[layer.labelField]?.toString()
-            : null;
+          final type = geom['type'] as String? ?? '';
+          final label = layer.labelField != null
+              ? props[layer.labelField]?.toString()
+              : null;
 
-        switch (type) {
-          case 'Point':
-            final coords = geom['coordinates'] as List<dynamic>;
-            final latlng = LatLng(
-              (coords[1] as num).toDouble(),
-              (coords[0] as num).toDouble(),
-            );
-            markers.add(_buildPointMarker(latlng, layer));
-            if (label != null) labelMarkers.add(_buildLabelMarker(latlng, label));
-            break;
-
-          case 'MultiPoint':
-            for (final c in geom['coordinates'] as List<dynamic>) {
-              final coords = c as List<dynamic>;
+          switch (type) {
+            case 'Point':
+              final coords = geom['coordinates'] as List<dynamic>;
               final latlng = LatLng(
                 (coords[1] as num).toDouble(),
                 (coords[0] as num).toDouble(),
               );
               markers.add(_buildPointMarker(latlng, layer));
               if (label != null) labelMarkers.add(_buildLabelMarker(latlng, label));
-            }
-            break;
+              break;
 
-          case 'LineString':
-            final pts = _coordsToLatLng(geom['coordinates'] as List<dynamic>);
-            if (pts.length >= 2) {
-              polylines.add(Polyline(
-                points: pts,
-                color: layer.style.strokeColor
-                    .withOpacity(layer.style.fillOpacity),
-                strokeWidth: layer.style.strokeWidth,
-              ));
-              if (label != null) {
-                final mid = pts[pts.length ~/ 2];
-                labelMarkers.add(_buildLabelMarker(mid, label));
+            case 'MultiPoint':
+              for (final c in geom['coordinates'] as List<dynamic>) {
+                final coords = c as List<dynamic>;
+                final latlng = LatLng(
+                  (coords[1] as num).toDouble(),
+                  (coords[0] as num).toDouble(),
+                );
+                markers.add(_buildPointMarker(latlng, layer));
+                if (label != null) labelMarkers.add(_buildLabelMarker(latlng, label));
               }
-            }
-            break;
+              break;
 
-          case 'MultiLineString':
-            for (final line in geom['coordinates'] as List<dynamic>) {
-              final pts = _coordsToLatLng(line as List<dynamic>);
+            case 'LineString':
+              final pts = _coordsToLatLng(geom['coordinates'] as List<dynamic>);
               if (pts.length >= 2) {
                 polylines.add(Polyline(
                   points: pts,
@@ -796,36 +783,31 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                   strokeWidth: layer.style.strokeWidth,
                 ));
                 if (label != null) {
-                  labelMarkers.add(_buildLabelMarker(pts[pts.length ~/ 2], label));
+                  final mid = pts[pts.length ~/ 2];
+                  labelMarkers.add(_buildLabelMarker(mid, label));
                 }
               }
-            }
-            break;
+              break;
 
-          case 'Polygon':
-            final rings = geom['coordinates'] as List<dynamic>;
-            final outer = _coordsToLatLng(rings[0] as List<dynamic>);
-            if (outer.length >= 3) {
-              polygons.add(Polygon(
-                points: outer,
-                color: layer.style.fillColor
-                    .withOpacity(layer.style.fillOpacity),
-                borderColor: layer.style.strokeColor,
-                borderStrokeWidth: layer.style.strokeWidth,
-                isFilled: true,
-              ));
-              if (label != null) {
-                double sumLat = 0, sumLng = 0;
-                for (final p in outer) { sumLat += p.latitude; sumLng += p.longitude; }
-                final centroid = LatLng(sumLat / outer.length, sumLng / outer.length);
-                labelMarkers.add(_buildLabelMarker(centroid, label));
+            case 'MultiLineString':
+              for (final line in geom['coordinates'] as List<dynamic>) {
+                final pts = _coordsToLatLng(line as List<dynamic>);
+                if (pts.length >= 2) {
+                  polylines.add(Polyline(
+                    points: pts,
+                    color: layer.style.strokeColor
+                        .withOpacity(layer.style.fillOpacity),
+                    strokeWidth: layer.style.strokeWidth,
+                  ));
+                  if (label != null) {
+                    labelMarkers.add(_buildLabelMarker(pts[pts.length ~/ 2], label));
+                  }
+                }
               }
-            }
-            break;
+              break;
 
-          case 'MultiPolygon':
-            for (final poly in geom['coordinates'] as List<dynamic>) {
-              final rings = poly as List<dynamic>;
+            case 'Polygon':
+              final rings = geom['coordinates'] as List<dynamic>;
               final outer = _coordsToLatLng(rings[0] as List<dynamic>);
               if (outer.length >= 3) {
                 polygons.add(Polygon(
@@ -843,9 +825,38 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                   labelMarkers.add(_buildLabelMarker(centroid, label));
                 }
               }
-            }
-            break;
+              break;
+
+            case 'MultiPolygon':
+              for (final poly in geom['coordinates'] as List<dynamic>) {
+                final rings = poly as List<dynamic>;
+                final outer = _coordsToLatLng(rings[0] as List<dynamic>);
+                if (outer.length >= 3) {
+                  polygons.add(Polygon(
+                    points: outer,
+                    color: layer.style.fillColor
+                        .withOpacity(layer.style.fillOpacity),
+                    borderColor: layer.style.strokeColor,
+                    borderStrokeWidth: layer.style.strokeWidth,
+                    isFilled: true,
+                  ));
+                  if (label != null) {
+                    double sumLat = 0, sumLng = 0;
+                    for (final p in outer) { sumLat += p.latitude; sumLng += p.longitude; }
+                    final centroid = LatLng(sumLat / outer.length, sumLng / outer.length);
+                    labelMarkers.add(_buildLabelMarker(centroid, label));
+                  }
+                }
+              }
+              break;
+          }
+        } catch (_) {
+          badFeatures++;
         }
+      }
+      if (badFeatures > 0) {
+        logWarn('Layer "${layer.name}": skipped $badFeatures invalid feature(s)',
+            tag: 'COLLECT');
       }
 
       if (polylines.isNotEmpty) result.add(PolylineLayer(polylines: polylines));
@@ -934,17 +945,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   Future<void> _loadExistingData() async {
-    setState(() => _isLoadingData = true);
     try {
       final data = await _storageService.loadGeoData(widget.project.id);
-      setState(() {
-        _existingData = data;
-        _isLoadingData = false;
-      });
+      if (!mounted) return;
+      setState(() => _existingData = data);
       _buildMarkerCache(); // P0+P1: build cache setelah data loaded
-    } catch (e) {
-      logWarn('Error loading existing data: $e', tag: 'COLLECT');
-      setState(() => _isLoadingData = false);
+    } catch (e, st) {
+      if (!mounted) return;
+      showErrorFeedback(context, 'Could not load the saved records',
+          error: e, stack: st, tag: 'COLLECT');
     }
   }
 
@@ -1255,18 +1264,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     if (confirm == true) {
       try {
         await _storageService.deleteGeoData(data.id);
+        logInfo('Deleted record ${data.id} (synced: ${data.isSynced})',
+            tag: 'COLLECT');
         if (mounted) {
           Navigator.pop(dialogContext); // tutup detail dialog
           await _loadExistingData();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Data deleted successfully')),
-          );
+          if (mounted) showInfoFeedback(context, 'Record deleted');
         }
-      } catch (e) {
+      } catch (e, st) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting data: $e')),
-          );
+          showErrorFeedback(context, 'Could not delete the record',
+              error: e, stack: st, tag: 'COLLECT');
         }
       }
     }
@@ -1297,12 +1305,21 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     logDebug('🗑️ Location stream cancelled', tag: 'COLLECT');
 
     // Dispose marker animation controller
-    _markerAnimController.removeListener(_onMarkerAnimationTick);
     _markerAnimController.dispose();
     logDebug('🗑️ Marker animation controller disposed', tag: 'COLLECT');
 
     // Hapus settings listener
     _settingsService.removeListener(_onSettingsChanged);
+    _locationService.emlidStatus.removeListener(_onEmlidStatusChanged);
+
+    // Draft yang tertunda disimpan sekarang (keluar layar sebelum debounce).
+    if (_draftDebounce?.isActive ?? false) {
+      _draftDebounce!.cancel();
+      _persistDraftNow();
+    }
+    _locationNotifier.dispose();
+    _bearingNotifier.dispose();
+    _centerNotifier.dispose();
 
     super.dispose();
   }
@@ -1378,36 +1395,28 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         } catch (e) {
           logDebug('Waiting for Emlid data: $e', tag: 'COLLECT');
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Waiting for GPS data...'),
-                backgroundColor: Colors.blue,
-                duration: Duration(seconds: 2),
-              ),
-            );
+            showInfoFeedback(context, 'Waiting for RTK data…');
           }
         }
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text('⚠️ GPS not connected. Check Location Provider settings.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
-          ),
-        );
+        showInfoFeedback(
+            context,
+            _locationService.emlidStatus.value.reconnecting
+                ? 'RTK receiver disconnected — reconnecting…'
+                : 'RTK receiver is not connected. Open Location Provider to connect.',
+            warning: true);
       }
     } else {
       // Use phone GPS
       location = await _locationService.getCurrentLocation();
 
       if (location == null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Unable to get location. Please enable location services.'),
-          ),
-        );
+        showInfoFeedback(
+            context,
+            'No GPS position yet. Make sure location is on and move to open '
+            'sky.',
+            warning: true,
+            duration: const Duration(seconds: 5));
       }
     }
 
@@ -1423,11 +1432,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // hanya mengirim fix BERIKUTNYA, jadi tanpa priming ini marker akan kosong.
     if (initialLocation != null && mounted) {
       final ll = LatLng(initialLocation.latitude, initialLocation.longitude);
-      setState(() {
-        _currentLocation = initialLocation;
-        _markerBeginLatLng = _markerTargetLatLng ?? ll;
-        _markerTargetLatLng = ll;
-      });
+      _markerBeginLatLng = _markerTargetLatLng ?? ll;
+      _markerTargetLatLng = ll;
+      _currentLocation = initialLocation;
     }
 
     if (initialLocation != null && !_hasInitialZoom) {
@@ -1482,32 +1489,24 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     _unifiedLocationSubscription = locationStream.listen(
       (location) {
-        if (mounted) {
-          final newLatLng = LatLng(location.latitude, location.longitude);
-
-          // ── Satu setState untuk semua perubahan state per update GPS ──
-          setState(() {
-            // Simpan posisi lama sebagai start animasi, lalu set target baru
-            _markerBeginLatLng = _markerTargetLatLng ?? newLatLng;
-            _markerTargetLatLng = newLatLng;
-            _currentLocation = location;
-            // Stream ini HANYA untuk marker. Titik jalur masuk ke sesi lewat
-            // TrackingEngine (feed per sumber) dan tampil via _onSessionsChanged.
-          });
-
-          // Jalankan animasi smooth dari posisi lama ke baru (di luar setState)
-          _markerAnimController.forward(from: 0);
-        }
+        if (!mounted) return;
+        final newLatLng = LatLng(location.latitude, location.longitude);
+        // Tanpa setState: hanya layer marker (AnimatedBuilder) & panel status
+        // (ValueListenableBuilder) yang dibangun ulang — bukan seluruh layar.
+        // Stream ini HANYA untuk marker. Titik jalur masuk ke sesi lewat
+        // TrackingEngine (feed per sumber) dan tampil via _onSessionsChanged.
+        _markerBeginLatLng = _markerTargetLatLng ?? newLatLng;
+        _markerTargetLatLng = newLatLng;
+        _currentLocation = location;
+        _markerAnimController.forward(from: 0);
       },
-      onError: (error) {
-        logError('❌ Error in location stream: $error', tag: 'COLLECT');
+      onError: (Object error, StackTrace st) {
+        logError('Location stream error', tag: 'COLLECT', error: error, stack: st);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Location error: $error'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          showInfoFeedback(context,
+              'GPS signal problem. Move to open sky; tracking continues when '
+              'the signal returns.',
+              warning: true);
         }
       },
     );
@@ -1543,22 +1542,28 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
     }
 
-    // 2. ✅ GOOGLE PLAY: Tampilkan Prominent Disclosure hanya jika permission belum granted
-    final needRationale = await _shouldShowBackgroundRationale();
-    if (needRationale) {
-      final proceed = await _showBackgroundLocationRationale();
-      if (!proceed) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ Izin background diperlukan untuk tracking latar belakang'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-        return;
+    // 1b. Penyimpanan hampir penuh → titik bisa gagal tersimpan.
+    if (!await confirmStorageFor(context, action: 'Tracking')) return;
+    if (!mounted) return;
+
+    // 2. GOOGLE PLAY: Prominent Disclosure sebelum meminta izin background.
+    //    Android: foreground service tetap merekam dengan izin "saat
+    //    digunakan", jadi "Not now" TIDAK memblokir tracking (dulu memblokir).
+    if (await _shouldShowBackgroundRationale()) {
+      if (!mounted) return;
+      final allow = await _showBackgroundLocationRationale();
+      await _rememberRationaleChoice(allow);
+      if (allow) {
+        await PermissionService.requestBackgroundLocation();
+      } else if (Platform.isIOS && mounted) {
+        showInfoFeedback(
+            context,
+            'Without "Always" location access, iOS may pause tracking while '
+            'Terestria is in the background.',
+            warning: true,
+            duration: const Duration(seconds: 5));
       }
+      if (!mounted) return;
     }
 
     // 2b. Daftarkan sesi ke manajer multi-project (guard cap + no-dup), terikat
@@ -1570,14 +1575,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         TrackingSessionManager.instance.start(widget.project, source: source);
     if (startRes.status == StartStatus.capReached) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Maksimal ${TrackingSessionManager.instance.maxConcurrent} project boleh tracking bersamaan. Hentikan salah satu dulu.'),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        showInfoFeedback(
+            context,
+            'At most ${TrackingSessionManager.instance.maxConcurrent} projects '
+            'can track at the same time. Stop one of them first.',
+            warning: true);
       }
       return;
     }
@@ -1588,15 +1590,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         existing != null &&
         existing.source != source &&
         mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(existing.source == TrackSource.emlid
-              ? 'Sesi ini direkam dengan RTK GPS — sambungkan Emlid agar titik bertambah.'
-              : 'Sesi ini direkam dengan GPS HP — ganti provider ke Phone agar titik bertambah.'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      showInfoFeedback(
+          context,
+          existing.source == TrackSource.emlid
+              ? 'This session was recorded with RTK GPS — connect the Emlid '
+                  'receiver so new points are added.'
+              : 'This session was recorded with phone GPS — switch the '
+                  'provider to Phone so new points are added.',
+          warning: true,
+          duration: const Duration(seconds: 5));
     }
     final mgr = TrackingSessionManager.instance;
     // Sesi baru: titik manual yang sudah ada ikut masuk (perilaku lama —
@@ -1650,20 +1652,21 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     logDebug('✅ Tracking started successfully (provider: ${_locationService.currentProvider.name})', tag: 'COLLECT');
 
     // 4. Show success message
+    HapticFeedback.mediumImpact();
+    logInfo('Tracking started for "${widget.project.name}" '
+        '(${_locationService.currentProvider.name})', tag: 'COLLECT');
     if (mounted) {
       final providerName =
           _locationService.currentProvider == LocationProvider.emlid
               ? 'RTK GPS'
-              : 'Phone GPS';
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              '📡 Tracking started using $providerName - continues in background'),
-          duration: const Duration(seconds: 3),
-          backgroundColor: Colors.green,
-        ),
-      );
+              : 'phone GPS';
+      showInfoFeedback(
+          context,
+          'Tracking started with $providerName. It continues with the screen '
+          'off — but do not swipe Terestria away from recent apps, that stops '
+          'tracking.',
+          success: true,
+          duration: const Duration(seconds: 5));
     }
 
     // 5. ✅ CRITICAL FIX: Restart stream untuk switch ke background stream
@@ -1731,16 +1734,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     );
   }
 
-// ✅ NEW METHOD: Show tracking error dialog with troubleshooting
+  /// Dialog saat service tracking gagal dinyalakan.
   Future<void> _showTrackingErrorDialog(String error) async {
+    logWarn('Tracking could not start: $error', tag: 'COLLECT');
     return showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Row(
           children: [
             Icon(Icons.error_outline, color: Colors.red, size: 28),
             SizedBox(width: 12),
-            Text('Tracking Error'),
+            Expanded(child: Text('Tracking could not start')),
           ],
         ),
         content: SingleChildScrollView(
@@ -1749,70 +1753,39 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Failed to start background tracking:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                'The GPS tracking service did not start. Please check:',
+                style: TextStyle(fontSize: 15),
               ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red[200]!),
-                ),
-                child: Text(
-                  error,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Troubleshooting:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              _buildChecklistItem('Grant background location permission'),
-              _buildChecklistItem('Disable battery optimization for this app'),
-              _buildChecklistItem(
-                  'Enable "Allow all the time" location access'),
-              _buildChecklistItem('Restart the app if problem persists'),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline, size: 20, color: Colors.blue),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Background tracking requires "Allow all the time" permission on Android 10+',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
+              _buildChecklistItem('Location permission is allowed'),
+              _buildChecklistItem('Location (GPS) is turned on'),
+              _buildChecklistItem('Notifications are allowed (Android 13+)'),
+              _buildChecklistItem(
+                  'Battery optimization is off for Terestria'),
+              const SizedBox(height: 12),
+              const Text(
+                'Your collected points are kept. Fix the setting, then tap '
+                'Retry.',
+                style: TextStyle(fontSize: 13),
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await PermissionService.openAppSettings();
+            },
+            child: const Text('Open settings'),
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
-              // Retry tracking
+              Navigator.pop(dialogContext);
               _startTracking();
             },
             child: const Text('Retry'),
@@ -1827,15 +1800,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // terakhir, TrackingEngine mematikan service.
     TrackingSessionManager.instance.pause(widget.project.id);
     _startUnifiedLocationStream(); // pilih ulang stream (bg ↔ fg)
-
-    logDebug('⏸️ Tracking paused', tag: 'COLLECT');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('⏸️ Tracking paused'),
-        duration: Duration(seconds: 1),
-      ),
-    );
+    HapticFeedback.lightImpact();
+    logInfo('Tracking paused for "${widget.project.name}"', tag: 'COLLECT');
+    if (mounted) {
+      showInfoFeedback(context, 'Tracking paused — new points are not recorded.',
+          duration: const Duration(seconds: 2));
+    }
   }
 
   void _resumeTracking() async {
@@ -1846,24 +1816,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     if (!mounted) return;
     if (!ok) {
       TrackingSessionManager.instance.pause(widget.project.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gagal menyalakan GPS background. Cek izin lokasi.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      logWarn('Resume failed: tracking service did not start', tag: 'COLLECT');
+      showInfoFeedback(context,
+          'Could not start background GPS. Check the location permission.',
+          warning: true);
       return;
     }
     _startUnifiedLocationStream(); // pilih ulang stream (fg → bg)
-
-    logDebug('▶️ Tracking resumed', tag: 'COLLECT');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('▶️ Tracking resumed'),
-        duration: Duration(seconds: 1),
-      ),
-    );
+    HapticFeedback.lightImpact();
+    logInfo('Tracking resumed for "${widget.project.name}"', tag: 'COLLECT');
+    showInfoFeedback(context, 'Tracking resumed',
+        duration: const Duration(seconds: 2));
   }
 
   void _finishTracking() async {
@@ -1871,30 +1834,88 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     // service (TrackingEngine mematikan service bila tak ada project lain yang
     // merekam). Simpan/Buang melepas sesi sepenuhnya.
     TrackingSessionManager.instance.finish(widget.project.id);
-
-    logDebug('⏹️ Tracking finished (stream continues for blue marker)', tag: 'COLLECT');
-
+    HapticFeedback.mediumImpact();
+    logInfo('Tracking stopped for "${widget.project.name}" '
+        '(${_collectedPoints.length} points)', tag: 'COLLECT');
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('⏹️ Tracking finished'),
-          duration: Duration(seconds: 2),
-          backgroundColor: Colors.blue,
-        ),
-      );
+      showInfoFeedback(context,
+          'Tracking stopped. Tap ✓ to save, or Start to continue the track.',
+          duration: const Duration(seconds: 3));
     }
 
     // 🔧 FIXED: Restart stream for foreground location only
     _startUnifiedLocationStream();
   }
 
+  // ─── Draft (titik manual + isian form) ───────────────────────────────────
+
+  /// Simpan draft sesaat setelah perubahan terakhir (debounce).
+  void _scheduleDraftSave() {
+    _draftDebounce?.cancel();
+    _draftDebounce = Timer(const Duration(milliseconds: 800), _persistDraftNow);
+  }
+
+  void _persistDraftNow() {
+    // Titik sesi tracking dicadangkan terpisah oleh koordinator persistensi;
+    // draft cukup menyimpan titik manual + isian form.
+    unawaited(_draftService.save(
+      widget.project.id,
+      points: _session == null ? List.of(_manualPoints) : const [],
+      formData: _formData,
+    ));
+  }
+
+  /// Pulihkan draft yang tertinggal (mis. app dibunuh saat kamera terbuka).
+  Future<void> _restoreDraft() async {
+    final draft = await _draftService.load(widget.project.id);
+    if (draft == null || !mounted) return;
+    final restorePoints = _session == null && draft.points.isNotEmpty;
+    setState(() {
+      if (restorePoints) {
+        _manualPoints
+          ..clear()
+          ..addAll(draft.points);
+      }
+      _formData = Map<String, dynamic>.of(draft.formData);
+    });
+    logInfo(
+        'Restored collection draft: '
+        '${restorePoints ? draft.points.length : 0} point(s), '
+        '${draft.formData.length} field value(s)',
+        tag: 'DRAFT');
+    final parts = [
+      if (restorePoints)
+        '${draft.points.length} point${draft.points.length > 1 ? 's' : ''}',
+      if (draft.formData.isNotEmpty) 'form values',
+    ];
+    if (parts.isEmpty) return;
+    showInfoFeedback(
+      context,
+      'Restored your unsaved work (${parts.join(' and ')}).',
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(label: 'DISCARD', onPressed: _discardDraft),
+    );
+  }
+
+  void _discardDraft() {
+    if (!mounted) return;
+    setState(() {
+      if (_session == null) _manualPoints.clear();
+      _formData = {};
+    });
+    _draftDebounce?.cancel();
+    unawaited(_draftService.clear(widget.project.id));
+    logInfo('Collection draft discarded by user', tag: 'DRAFT');
+  }
+
   // ─── Mutasi titik: lewat sesi bila ada (ter-persist & tampil di panel),
-  //     selain itu daftar manual lokal. ────────────────────────────────────
+  //     selain itu daftar manual lokal (+ draft). ───────────────────────────
   void _appendPoint(GeoPoint p) {
     if (_session != null) {
       TrackingSessionManager.instance.appendManual(widget.project.id, p);
     } else {
       setState(() => _manualPoints.add(p));
+      _scheduleDraftSave();
     }
   }
 
@@ -1903,80 +1924,73 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       TrackingSessionManager.instance.removeLast(widget.project.id);
     } else if (_manualPoints.isNotEmpty) {
       _manualPoints.removeLast();
+      _scheduleDraftSave();
     }
   }
 
-  void _clearAllPoints() {
+  /// Hapus semua titik; mengembalikan salinannya untuk "Undo".
+  List<GeoPoint> _clearAllPoints() {
+    final snapshot = List<GeoPoint>.of(_collectedPoints);
     if (_session != null) {
       TrackingSessionManager.instance.clearPoints(widget.project.id);
     } else {
       _manualPoints.clear();
+      _scheduleDraftSave();
     }
+    return snapshot;
+  }
+
+  void _restorePoints(List<GeoPoint> points) {
+    if (!mounted) return;
+    if (_session != null) {
+      TrackingSessionManager.instance.replacePoints(widget.project.id, points);
+    } else {
+      setState(() {
+        _manualPoints
+          ..clear()
+          ..addAll(points);
+      });
+      _scheduleDraftSave();
+    }
+    logInfo('Undo clear: ${points.length} point(s) restored', tag: 'COLLECT');
   }
 
   void _addCurrentPoint() async {
     // Untuk point geometry, hanya bisa add 1 point
     if (widget.project.geometryType == GeometryType.point &&
         _collectedPoints.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Only 1 point allowed for point geometry'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      showInfoFeedback(context,
+          'A point record has one point. Save it, or tap Undo to place it again.',
+          warning: true);
       return;
     }
 
-    // Ambil koordinat tengah layar
+    // Titik di crosshair (tengah peta) — tombol "My Location" memusatkan peta
+    // ke posisi GPS bila titik harus di posisi sekarang.
     final center = _mapController.camera.center;
-    final centerPoint = GeoPoint(
+    _appendPoint(GeoPoint(
       latitude: center.latitude,
       longitude: center.longitude,
       timestamp: DateTime.now(),
-    );
-
-    _appendPoint(centerPoint);
+    ));
+    HapticFeedback.selectionClick();
 
     // Peringatkan (tanpa memblok) bila fix GPS saat ini di bawah syarat
-    // kualitas yang dipilih — jangan diam-diam menyimpan titk bermutu rendah.
+    // kualitas yang dipilih — jangan diam-diam menyimpan titik bermutu rendah.
     final loc = _currentLocation;
-    if (loc != null &&
-        !_locationService.pointMeetsCurrentRequirement(loc)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '⚠️ Titik ditambahkan, tapi kualitas GPS saat ini di bawah syarat '
-            '"${_locationService.currentFixQuality.name}" '
-            '(±${loc.accuracy?.toStringAsFixed(1) ?? '?'} m).',
-          ),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+    if (loc != null && !_locationService.pointMeetsCurrentRequirement(loc)) {
+      showInfoFeedback(
+          context,
+          'Point added at the crosshair. GPS quality is below the '
+          '"${_locationService.currentFixQuality.name}" requirement '
+          '(±${loc.accuracy?.toStringAsFixed(1) ?? '?'} m).',
+          warning: true);
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('Point added at center'),
-          duration: Duration(seconds: 1)),
-    );
-  }
-
-  void _checkAndShowForm() {
-    // Show form after minimum points collected
-    if (!_showForm) {
-      if (widget.project.geometryType == GeometryType.point &&
-          _collectedPoints.length >= 1) {
-        setState(() => _showForm = true);
-      } else if (widget.project.geometryType == GeometryType.line &&
-          _collectedPoints.length >= 2) {
-        setState(() => _showForm = true);
-      } else if (widget.project.geometryType == GeometryType.polygon &&
-          _collectedPoints.length >= 3) {
-        setState(() => _showForm = true);
-      }
-    }
+    showInfoFeedback(context,
+        'Point ${_collectedPoints.length} added at the crosshair',
+        duration: const Duration(seconds: 1));
   }
 
   bool _canSaveData() {
@@ -1998,22 +2012,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     }
 
     if (widget.project.geometryType == GeometryType.point) {
-      if (_collectedPoints.length >= 1) {
-        return 'Save Data';
-      }
-      return 'Collect 1 point first';
+      return 'Save data';
     } else if (widget.project.geometryType == GeometryType.line) {
       if (_collectedPoints.length >= 2) {
-        return 'Save Data';
+        return 'Save data';
       }
       return 'Need ${2 - _collectedPoints.length} more point(s)';
     } else if (widget.project.geometryType == GeometryType.polygon) {
       if (_collectedPoints.length >= 3) {
-        return 'Save Data';
+        return 'Save data';
       }
       return 'Need ${3 - _collectedPoints.length} more point(s)';
     }
-    return 'Save Data';
+    return 'Save data';
   }
 
   void _undoLastPoint() {
@@ -2023,103 +2034,115 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         // Hide form if below minimum points
         if (widget.project.geometryType == GeometryType.point &&
             _collectedPoints.isEmpty) {
-          _showForm = false;
         } else if (widget.project.geometryType == GeometryType.line &&
             _collectedPoints.length < 2) {
-          _showForm = false;
         } else if (widget.project.geometryType == GeometryType.polygon &&
             _collectedPoints.length < 3) {
-          _showForm = false;
         }
       });
+      HapticFeedback.selectionClick();
     }
   }
 
-  void _clearPoints() {
-    setState(() {
-      _clearAllPoints();
-      _showForm = false;
-      // _isFormValid = false;
-    });
-  }
-
-  Future<void> _saveData() async {
-    if (_collectedPoints.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please collect at least one point')),
-      );
-      return;
-    }
-
-    // Validate form but check if errors are only from photo fields
-    final isValid = _formKey.currentState!.validate();
-
-    if (!isValid) {
-      // Check if any photo field has errors
-      bool hasPhotoErrors = false;
-      bool hasOtherErrors = false;
-
-      // Try to save to get the form data
-      _formKey.currentState!.save();
-
-      // Show warning for photo fields but allow saving
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.warning, color: Colors.white),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Some fields may not meet requirements. Please review before saving.',
-                ),
-              ),
-            ],
+  /// Hapus semua titik — dengan konfirmasi & "Undo" (dulu satu ketukan
+  /// langsung menghapus track berjam-jam).
+  Future<void> _clearPoints() async {
+    final count = _collectedPoints.length;
+    if (count == 0) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_sweep_outlined,
+            color: Colors.red, size: 32),
+        title: const Text('Clear all points?'),
+        content: Text(
+            'This removes all $count point${count > 1 ? 's' : ''} of the '
+            'current ${_isTracking ? 'track' : 'record'}. You can undo right '
+            'after.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
           ),
-          backgroundColor: Colors.orange[700],
-          duration: const Duration(seconds: 4),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      // Don't return - allow to continue saving
-    } else {
-      _formKey.currentState!.save();
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    late List<GeoPoint> snapshot;
+    setState(() {
+      snapshot = _clearAllPoints();
+    });
+    HapticFeedback.mediumImpact();
+    logInfo('Cleared $count point(s) in "${widget.project.name}" '
+        '(undo available)', tag: 'COLLECT');
+    showInfoFeedback(
+      context,
+      'Cleared $count point${count > 1 ? 's' : ''}',
+      duration: const Duration(seconds: 8),
+      action: SnackBarAction(
+        label: 'UNDO',
+        onPressed: () => _restorePoints(snapshot),
+      ),
+    );
+  }
+
+  /// Simpan record. Form yang belum lengkap DIBLOKIR (dulu tetap tersimpan)
+  /// dan layar digulir ke field bermasalah. [continueCollecting] = "Save &
+  /// next": tetap di peta dengan form kosong (nilai ter-pin tetap).
+  Future<bool> _saveData({bool continueCollecting = false}) async {
+    if (_collectedPoints.isEmpty) {
+      showInfoFeedback(context, 'Add at least one point first.', warning: true);
+      return false;
     }
 
-    // Validate geometry requirements
-    if (widget.project.geometryType == GeometryType.line &&
-        _collectedPoints.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Line requires at least 2 points')),
+    _formKey.currentState?.save();
+    final formValid = _formKey.currentState?.validate() ?? true;
+    final issues = formFieldIssues(widget.project.formFields, _formData);
+    if (issues.isNotEmpty || !formValid) {
+      if (issues.isNotEmpty) _formController.scrollTo(issues.first.field.label);
+      final first = issues.isNotEmpty ? issues.first : null;
+      showInfoFeedback(
+        context,
+        first == null
+            ? 'Some fields need attention.'
+            : '"${first.field.label}" ${first.message}'
+                '${issues.length > 1 ? ' (+${issues.length - 1} more)' : ''}.',
+        warning: true,
+        duration: const Duration(seconds: 4),
       );
-      return;
+      logInfo('Save blocked: ${issues.length} field issue(s)', tag: 'COLLECT');
+      return false;
     }
 
-    if (widget.project.geometryType == GeometryType.polygon &&
-        _collectedPoints.length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Polygon requires at least 3 points')),
-      );
-      return;
+    final geometry =
+        validateGeometry(widget.project.geometryType, _collectedPoints.length);
+    if (!geometry.ok) {
+      showInfoFeedback(context, geometry.error ?? 'Not enough points.',
+          warning: true);
+      return false;
     }
 
     setState(() => _isSaving = true);
 
     try {
       // Ambil username dari AuthService
-      final authService = AuthService();
-      final user = await authService.getUser();
-      final username = user?.username;
+      final user = await AuthService().getUser();
 
       final geoData = GeoData(
         id: _uuid.v4(),
         projectId: widget.project.id,
-        formData: _formData,
+        formData: Map<String, dynamic>.of(_formData),
         // Salinan: list sesi dilepas setelah simpan (manager.stop).
         points: List.of(_collectedPoints),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
-        collectedBy: username, // Set username sebagai collectedBy
+        collectedBy: user?.username,
       );
 
       await _storageService.saveGeoData(geoData);
@@ -2127,38 +2150,47 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       // Sesi project ini selesai → lepas dari manajer multi-project.
       TrackingSessionManager.instance.stop(widget.project.id);
       _manualPoints.clear();
+      _draftDebounce?.cancel();
+      await _draftService.clear(widget.project.id);
+      HapticFeedback.mediumImpact();
+      logInfo(
+          'Saved record ${geoData.id} (${geoData.points.length} point(s)) '
+          'in "${widget.project.name}"',
+          tag: 'COLLECT');
 
-      if (mounted) {
-        // Reset saving state sebelum pop
-        setState(() => _isSaving = false);
+      if (!mounted) return true;
+      setState(() => _isSaving = false);
 
-        // Delay singkat untuk memastikan UI update
-        await Future.delayed(const Duration(milliseconds: 100));
-
+      if (continueCollecting) {
+        // Tutup form, kosongkan isian (nilai pin dimuat ulang saat form
+        // dibuka lagi), tetap di peta untuk record berikutnya.
+        _formData = {};
+        Navigator.pop(context);
+        await _loadExistingData();
         if (mounted) {
-          // Simpan context sebelum pop untuk SnackBar
-          final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-          // Pop Form Dialog terlebih dahulu
-          Navigator.pop(context);
-          await Future.delayed(const Duration(milliseconds: 50));
-
-          if (mounted) {
-            // Pop DataCollectionScreen dengan result=true untuk trigger reload
-            Navigator.pop(context, true);
-
-            // Show success message (akan muncul di ProjectDetailScreen)
-            scaffoldMessenger.showSnackBar(
-              const SnackBar(
-                content: Text('Data saved successfully'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
+          showInfoFeedback(context, 'Saved. Ready for the next record.',
+              success: true);
+        }
+      } else {
+        // Simpan context sebelum pop untuk SnackBar
+        final scaffoldMessenger = ScaffoldMessenger.of(context);
+        Navigator.pop(context); // form
+        await Future.delayed(const Duration(milliseconds: 50));
+        if (mounted) {
+          // Pop DataCollectionScreen dengan result=true untuk trigger reload
+          Navigator.pop(context, true);
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: const Text('Record saved'),
+              backgroundColor: Colors.green.shade700,
+              duration: const Duration(seconds: 2),
+            ),
+          );
         }
       }
+      return true;
     } catch (e, stack) {
-      setState(() => _isSaving = false);
+      if (mounted) setState(() => _isSaving = false);
       crashlytics.log('saveData failed for project ${widget.project.id}');
       crashlytics.setContext('project_id', widget.project.id);
       crashlytics.setContext('geometry_type',
@@ -2169,22 +2201,23 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       crashlytics.recordError(e, stack,
           reason: 'DataCollection: saveGeoData failed');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving data: $e')),
-        );
+        // Titik & isian tetap ada (draft) — user bisa mencoba lagi.
+        _persistDraftNow();
+        showErrorFeedback(context, 'Could not save the record',
+            error: e, stack: stack, tag: 'COLLECT', log: false);
       }
+      return false;
     }
   }
 
   void _onMapTap(TapPosition tapPosition, LatLng point) {
     if (_collectionMode == CollectionMode.drawing && !_isTracking) {
-      final geoPoint = GeoPoint(
+      _appendPoint(GeoPoint(
         latitude: point.latitude,
         longitude: point.longitude,
         timestamp: DateTime.now(),
-      );
-
-      _appendPoint(geoPoint);
+      ));
+      HapticFeedback.selectionClick();
     }
   }
 
@@ -2227,24 +2260,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         return Icons.timeline;
       case GeometryType.polygon:
         return Icons.pentagon_outlined;
-    }
-  }
-
-  String _getLocationProviderName() {
-    switch (_locationService.currentProvider) {
-      case LocationProvider.phone:
-        return 'Phone GPS';
-      case LocationProvider.emlid:
-        return 'RTK GPS';
-    }
-  }
-
-  IconData _getLocationProviderIcon() {
-    switch (_locationService.currentProvider) {
-      case LocationProvider.phone:
-        return Icons.smartphone;
-      case LocationProvider.emlid:
-        return Icons.router;
     }
   }
 
@@ -2756,76 +2771,50 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     );
   }
 
-  /// Dialog konfirmasi WAJIB sebelum form atribut muncul: menampilkan akurasi
-  /// spasial yang terbaca saat ini agar user sadar mutu data yang akan disimpan.
-  /// Return true bila user menekan "Ya, Simpan".
-  Future<bool> _confirmSpatialAccuracy() async {
+  /// Konfirmasi sebelum form atribut: HANYA muncul bila ada yang perlu
+  /// diperhatikan — GPS saat ini di bawah syarat kualitas, atau geometri
+  /// janggal (tepi poligon berpotongan, luas/panjang ≈0, titik ganda).
+  /// Dulu dialog wajib muncul di setiap simpan. Return true = lanjut ke form.
+  Future<bool> _confirmBeforeForm() async {
     final loc = _currentLocation;
-    final acc = loc?.accuracy;
-    final accText = acc != null ? '±${acc.toStringAsFixed(1)} m' : 'unknown';
-    final meetsReq = loc != null && _locationService.pointMeetsCurrentRequirement(loc);
-    final reqName = _locationService.currentFixQuality.name;
-    final accentColor = meetsReq ? AppTheme.primaryColor : Colors.orange.shade800;
+    final meetsReq =
+        loc == null || _locationService.pointMeetsCurrentRequirement(loc);
+    final warnings =
+        geometryWarnings(widget.project.geometryType, _collectedPoints);
+    if (meetsReq && warnings.isEmpty) return true;
 
+    final acc = loc?.accuracy;
+    final reqName = _locationService.currentFixQuality.name;
+    logInfo(
+        'Pre-save check: gps ok=$meetsReq, geometry warnings=${warnings.length}',
+        tag: 'COLLECT');
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(children: [
-          Icon(Icons.gps_fixed, color: accentColor),
-          const SizedBox(width: 8),
-          const Expanded(child: Text('Save this data?')),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('This data will be saved with the current spatial accuracy:'),
-            const SizedBox(height: 12),
-            Center(
-              child: Text(
-                accText,
-                style: TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w800,
-                  color: accentColor,
+        icon: Icon(Icons.warning_amber_rounded,
+            color: Colors.orange.shade800, size: 36),
+        title: const Text('Check before saving'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!meetsReq)
+                _buildWarningLine(
+                  'GPS accuracy is ${acc != null ? '±${acc.toStringAsFixed(1)} m' : 'unknown'}, '
+                  'below the "$reqName" requirement. Points placed from GPS '
+                  'may be inaccurate.',
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (!meetsReq)
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Row(children: [
-                  Icon(Icons.warning_amber_rounded,
-                      color: Colors.orange.shade800, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Accuracy is below the "$reqName" requirement. Make sure '
-                      'this is intended before saving.',
-                      style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
-                    ),
-                  ),
-                ]),
-              )
-            else
-              Text(
-                'Meets the "$reqName" quality requirement.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-          ],
+              for (final w in warnings) _buildWarningLine(w),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: const Text('Review points'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -2833,7 +2822,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               backgroundColor: AppTheme.primaryColor,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Yes, Save'),
+            child: const Text('Continue'),
           ),
         ],
       ),
@@ -2841,11 +2830,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     return result ?? false;
   }
 
+  Widget _buildWarningLine(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error_outline, size: 20, color: Colors.orange.shade800),
+            const SizedBox(width: 8),
+            Expanded(child: Text(text, style: const TextStyle(fontSize: 15))),
+          ],
+        ),
+      );
+
   void _showFormBottomSheet() {
-    // Initialize form validity based on whether there are required fields
-    final hasRequiredFields =
-        widget.project.formFields.any((field) => field.required);
-    bool localIsFormValid = !hasRequiredFields;
     bool localIsSaving = false;
 
     Navigator.push(
@@ -2854,68 +2851,21 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         fullscreenDialog: true,
         builder: (context) => StatefulBuilder(
           builder: (context, setModalState) {
-            // Local validation function that updates modal state
-            void validateFormLocal() {
-              bool hasAllRequiredFields = true;
-              for (var field in widget.project.formFields) {
-                final value = _formData[field.label];
-
-                // Check required field
-                if (field.required) {
-                  if (value == null) {
-                    hasAllRequiredFields = false;
-                    break;
-                  }
-
-                  if (field.type == FieldType.text ||
-                      field.type == FieldType.number) {
-                    if (value is String && value.trim().isEmpty) {
-                      hasAllRequiredFields = false;
-                      break;
-                    }
-                  } else if (field.type == FieldType.photo) {
-                    // ✅ FIXED: Check minPhotos, not just empty
-                    final minPhotos = field.minPhotos ?? (field.required ? 1 : 0);
-                    final photoCount = (value is List) ? value.length : 0;
-                    if (photoCount < minPhotos) {
-                      hasAllRequiredFields = false;
-                      break;
-                    }
-                  } else if (field.type == FieldType.checkbox) {
-                    if (value is bool && value == false) {
-                      hasAllRequiredFields = false;
-                      break;
-                    }
-                  } else if (field.type == FieldType.dropdown ||
-                      field.type == FieldType.date) {
-                    if (value is String && value.isEmpty) {
-                      hasAllRequiredFields = false;
-                      break;
-                    }
-                  }
-                }
-                
-                // ✅ NEW: Also check maxPhotos for photo fields (even if not required)
-                if (field.type == FieldType.photo && value != null) {
-                  final maxPhotos = field.maxPhotos ?? 1;
-                  final photoCount = (value is List) ? value.length : 0;
-                  if (photoCount > maxPhotos) {
-                    hasAllRequiredFields = false;
-                    break;
-                  }
-                }
+            Future<void> save({required bool next}) async {
+              setModalState(() => localIsSaving = true);
+              final ok = await _saveData(continueCollecting: next);
+              // Gagal / diblokir → form tetap terbuka untuk diperbaiki.
+              if (!ok && context.mounted) {
+                setModalState(() => localIsSaving = false);
               }
-
-              setModalState(() {
-                localIsFormValid = hasAllRequiredFields;
-              });
             }
 
             return Scaffold(
               appBar: AppBar(
-                title: const Text('Survey Data'),
+                title: const Text('Survey data'),
                 leading: IconButton(
                   icon: const Icon(Icons.close),
+                  tooltip: 'Close (your entries are kept)',
                   onPressed: () => Navigator.pop(context),
                 ),
               ),
@@ -2928,149 +2878,114 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                         child: ListView(
                           padding: const EdgeInsets.all(AppTheme.spacingMedium),
                           children: [
+                            RequiredFieldsProgress(
+                              fields: widget.project.formFields,
+                              data: _formData,
+                            ),
                             DynamicForm(
                               formFields: widget.project.formFields,
                               projectId: widget.project.id,
+                              // Isian dipertahankan saat form ditutup & dibuka
+                              // lagi (dulu kosong kembali).
+                              initialData: _formData,
+                              controller: _formController,
                               onSaved: (data) => _formData = data,
                               // Pass watermark info to PhotoFieldWidget
                               username: _currentUsername,
                               latitude: _currentLocation?.latitude,
                               longitude: _currentLocation?.longitude,
+                              locationProvider: () => _locationNotifier.value,
                               onChanged: () {
-                                // Delay check to allow validation to complete
-                                Future.delayed(const Duration(milliseconds: 100),
-                                    () {
-                                  if (mounted) {
-                                    validateFormLocal();
-                                  }
-                                });
+                                _scheduleDraftSave();
+                                if (context.mounted) setModalState(() {});
                               },
                             ),
-                            const SizedBox(height: AppTheme.spacingLarge),
-
-                          // Info card
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: AppTheme.primaryColor.withOpacity(0.3),
-                              ),
+                            const SizedBox(height: 100), // Extra space for button
+                          ],
+                        ),
+                      ),
+                      // Tombol simpan di bawah — selalu aktif; bila ada field
+                      // bermasalah, form menggulir ke field itu.
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, -2),
                             ),
-                            child: const Row(
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  color: AppTheme.primaryColor,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'Fill in all required fields to save your data',
-                                    style: TextStyle(
-                                      color: AppTheme.primaryColor,
-                                      fontSize: 13,
+                          ],
+                        ),
+                        child: SafeArea(
+                          top: false,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: localIsSaving
+                                      ? null
+                                      : () => save(next: true),
+                                  icon: const Icon(Icons.add_location_alt,
+                                      size: 20),
+                                  label: const Text('Save & next'),
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 56),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 100), // Extra space for button
-                        ],
-                      ),
-                    ),
-                    // Save Button di Bawah
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, -2),
-                          ),
-                        ],
-                      ),
-                      child: SafeArea(
-                        top: false,
-                        child: ElevatedButton(
-                          onPressed: (localIsSaving || !localIsFormValid)
-                              ? null
-                              : () async {
-                                  setModalState(() => localIsSaving = true);
-
-                                  // Simpan data
-                                  await _saveData();
-
-                                  // Jika save berhasil, _saveData() akan menutup DataCollectionScreen
-                                  // dan modal form sheet juga akan tertutup otomatis
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primaryColor,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey[300],
-                            disabledForegroundColor: Colors.grey[600],
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: localIsSaving
-                              ? const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: localIsSaving
+                                      ? null
+                                      : () => save(next: false),
+                                  icon: localIsSaving
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(Icons.check_circle_outline,
+                                          size: 22),
+                                  label: Text(
+                                    localIsSaving ? 'Saving…' : 'Save',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
                                     ),
-                                    SizedBox(width: 12),
-                                    Text(
-                                      'Saving...',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primaryColor,
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size(0, 56),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
-                                  ],
-                                )
-                              : const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.check_circle_outline,
-                                        size: 22),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Save Data',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
+                                    elevation: 0,
+                                  ),
                                 ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 ),
               ),
             );
           },
         ),
       ),
-    ).then((_) {
-      setState(() => _showForm = false);
-    });
+    );
   }
 
   /// Layer OSM langsung dari jaringan: dasar di bawah overlay PDF & cadangan
@@ -3352,10 +3267,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                 padding: EdgeInsets.zero,
                 onPressed: _canSaveData()
                     ? () async {
-                        // Wajib konfirmasi akurasi spasial dulu sebelum form.
-                        final ok = await _confirmSpatialAccuracy();
+                        // Konfirmasi hanya bila GPS/geometri perlu dicek.
+                        final ok = await _confirmBeforeForm();
                         if (!ok || !mounted) return;
-                        setState(() => _showForm = true);
                         _showFormBottomSheet();
                       }
                     : null,
@@ -3439,9 +3353,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     },
                     onPositionChanged: (position, hasGesture) {
                       _currentZoom = position.zoom;
-                      setState(() {
-                        _centerCoordinates = position.center;
-                      });
+                      // Notifier, bukan setState: label koordinat crosshair
+                      // saja yang ikut berubah tiap frame geser peta.
+                      _centerNotifier.value = position.center;
                       // P2: debounce culling 200ms agar tidak terlalu sering
                       _cullingDebounce?.cancel();
                       _cullingDebounce = Timer(
@@ -3470,8 +3384,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                         ),
                       ),
 
-                    // GeoJSON Layers (user-imported)
-                    ..._buildGeoJsonLayers(),
+                    // GeoJSON Layers (user-imported) — dibangun sekali saat
+                    // layer berubah, bukan tiap frame.
+                    ..._geoJsonLayerWidgets,
 
                     // Existing Data Layers (from project)
                     ..._buildExistingDataLayers(),
@@ -3581,50 +3496,61 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
                     // Ring akurasi di sekitar posisi: radius = akurasi (meter),
                     // warna = confidence. Biru = fix bagus (recordable), amber =
-                    // masih "acquiring"/tak layak rekam. Memberi umpan balik agar
-                    // user tahu kualitas GPS tanpa menunggu track sempurna.
-                    if (_currentLocation != null && _animatedMarkerLatLng != null)
-                      CircleLayer(
-                        circles: [
-                          CircleMarker(
-                            point: _animatedMarkerLatLng!,
-                            radius:
-                                (_currentLocation!.accuracy ?? 15).clamp(3.0, 80.0),
-                            useRadiusInMeter: true,
-                            color: (_currentLocation!.recordable
-                                    ? Colors.blue
-                                    : Colors.orange)
-                                .withOpacity(0.12),
-                            borderColor: (_currentLocation!.recordable
-                                    ? Colors.blue
-                                    : Colors.orange)
-                                .withOpacity(0.55),
-                            borderStrokeWidth: 1.5,
-                          ),
-                        ],
-                      ),
+                    // masih "acquiring"/tak layak rekam. Hanya layer ini (bukan
+                    // seluruh layar) yang dibangun ulang per frame animasi/fix.
+                    AnimatedBuilder(
+                      animation: Listenable.merge(
+                          [_markerAnimController, _locationNotifier]),
+                      builder: (context, _) {
+                        final pos = _animatedMarkerLatLng;
+                        final loc = _currentLocation;
+                        if (pos == null || loc == null) {
+                          return const SizedBox.shrink();
+                        }
+                        final color =
+                            loc.recordable ? Colors.blue : Colors.orange;
+                        return CircleLayer(
+                          circles: [
+                            CircleMarker(
+                              point: pos,
+                              radius: (loc.accuracy ?? 15).clamp(0.5, 80.0),
+                              useRadiusInMeter: true,
+                              color: color.withOpacity(0.12),
+                              borderColor: color.withOpacity(0.55),
+                              borderStrokeWidth: 1.5,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
 
                     // Current Location Marker (User Location - Blue with direction)
-                    // Posisi marker dianimasikan smooth menggunakan _animatedMarkerLatLng
-                    // (interpolasi easeOut antara posisi lama dan posisi GPS terbaru)
-                    // Marker lokasi user SELALU tampil (termasuk saat tracking) —
-                    // dulu disembunyikan saat tracking, membuat user bingung
-                    // "marker hilang, tinggal ring". Kini dot + ring tampil bersama.
-                    if (_animatedMarkerLatLng != null)
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: _animatedMarkerLatLng!,
-                            width: 60,
-                            height: 60,
-                            child: UserLocationMarker(
-                              bearing: _currentBearing,
-                              isEmlidGPS: _locationService.currentProvider ==
-                                  LocationProvider.emlid,
+                    // Marker lokasi user SELALU tampil (termasuk saat tracking).
+                    AnimatedBuilder(
+                      animation: Listenable.merge([
+                        _markerAnimController,
+                        _locationNotifier,
+                        _bearingNotifier,
+                      ]),
+                      builder: (context, _) {
+                        final pos = _animatedMarkerLatLng;
+                        if (pos == null) return const SizedBox.shrink();
+                        return MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: pos,
+                              width: 60,
+                              height: 60,
+                              child: UserLocationMarker(
+                                bearing: _bearingNotifier.value,
+                                isEmlidGPS: _locationService.currentProvider ==
+                                    LocationProvider.emlid,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        );
+                      },
+                    ),
 
                     // Map measure tool overlays (shared, scratch) — on top.
                     ...buildMapToolsLayers(),
@@ -3674,13 +3600,26 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildInfoCard(),
+            // Info card mengikuti fix GPS lewat notifier (tanpa rebuild peta).
+            ValueListenableBuilder<GeoPoint?>(
+              valueListenable: _locationNotifier,
+              builder: (context, _, __) => _buildInfoCard(),
+            ),
+            GpsStatusBanners(
+              location: _locationNotifier,
+              emlidStatus: _locationService.emlidStatus,
+              usingEmlid:
+                  _locationService.currentProvider == LocationProvider.emlid,
+              isTracking: _isTracking,
+              isPaused: _isPaused,
+              lastEmlidDataTime: () => _locationService.lastEmlidDataTime,
+            ),
             const SizedBox(height: 4),
             // Koordinat Crosshair
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withOpacity(0.6),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -3692,13 +3631,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                     color: Colors.white,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    '${_centerCoordinates.latitude.toStringAsFixed(6)}, ${_centerCoordinates.longitude.toStringAsFixed(6)}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      fontFamily: 'monospace',
-                      color: Colors.white,
+                  ValueListenableBuilder<LatLng>(
+                    valueListenable: _centerNotifier,
+                    builder: (context, c, _) => Text(
+                      '${c.latitude.toStringAsFixed(6)}, ${c.longitude.toStringAsFixed(6)}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'monospace',
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ],
@@ -3725,21 +3667,30 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           // Mode Toggle (hanya line/polygon)
           if (widget.project.geometryType != GeometryType.point)
             MapToolButton(
-              tooltip: 'Mode',
+              // Saat tracking berjalan, ganti mode dinonaktifkan (dulu diam-diam
+              // menghentikan tracking).
+              tooltip: _isTracking
+                  ? 'Stop tracking to switch mode'
+                  : (_collectionMode == CollectionMode.drawing
+                      ? 'Switch to GPS / crosshair mode'
+                      : 'Switch to drawing mode (tap map to add points)'),
               active: _collectionMode == CollectionMode.drawing,
               icon: _collectionMode == CollectionMode.drawing
                   ? Icons.touch_app
                   : Icons.edit,
-              onPressed: () {
-                setState(() {
-                  if (_collectionMode == CollectionMode.tracking) {
-                    _collectionMode = CollectionMode.drawing;
-                    if (_isTracking) _finishTracking();
-                  } else {
-                    _collectionMode = CollectionMode.tracking;
-                  }
-                });
-              },
+              onPressed: _isTracking
+                  ? () => showInfoFeedback(
+                      context, 'Stop tracking first to switch mode.',
+                      warning: true)
+                  : () {
+                      setState(() {
+                        _collectionMode =
+                            _collectionMode == CollectionMode.tracking
+                                ? CollectionMode.drawing
+                                : CollectionMode.tracking;
+                      });
+                      HapticFeedback.selectionClick();
+                    },
             ),
 
           // Layers Panel (badge = jumlah layer aktif)
@@ -3812,6 +3763,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     ]);
   }
 
+  /// Kartu status di atas peta. Teks penting (akurasi, kualitas fix, jumlah
+  /// titik) ≥ 13 sp agar terbaca di bawah terik matahari (dulu 8–10 px).
   Widget _buildInfoCard() {
     double? distance;
     double? area;
@@ -3825,196 +3778,154 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
     }
 
+    final loc = _currentLocation;
+    final isEmlid = _locationService.currentProvider == LocationProvider.emlid;
+    final acc = loc?.accuracy;
+    final meetsReq =
+        loc != null && _locationService.pointMeetsCurrentRequirement(loc);
+    final accColor = loc == null
+        ? Colors.grey.shade600
+        : (meetsReq ? Colors.green.shade700 : Colors.orange.shade800);
+    final accText = acc == null
+        ? '± — m'
+        : '±${acc < 1 ? acc.toStringAsFixed(2) : acc.toStringAsFixed(1)} m';
+
+    final drawing = _collectionMode == CollectionMode.drawing;
+    final statusText = drawing
+        ? 'Drawing mode'
+        : _isTracking
+            ? (_isPaused ? 'Paused' : 'Tracking')
+            : (_session?.pendingSave ?? false)
+                ? 'Stopped — not saved yet'
+                : 'Ready';
+    final statusIcon = drawing
+        ? Icons.edit
+        : _isTracking
+            ? (_isPaused ? Icons.pause_circle : Icons.fiber_manual_record)
+            : Icons.gps_not_fixed;
+    final statusColor = drawing
+        ? AppTheme.primaryColor
+        : _isTracking
+            ? (_isPaused ? Colors.orange : Colors.red)
+            : Colors.grey.shade700;
+
+    final quality = isEmlid
+        ? 'RTK ${(loc?.fixQuality ?? (_locationService.isEmlidConnected ? '…' : 'OFF')).toUpperCase()}'
+        : 'Phone GPS';
+    final qualityColor = isEmlid
+        ? (loc?.fixQuality != null
+            ? _getFixQualityColor(loc!.fixQuality!)
+            : Colors.orange.shade800)
+        : Colors.blueGrey.shade600;
+
     return Container(
       decoration: AppTheme.getCardDecoration.copyWith(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white.withOpacity(0.96),
         border: Border.all(color: Colors.white, width: 1.5),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Baris pertama: Status tracking dan jumlah points
+            // Baris 1: status & jumlah titik
             Row(
               children: [
-                Icon(
-                  _collectionMode == CollectionMode.drawing
-                      ? Icons.edit
-                      : _isTracking
-                          ? (_isPaused ? Icons.pause_circle : Icons.gps_fixed)
-                          : Icons.gps_not_fixed,
-                  color: _collectionMode == CollectionMode.drawing
-                      ? AppTheme.primaryColor
-                      : _isTracking
-                          ? (_isPaused ? Colors.orange : Colors.green)
-                          : Colors.grey,
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
+                Icon(statusIcon, color: statusColor, size: 20),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    _collectionMode == CollectionMode.drawing
-                        ? 'Drawing Mode'
-                        : _isTracking
-                            ? (_isPaused ? 'Paused' : 'Tracking')
-                            : 'Inactive',
+                    statusText,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: Colors.black87,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    color: AppTheme.primaryColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${_collectedPoints.length} pts',
+                    '${_collectedPoints.length} '
+                    'point${_collectedPoints.length == 1 ? '' : 's'}',
                     style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
                       color: AppTheme.primaryColor,
                     ),
                   ),
                 ),
               ],
             ),
-
-            // Baris kedua: Location provider dan metric (distance/area)
             const SizedBox(height: 6),
+            // Baris 2: akurasi besar + sumber/kualitas + panjang/luas
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Location Provider
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: _locationService.currentProvider ==
-                            LocationProvider.emlid
-                        ? Colors.blue.withOpacity(0.1)
-                        : Colors.grey.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: _locationService.currentProvider ==
-                              LocationProvider.emlid
-                          ? Colors.blue.withOpacity(0.3)
-                          : Colors.grey.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _getLocationProviderIcon(),
-                        size: 10,
-                        color: _locationService.currentProvider ==
-                                LocationProvider.emlid
-                            ? Colors.blue[700]
-                            : Colors.grey[700],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _locationService.currentProvider ==
-                                LocationProvider.emlid
-                            ? 'RTK'
-                            : 'GPS',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
-                          color: _locationService.currentProvider ==
-                                  LocationProvider.emlid
-                              ? Colors.blue[700]
-                              : Colors.grey[700],
-                        ),
-                      ),
-                      // Warning indicator if Emlid but not streaming
-                      if (_locationService.currentProvider ==
-                              LocationProvider.emlid &&
-                          (!_locationService.isEmlidConnected ||
-                              !_locationService.isEmlidStreaming)) ...[
-                        const SizedBox(width: 3),
-                        Icon(
-                          Icons.warning_rounded,
-                          size: 10,
-                          color: Colors.orange[700],
-                        ),
-                      ],
-                    ],
+                Text(
+                  accText,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: accColor,
                   ),
                 ),
-
                 const SizedBox(width: 8),
-
-                // Distance or Area
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: qualityColor,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    quality,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 if (distance != null)
                   Expanded(
                     child: Text(
-                      '📏 ${_settingsService.settings.formatDistance(distance)}',
-                      style: const TextStyle(fontSize: 10),
+                      _settingsService.settings.formatDistance(distance),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   )
                 else if (area != null)
                   Expanded(
                     child: Text(
-                      '📐 ${_settingsService.settings.formatArea(area)}',
-                      style: const TextStyle(fontSize: 10),
+                      _settingsService.settings.formatArea(area),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   )
                 else
                   const Spacer(),
-
-                // Accuracy and Fix Quality
-                if (_currentLocation != null) ...[
-                  Text(
-                    '±${_currentLocation!.accuracy?.toStringAsFixed(1) ?? 'N/A'}m',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  // Show fix quality for Emlid
-                  if (_locationService.currentProvider ==
-                          LocationProvider.emlid &&
-                      _currentLocation!.fixQuality != null) ...[
-                    const SizedBox(width: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 2),
-                      decoration: BoxDecoration(
-                        color:
-                            _getFixQualityColor(_currentLocation!.fixQuality!),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        _currentLocation!.fixQuality!.toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 8,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
               ],
             ),
 
             // Drawing mode hint
-            if (_collectionMode == CollectionMode.drawing) ...[
+            if (drawing) ...[
               const SizedBox(height: 4),
               Text(
-                'Tap on map to add points',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
+                'Tap the map to add points',
+                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
               ),
             ],
           ],
@@ -4116,26 +4027,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   double _getExpandedBottomSheetHeight() {
-    // Get bottom safe area padding
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    
-    // Calculate height dynamically based on content
-    double contentHeight;
-    if (widget.project.geometryType != GeometryType.point &&
-        _collectionMode == CollectionMode.tracking) {
-      // Tracking mode: has Start/Finish + Pause/Resume row + Add/Undo/Clear row
-      contentHeight = 175.0; // Height for 2 rows of buttons
-    } else {
-      // Drawing mode or Point type: only has Add/Undo/Clear row
-      contentHeight = 120.0; // Height for 1 row of buttons
-    }
-    
-    return contentHeight + bottomPadding;
+    return BottomControlsMetrics.expanded(
+            widget.project.geometryType, _collectionMode) +
+        bottomPadding;
   }
-  
+
   double _getCollapsedBottomSheetHeight() {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    return 60.0 + bottomPadding;
+    return BottomControlsMetrics.collapsed + bottomPadding;
   }
 
   Widget _buildBottomControls() {

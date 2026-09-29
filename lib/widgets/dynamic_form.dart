@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/form_field_model.dart';
+import '../models/geo_data_model.dart';
 import '../services/pinned_values_service.dart';
 import 'photo_field_widget.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:mobile_scanner/mobile_scanner.dart' hide GeoPoint;
 
 // ── Enum untuk 3 mode case pada text field ──
 enum TextCaseMode { normal, upper, lower }
@@ -22,6 +23,13 @@ class DynamicForm extends StatefulWidget {
   final double? latitude;
   final double? longitude;
 
+  /// Posisi terkini saat foto diambil (watermark). Diutamakan daripada
+  /// [latitude]/[longitude] yang hanya snapshot saat form dibuka.
+  final GeoPoint? Function()? locationProvider;
+
+  /// Untuk menggulir ke field bermasalah dari luar form.
+  final DynamicFormController? controller;
+
   const DynamicForm({
     Key? key,
     required this.formFields,
@@ -32,6 +40,8 @@ class DynamicForm extends StatefulWidget {
     this.username,
     this.latitude,
     this.longitude,
+    this.locationProvider,
+    this.controller,
   }) : super(key: key);
 
   @override
@@ -45,6 +55,7 @@ class _DynamicFormState extends State<DynamicForm>
 
   late Map<String, dynamic> _formData;
   final Map<String, TextEditingController> _textControllers = {};
+  final Map<String, GlobalKey> _fieldKeys = {};
 
   // ── Case mode per text field ──
   final Map<String, TextCaseMode> _caseModes = {};
@@ -62,8 +73,27 @@ class _DynamicFormState extends State<DynamicForm>
     _formData = widget.initialData != null
         ? Map<String, dynamic>.from(widget.initialData!)
         : {};
+    widget.controller?._state = this;
     _loadPinnedValues();
     _loadCaseModes();
+  }
+
+  @override
+  void didUpdateWidget(DynamicForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      if (oldWidget.controller?._state == this) oldWidget.controller?._state = null;
+      widget.controller?._state = this;
+    }
+  }
+
+  /// Gulir sehingga field [label] terlihat. False bila field tak ditemukan.
+  bool _scrollTo(String label) {
+    final ctx = _fieldKeys[label]?.currentContext;
+    if (ctx == null) return false;
+    Scrollable.ensureVisible(ctx,
+        duration: const Duration(milliseconds: 300), alignment: 0.1);
+    return true;
   }
 
   Future<void> _loadCaseModes() async {
@@ -123,12 +153,11 @@ class _DynamicFormState extends State<DynamicForm>
       _pinnedFields = pinned;
       _pinnedLoaded = true;
 
-      // Pre-fill formData dengan pinned values
+      // Pre-fill formData dengan pinned values. Nilai pin SELALU menang:
+      // field ter-pin read-only & menampilkan nilai pin, jadi yang disimpan
+      // harus sama dengan yang terlihat.
       for (final entry in values.entries) {
-        // Hanya isi jika belum ada nilai dari initialData
-        if (_formData[entry.key] == null) {
-          _formData[entry.key] = entry.value;
-        }
+        _formData[entry.key] = entry.value;
         // Sync controller teks jika sudah dibuat
         final ctrl = _textControllers[entry.key];
         if (ctrl != null) {
@@ -138,6 +167,9 @@ class _DynamicFormState extends State<DynamicForm>
     });
 
     widget.onSaved(_formData);
+    // Nilai pin bisa langsung memenuhi field wajib → minta induk menghitung
+    // ulang validitas (dulu tombol Simpan tetap nonaktif sampai ada perubahan).
+    widget.onChanged?.call();
   }
 
   Future<void> _togglePin(String fieldLabel) async {
@@ -169,6 +201,7 @@ class _DynamicFormState extends State<DynamicForm>
 
   @override
   void dispose() {
+    if (widget.controller?._state == this) widget.controller?._state = null;
     for (var controller in _textControllers.values) {
       controller.dispose();
     }
@@ -229,6 +262,7 @@ class _DynamicFormState extends State<DynamicForm>
     return Column(
       children: widget.formFields.map((field) {
         return Padding(
+          key: _fieldKeys.putIfAbsent(field.label, () => GlobalKey()),
           padding: const EdgeInsets.only(bottom: 16),
           child: _buildFieldWidget(field),
         );
@@ -379,7 +413,7 @@ class _DynamicFormState extends State<DynamicForm>
         const SizedBox(width: 2),
         _CaseSegment(
           label: 'Aa',
-          tooltip: 'Normal (apa adanya)',
+          tooltip: 'As typed',
           active: currentMode == TextCaseMode.normal,
           isFirst: true,
           isLast: false,
@@ -387,7 +421,7 @@ class _DynamicFormState extends State<DynamicForm>
         ),
         _CaseSegment(
           label: 'ABC',
-          tooltip: 'Uppercase semua',
+          tooltip: 'ALL CAPS',
           active: currentMode == TextCaseMode.upper,
           isFirst: false,
           isLast: false,
@@ -395,7 +429,7 @@ class _DynamicFormState extends State<DynamicForm>
         ),
         _CaseSegment(
           label: 'abc',
-          tooltip: 'Lowercase semua',
+          tooltip: 'all lowercase',
           active: currentMode == TextCaseMode.lower,
           isFirst: false,
           isLast: true,
@@ -504,31 +538,34 @@ class _DynamicFormState extends State<DynamicForm>
               )
             : null,
       ),
-      keyboardType: TextInputType.number,
+      // Koma & titik diterima (keyboard lokal Indonesia memakai koma) dan
+      // tanda minus boleh; disimpan sebagai angka dengan titik desimal.
+      keyboardType:
+          const TextInputType.numberWithOptions(signed: true, decimal: true),
       inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+        FilteringTextInputFormatter.allow(RegExp(r'^-?\d*[.,]?\d{0,2}')),
       ],
       validator: (value) {
         if (field.required && (value == null || value.isEmpty)) {
           return 'This field is required';
         }
         if (value != null && value.isNotEmpty) {
-          if (double.tryParse(value) == null) {
+          if (parseLocaleNumber(value) == null) {
             return 'Please enter a valid number';
           }
         }
         return null;
       },
       onChanged: (value) {
-        _formData[field.label] = value != null && value.isNotEmpty
-            ? double.tryParse(value) ?? value
+        _formData[field.label] = value.isNotEmpty
+            ? parseLocaleNumber(value) ?? value
             : '';
         widget.onSaved(_formData);
         widget.onChanged?.call();
       },
       onSaved: (value) {
         _formData[field.label] = value != null && value.isNotEmpty
-            ? double.tryParse(value) ?? value
+            ? parseLocaleNumber(value) ?? value
             : '';
         widget.onSaved(_formData);
       },
@@ -585,16 +622,17 @@ class _DynamicFormState extends State<DynamicForm>
               )
             : null,
       ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      keyboardType:
+          const TextInputType.numberWithOptions(signed: true, decimal: true),
       inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+        FilteringTextInputFormatter.allow(RegExp(r'^-?\d*[.,]?\d*')),
       ],
       validator: (value) {
         if (field.required && (value == null || value.isEmpty)) {
           return 'This field is required';
         }
         if (value != null && value.isNotEmpty) {
-          if (double.tryParse(value) == null) {
+          if (parseLocaleNumber(value) == null) {
             return 'Please enter a valid decimal number';
           }
         }
@@ -602,14 +640,14 @@ class _DynamicFormState extends State<DynamicForm>
       },
       onChanged: (String value) {
         _formData[field.label] = value.isNotEmpty
-            ? double.tryParse(value) ?? value
+            ? parseLocaleNumber(value) ?? value
             : '';
         widget.onSaved(_formData);
         widget.onChanged?.call();
       },
       onSaved: (value) {
         _formData[field.label] = value != null && value.isNotEmpty
-            ? double.tryParse(value) ?? value
+            ? parseLocaleNumber(value) ?? value
             : '';
         widget.onSaved(_formData);
       },
@@ -708,6 +746,20 @@ class _DynamicFormState extends State<DynamicForm>
                           ),
                         ),
                       if (!pinned)
+                        TextButton(
+                          onPressed: () {
+                            final now = DateTime.now();
+                            final today =
+                                DateTime(now.year, now.month, now.day);
+                            state.didChange(today);
+                            selectedDate = today;
+                            _formData[field.label] = today.toIso8601String();
+                            widget.onSaved(_formData);
+                            widget.onChanged?.call();
+                          },
+                          child: const Text('Today'),
+                        ),
+                      if (!pinned)
                         const Padding(
                           padding: EdgeInsets.only(right: 8),
                           child: Icon(Icons.calendar_today),
@@ -737,14 +789,21 @@ class _DynamicFormState extends State<DynamicForm>
   // ════════════════════════════════════════════════════════
   Widget _buildDropdownField(FormFieldModel field) {
     final pinned = _isPinned(field.label);
-    final pinnedVal = _pinnedValues[field.label] as String?;
-    final initVal = _formData[field.label] as String?;
-    final currentVal = pinnedVal ?? initVal;
+    final pinnedVal = _pinnedValues[field.label]?.toString();
+    final initVal = _formData[field.label]?.toString();
+    final rawVal = pinnedVal ?? initVal;
+    final currentVal = (rawVal == null || rawVal.isEmpty) ? null : rawVal;
 
     // Sync formData
     if (currentVal != null && _formData[field.label] == null) {
       _formData[field.label] = currentVal;
     }
+
+    // Nilai lama yang tak lagi ada di opsi (opsi project diubah) tetap
+    // ditampilkan & dipertahankan — DropdownButton melempar assert bila
+    // value tak ada di items.
+    final options = <String>[...?field.options];
+    final staleValue = currentVal != null && !options.contains(currentVal);
 
     return InputDecorator(
       decoration: InputDecoration(
@@ -796,9 +855,16 @@ class _DynamicFormState extends State<DynamicForm>
           : DropdownButtonFormField<String>(
               value: currentVal,
               decoration: const InputDecoration.collapsed(hintText: ''),
-              items: field.options?.map((option) {
-                return DropdownMenuItem(value: option, child: Text(option));
-              }).toList(),
+              items: [
+                for (final option in options)
+                  DropdownMenuItem(value: option, child: Text(option)),
+                if (staleValue)
+                  DropdownMenuItem(
+                    value: currentVal,
+                    child: Text('$currentVal (not in list)',
+                        style: const TextStyle(fontStyle: FontStyle.italic)),
+                  ),
+              ],
               validator: (value) {
                 if (field.required && value == null) {
                   return 'This field is required';
@@ -825,7 +891,12 @@ class _DynamicFormState extends State<DynamicForm>
     final pinned = _isPinned(field.label);
     final pinnedVal = _pinnedValues[field.label];
     final initVal = _formData[field.label];
-    final startVal = (pinnedVal ?? initVal) as bool? ?? false;
+    final raw = pinnedVal ?? initVal;
+    // Server bisa mengirim "true"/1 — jangan cast langsung ke bool.
+    final startVal = raw is bool
+        ? raw
+        : (raw != null &&
+            (raw.toString().toLowerCase() == 'true' || raw.toString() == '1'));
 
     return FormField<bool>(
       initialValue: startVal,
@@ -945,6 +1016,7 @@ class _DynamicFormState extends State<DynamicForm>
           username: widget.username,
           latitude: widget.latitude,
           longitude: widget.longitude,
+          locationProvider: widget.locationProvider,
           onChanged: (photos) {
             state.didChange(photos);
             _formData[field.label] = photos;
@@ -1179,4 +1251,138 @@ class _ScannerOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ════════════════════════════════════════════════════════
+// Validasi & helper bersama (form koleksi, form atribut tracking)
+// ════════════════════════════════════════════════════════
+
+/// Angka dari input user: menerima koma atau titik desimal (keyboard lokal
+/// Indonesia memakai koma) dan tanda minus. Null bila bukan angka.
+double? parseLocaleNumber(String input) {
+  final s = input.trim().replaceAll(',', '.');
+  if (s.isEmpty || s == '-' || s == '.' || s == '-.') return null;
+  return double.tryParse(s);
+}
+
+/// Pengendali [DynamicForm] dari luar (mis. menggulir ke field bermasalah).
+class DynamicFormController {
+  _DynamicFormState? _state;
+
+  /// Gulir sehingga field [label] terlihat. False bila tak ditemukan.
+  bool scrollTo(String label) => _state?._scrollTo(label) ?? false;
+}
+
+/// Masalah pada satu field (wajib kosong, jumlah foto tak sesuai, dsb.).
+class FieldIssue {
+  final FormFieldModel field;
+  final String message;
+  const FieldIssue(this.field, this.message);
+}
+
+bool _isBlank(Object? v) =>
+    v == null || (v is String && v.trim().isEmpty) || (v is List && v.isEmpty);
+
+/// Field yang belum memenuhi syarat, urut sesuai form. Aturan sama dengan
+/// validator tiap field — dipakai untuk memblokir simpan (dulu data tetap
+/// tersimpan walau field wajib kosong) dan untuk indikator progres.
+List<FieldIssue> formFieldIssues(
+    List<FormFieldModel> fields, Map<String, dynamic> data) {
+  final issues = <FieldIssue>[];
+  for (final field in fields) {
+    final value = data[field.label];
+    switch (field.type) {
+      case FieldType.photo:
+        final count = value is List ? value.length : (_isBlank(value) ? 0 : 1);
+        final minPhotos = field.minPhotos ?? (field.required ? 1 : 0);
+        final maxPhotos = field.maxPhotos ?? 1;
+        if (count < minPhotos) {
+          issues.add(FieldIssue(
+              field,
+              minPhotos == 1
+                  ? 'needs a photo'
+                  : 'needs at least $minPhotos photos'));
+        } else if (count > maxPhotos) {
+          issues.add(FieldIssue(field, 'allows at most $maxPhotos photo(s)'));
+        }
+        break;
+      case FieldType.checkbox:
+        final checked = value == true ||
+            value?.toString().toLowerCase() == 'true' ||
+            value?.toString() == '1';
+        if (field.required && !checked) {
+          issues.add(FieldIssue(field, 'must be checked'));
+        }
+        break;
+      case FieldType.number:
+      case FieldType.decimal:
+        if (_isBlank(value)) {
+          if (field.required) issues.add(FieldIssue(field, 'is required'));
+        } else if (value is! num && parseLocaleNumber(value.toString()) == null) {
+          issues.add(FieldIssue(field, 'is not a valid number'));
+        }
+        break;
+      case FieldType.text:
+      case FieldType.date:
+      case FieldType.dropdown:
+        if (field.required && _isBlank(value)) {
+          issues.add(FieldIssue(field, 'is required'));
+        }
+        break;
+    }
+  }
+  return issues;
+}
+
+/// Ringkasan "3 of 5 required fields completed" + bar progres.
+class RequiredFieldsProgress extends StatelessWidget {
+  final List<FormFieldModel> fields;
+  final Map<String, dynamic> data;
+
+  const RequiredFieldsProgress(
+      {super.key, required this.fields, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final required = fields.where((f) =>
+        f.required || (f.type == FieldType.photo && (f.minPhotos ?? 0) > 0));
+    final total = required.length;
+    if (total == 0) return const SizedBox.shrink();
+    final pending = formFieldIssues(required.toList(), data).length;
+    final done = total - pending;
+    final complete = pending == 0;
+    final color = complete ? Colors.green.shade700 : Colors.orange.shade800;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(complete ? Icons.check_circle : Icons.pending_actions,
+                  size: 18, color: color),
+              const SizedBox(width: 6),
+              Text(
+                complete
+                    ? 'All required fields completed'
+                    : '$done of $total required fields completed',
+                style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600, color: color),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: total == 0 ? 1 : done / total,
+              minHeight: 6,
+              color: color,
+              backgroundColor: color.withOpacity(0.15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

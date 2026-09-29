@@ -3,9 +3,12 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
+import '../../services/auth_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/tracking/session_to_geodata.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/app_logger.dart';
+import '../../utils/ui_feedback.dart';
 import '../dynamic_form.dart';
 
 /// Tampilkan form atribut sebagai bottom sheet modal untuk menyimpan satu sesi
@@ -21,9 +24,8 @@ Future<bool> showAttributeFormSheet(
 }) async {
   final geom = validateGeometry(project.geometryType, points.length);
   if (!geom.ok) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(geom.error ?? 'Titik belum cukup')),
-    );
+    showInfoFeedback(context, geom.error ?? 'Not enough points to save.',
+        warning: true);
     return false;
   }
   final result = await showModalBottomSheet<bool>(
@@ -60,31 +62,52 @@ class AttributeFormSheet extends StatefulWidget {
 class _AttributeFormSheetState extends State<AttributeFormSheet> {
   final _formKey = GlobalKey<FormState>();
   final StorageService _storage = StorageService();
+  final DynamicFormController _formController = DynamicFormController();
   Map<String, dynamic> _formData = {};
   bool _saving = false;
 
   Future<void> _save() async {
-    // Validasi form (peringatan field foto tak memblokir, seperti alur lama).
-    _formKey.currentState?.validate();
     _formKey.currentState?.save(); // memicu DynamicForm.onSaved → _formData
+    final formValid = _formKey.currentState?.validate() ?? true;
+    // Form belum lengkap → DIBLOKIR (dulu tetap tersimpan) & gulir ke field.
+    final issues = formFieldIssues(widget.project.formFields, _formData);
+    if (issues.isNotEmpty || !formValid) {
+      if (issues.isNotEmpty) _formController.scrollTo(issues.first.field.label);
+      showInfoFeedback(
+        context,
+        issues.isEmpty
+            ? 'Some fields need attention.'
+            : '"${issues.first.field.label}" ${issues.first.message}'
+                '${issues.length > 1 ? ' (+${issues.length - 1} more)' : ''}.',
+        warning: true,
+      );
+      return;
+    }
 
     setState(() => _saving = true);
     try {
+      // Kolektor = user yang login bila pemanggil tak menyertakannya (panel
+      // Tracking Aktif dulu menyimpan tanpa kolektor → record tak bisa diedit).
+      final collector =
+          widget.username ?? (await AuthService().getUser())?.username;
       final geoData = buildGeoData(
         id: const Uuid().v4(),
         project: widget.project,
         points: widget.points,
         formData: _formData,
-        collectedBy: widget.username,
+        collectedBy: collector,
       );
       await _storage.saveGeoData(geoData);
+      logInfo(
+          'Saved tracking record ${geoData.id} (${geoData.points.length} '
+          'points) in "${widget.project.name}"',
+          tag: 'SESSION');
       if (mounted) Navigator.pop(context, true);
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan: $e')),
-        );
+        showErrorFeedback(context, 'Could not save the record',
+            error: e, stack: st, tag: 'SESSION');
       }
     }
   }
@@ -112,14 +135,14 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Isi Atribut — ${widget.project.name}',
+                        'Attributes — ${widget.project.name}',
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                     ),
-                    Text('${widget.points.length} titik',
+                    Text('${widget.points.length} points',
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade600)),
+                            fontSize: 13, color: Colors.grey.shade700)),
                   ],
                 ),
               ),
@@ -129,13 +152,25 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
                   padding: const EdgeInsets.all(16),
                   child: Form(
                     key: _formKey,
-                    child: DynamicForm(
-                      formFields: widget.project.formFields,
-                      projectId: widget.project.id,
-                      onSaved: (data) => _formData = data,
-                      username: widget.username,
-                      latitude: last?.latitude,
-                      longitude: last?.longitude,
+                    child: Column(
+                      children: [
+                        RequiredFieldsProgress(
+                          fields: widget.project.formFields,
+                          data: _formData,
+                        ),
+                        DynamicForm(
+                          formFields: widget.project.formFields,
+                          projectId: widget.project.id,
+                          controller: _formController,
+                          onSaved: (data) => _formData = data,
+                          onChanged: () {
+                            if (mounted) setState(() {});
+                          },
+                          username: widget.username,
+                          latitude: last?.latitude,
+                          longitude: last?.longitude,
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -152,10 +187,11 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.save_rounded, size: 18),
-                    label: Text(_saving ? 'Menyimpan…' : 'Simpan'),
+                    label: Text(_saving ? 'Saving…' : 'Save'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryGreen,
                       foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 52),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),

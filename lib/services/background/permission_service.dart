@@ -46,7 +46,11 @@ class PermissionService {
   }
 
   /// Request ALL required permissions
-  static Future<bool> requestAllPermissions() async {
+  ///
+  /// [requestBackground] false = jangan minta izin lokasi latar belakang
+  /// ("Always"), mis. user memilih "Not now" pada penjelasan izin — izin
+  /// foreground tetap diminta agar GPS di layar tetap jalan.
+  static Future<bool> requestAllPermissions({bool requestBackground = true}) async {
     try {
       logDebug('🔐 ========================================');
       logDebug('🔐 Starting Permission Request Process');
@@ -54,9 +58,10 @@ class PermissionService {
       logDebug('📱 Platform: ${Platform.operatingSystem}');
       
       if (Platform.isIOS) {
-        return await _requestIOSPermissions();
+        return await _requestIOSPermissions(requestBackground: requestBackground);
       } else {
-        return await _requestAndroidPermissions();
+        return await _requestAndroidPermissions(
+            requestBackground: requestBackground);
       }
       
     } catch (e, stackTrace) {
@@ -67,7 +72,7 @@ class PermissionService {
   }
   
   /// iOS-specific permission flow
-  static Future<bool> _requestIOSPermissions() async {
+  static Future<bool> _requestIOSPermissions({bool requestBackground = true}) async {
     logDebug('🍎 iOS Permission Flow Started');
     
     // 1. Check if location service is enabled
@@ -121,8 +126,10 @@ class PermissionService {
         final prefs = await SharedPreferences.getInstance();
         final alreadyAsked = prefs.getBool(_alwaysAskedKey) ?? false;
         final alwaysStatus = await Permission.locationAlways.status;
-        if (shouldRequestAlways(
-            alreadyAsked: alreadyAsked, alwaysDenied: alwaysStatus.isDenied)) {
+        if (requestBackground &&
+            shouldRequestAlways(
+                alreadyAsked: alreadyAsked,
+                alwaysDenied: alwaysStatus.isDenied)) {
           logDebug('📍 Requesting "Always" (one-time)…');
           final alwaysResult = await Permission.locationAlways.request();
           await prefs.setBool(_alwaysAskedKey, true);
@@ -167,7 +174,7 @@ class PermissionService {
   }
   
   /// Android-specific permission flow
-  static Future<bool> _requestAndroidPermissions() async {
+  static Future<bool> _requestAndroidPermissions({bool requestBackground = true}) async {
     logDebug('🤖 Android Permission Flow Started');
     
     // Check if location service is enabled
@@ -195,7 +202,7 @@ class PermissionService {
     // 3. Background location (Android 10+) HANYA diminta SETELAH foreground
     //    granted. Android 11+ menolak request gabungan, jadi harus terpisah.
     //    Kegagalan di sini tidak memblokir foreground tracking.
-    await requestBackgroundLocation();
+    if (requestBackground) await requestBackgroundLocation();
 
     logDebug('✅ Android foreground permissions granted');
     return true;
