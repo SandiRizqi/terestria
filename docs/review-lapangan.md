@@ -324,3 +324,75 @@ lokasi.
     track tidak terputus (atau user diperingatkan di checklist B1).
 11. Storage < 200 MB → app memberi peringatan sebelum tracking/foto, dan tidak macet di
     splash.
+
+---
+
+## E. Status implementasi (29 Sep 2026)
+
+Legenda: ✅ selesai · ◐ sebagian (lihat catatan) · — tidak diubah (keputusan pemilik produk).
+Seluruh teks UI kini berbahasa **Inggris** sesuai keputusan pemilik produk (B7 semula
+menyarankan Bahasa Indonesia). Komentar kode tetap berbahasa Indonesia sesuai konvensi repo.
+
+### A. Risiko error & kehilangan data
+
+| # | Status | Implementasi | Commit |
+|---|---|---|---|
+| A1 | ✅ | `TrackingPersistenceCoordinator`: flush debounce 2 dtk, maks 8 dtk; flush saat app ke background; gagal per sesi diisolasi & dicatat. | 46baac0 |
+| A2 | ✅ | Restore hanya membuang sesi tanpa titik; sesi lama (>12 jam) / melebihi batas diturunkan jadi draft "Not saved". | 46baac0 |
+| A3 | ✅ | Pull tidak menimpa record lokal yang belum tersinkron (dihitung sebagai konflik). | 0bf5511 |
+| A4 | ✅ | `PullWatermarkTracker`: watermark hanya maju sejauh record yang tuntas. | 0bf5511 |
+| A5 | ✅ | `saveGeoDataIfUnchanged` (UPDATE bersyarat `updatedAt`) saat menandai tersinkron. | 0bf5511 |
+| A6 | ✅ | Parser LLH/XYZ/NMEA baru (`emlid_parsers.dart`), akurasi dari sdn/sde, sigma ECEF, atau GST/HDOP. | 15d09e5 |
+| A7 | — | Add Point tetap di crosshair (disengaja). Untuk posisi GPS: tombol *My location* kini menyalakan mode ikuti (B3). | 7b2ede5 |
+| A8 | ✅ | Clear titik dengan konfirmasi + Undo; buang sesi dengan konfirmasi; dialog hapus menjelaskan salinan server; logout wajib ketik `DELETE`. | e66172f, 9210fb0 |
+| A9 | ✅ | `formFieldIssues` memblokir simpan (koleksi, sheet tracking, edit record) dan menggulir ke field bermasalah. | e66172f, 7b2ede5 |
+| A10 | ✅ | `CollectionDraftService`: titik & isian form di-autosave per project dan dipulihkan. | e66172f |
+| A11 | ✅ | Foto JPEG (tanpa watermark = salinan asli), upload paralel 2, timeout sesuai ukuran. | 1a7a332 |
+| A12 | ◐ | Login 30 dtk, request 90 dtk, upload 60–600 dtk sesuai ukuran. Belum ada tombol Batal saat sync (progres ditampilkan). | 0bf5511, 1a7a332 |
+| A13 | ✅ | 401 → dialog login ulang user yang sama (data tetap); "Later" menunda 10 menit. Cadangan ZIP dari dialog logout & Settings. | 9210fb0 |
+| A14 | ✅ | Reconnect otomatis (2→30 dtk) + watchdog 30 dtk; titik di bawah syarat ditandai & tampil sebagai banner. | 15d09e5, e66172f |
+| A15 | ✅ | Input angka menerima koma & minus (`parseLocaleNumber`). | e66172f |
+| A16 | ✅ | Pull mempertahankan tipe `decimal`, `defaultValue`, dan `collectors`. | 0bf5511 |
+| A17 | ✅ | Parsing toleran (`json_parse.dart`), tipe tak dikenal → fallback, baris rusak diisolasi. | 0bf5511 |
+| A18 | ✅ | Init gagal → layar pemulihan (Try again + bagikan log). | 8d81d9e |
+| A19 | ✅ | Persistensi selalu terpasang walau restore gagal. | 46baac0 |
+| A20 | ✅ | Cek ruang kosong sebelum tracking/foto/unduh tile; pesan "storage full" yang jelas. | 8d81d9e, 963a91c |
+| A21 | ✅ | Butir baterai di checklist dengan tombol + panduan per merek; ditanyakan pada Start pertama tiap hari. Memakai layar daftar optimasi (tanpa izin `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, aman untuk kebijakan Play). | deb38eb |
+| A22 | ◐ | Dialog hapus menjelaskan bahwa salinan yang sudah tersinkron tetap di server. DELETE/tombstone ke server butuh dukungan API. | 0bf5511 |
+| A23 | ◐ | Peringatan saat Start + butir "While tracking" di checklist. Aksi "Stop" di notifikasi belum dibuat (butuh uji perangkat untuk aksi lintas-isolate). | e66172f, deb38eb |
+| A24 | ✅ | Pilihan penjelasan izin diingat; di Android "Not now" tidak memblokir Start; tombol *Open settings*. | e66172f |
+| A25 | ✅ | Semua luas memakai `polygonAreaSqMeters`. | 15d09e5 |
+| A26 | ✅ | Titik jalur = koordinat mentah yang lolos gerbang; Kalman hanya untuk marker (bisa diubah di GPS settings). | 963a91c |
+| A27 | ✅ | Semua waktu di payload, JSON, dan ekspor dikirim UTC. | 0bf5511, 66479db |
+| A28 | ✅ | `fixQuality`, `satelliteCount`, `speed` ikut dikirim. | 0bf5511 |
+| A29 | ✅ | Peringatan poligon berpotongan, luas ≈0, vertex ganda, garis pendek (juga di editor geometri). | e66172f, 7b2ede5 |
+| A30 | ✅ | `GeoExport`: record tanpa geometri dilewati & dilaporkan, ring ditutup berdasar nilai, dimensi seragam, aman NaN. | 66479db |
+| A31 | ✅ | Koordinat watermark diambil saat shutter. | 1a7a332 |
+| A32 | ✅ | Marker/kompas/koordinat lewat notifier (tanpa rebuild layar penuh), layer GeoJSON di-cache; kebocoran timer DNS `ConnectivityService` diperbaiki. | e66172f, deb38eb |
+| A33 | ✅ | "Keep screen on while tracking" opsional (default mati), berlaku langsung. | 963a91c |
+| A34 | ◐ | User-Agent spesifik + kontak, peringatan kebijakan tile OSM & cek ruang sebelum unduh massal. Pergantian ke penyedia tile berlisensi offline adalah keputusan bisnis. | 963a91c, 66479db |
+| A35 | ✅ | Info GPS besar (akurasi 22 sp) dan banner status. | e66172f |
+
+### B. UI/UX
+
+| # | Status | Implementasi | Commit |
+|---|---|---|---|
+| B1 | ✅ | Layar **Ready for the field** (izin, GPS & fix, Emlid, baterai, notifikasi, penyimpanan, peta offline di posisi saat ini, data belum sync, track belum disimpan) dengan tombol perbaikan per butir. | deb38eb |
+| B2 | ◐ | Banner status GPS & akurasi besar. Mode kontras tinggi ("Outdoor mode") belum dibuat. | e66172f |
+| B3 | ◐ | Mode ikuti (*My location*) + getar. Tombol "Take GPS point" dengan perataan tidak dibuat karena Add Point di crosshair adalah perilaku yang diinginkan. | 7b2ede5 |
+| B4 | ◐ | Bar ringkas berisi aksi utama, tombol 52 dp, Clear dengan konfirmasi + Undo, Mode nonaktif saat tracking. Tombol peta di kolom kanan belum digabung jadi satu tombol "Map". | e66172f |
+| B5 | ◐ | Autosave draft (dipulihkan saat layar dibuka), progres field wajib, Simpan selalu aktif + gulir ke field, pinned value langsung valid, koma, "Today", "Save & next", konfirmasi akurasi hanya bila di bawah syarat. Indikator "Draft saved 10:42" belum ditampilkan. | e66172f |
+| B6 | ◐ | Satu tombol Sync (project → data → foto), antrean di beranda & detail project, "Retry failed", auto-sync saat online (selama app terbuka). Progres MB per foto belum ada. | deb38eb |
+| B7 | ✅ | Semua UI berbahasa Inggris; tak ada lagi exception mentah — `loggedErrorMessage()` mencatat detail ke log diagnostik dan menampilkan kalimat ramah. | 88deec6 |
+| B8 | ✅ | Beranda = dasbor lapangan (tracking aktif, kesiapan, antrean sync) + menu berkelompok Survey / Tools / Account & device. | deb38eb |
+| B9 | ✅ | Editor geometri berbasis crosshair: pilih/geser/sisip/hapus vertex, undo/reset, daftar vertex, garis asli putus-putus. | 7b2ede5 |
+
+### Verifikasi
+
+- `flutter analyze`: 0 error, tidak ada warning baru dibanding baseline (42 warning lama).
+- `flutter test`: 579 lulus, 1 gagal — `routing_data_manager_test.dart` "shared OSM sheet exposes
+  server download + saved roads (parity)", **sudah gagal sebelum perubahan ini** (tidak terkait).
+- Plugin Kotlin `DeviceHealthPlugin` dikompilasi terhadap `android.jar`; kode Swift (iOS) belum
+  dikompilasi (tidak ada toolchain iOS di lingkungan ini).
+- Belum diuji di perangkat. Skenario uji lapangan di bagian D perlu dijalankan di HP (terutama
+  kill/restore tracking, Emlid putus-sambung, optimasi baterai per merek, dan sync di sinyal lemah).
