@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../layer_service.dart';
 import 'gpx_converter.dart';
 import 'kml_converter.dart';
+import 'zipped_shapefile.dart';
 
 /// Format berkas yang bisa diimpor di halaman Layers. Semuanya dikonversi ke
 /// GeoJSON FeatureCollection → sisa pipeline (simpan, style, render) sama.
@@ -111,7 +112,7 @@ LayerImportResult convertLayerBytes(String fileName, Uint8List bytes,
     case LayerFormat.kmz:
       fc = kmzToGeoJson(bytes);
     case LayerFormat.zippedShapefile:
-      throw LayerImportException('Format ${format.name} belum didukung');
+      fc = zippedShapefileToGeoJson(bytes, shapefileName: shapefileName);
   }
   return _result(format, fileName, fc);
 }

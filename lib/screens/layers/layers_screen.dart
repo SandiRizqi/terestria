@@ -6,9 +6,11 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/layer_model.dart';
 import '../../services/layer_import/layer_importer.dart';
+import '../../services/layer_import/zipped_shapefile.dart';
 import '../../services/layer_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
+import '../../widgets/layers/shapefile_picker_dialog.dart';
 
 class LayersScreen extends StatefulWidget {
   const LayersScreen({Key? key}) : super(key: key);
@@ -56,22 +58,31 @@ class _LayersScreenState extends State<LayersScreen> {
     final sourcePath = result.files.single.path!;
     final fileName = result.files.single.name;
 
-    final LayerImportResult imported;
-    try {
-      imported = await _runWithProgress(
-          () => importLayerFile(sourcePath, fileName: fileName));
-    } on LayerImportException catch (e) {
-      logWarn('Impor layer "$fileName" ditolak: ${e.message}', tag: 'LAYER');
-      _showError(e.message);
-      return;
-    } catch (e, st) {
-      logError('Impor layer "$fileName" gagal',
-          tag: 'LAYER', error: e, stack: st);
-      _showError('Gagal membaca berkas: $e');
-      return;
+    // Zip berisi beberapa shapefile → user memilih, lalu impor ulang.
+    String? shapefileName;
+    LayerImportResult? imported;
+    while (imported == null) {
+      try {
+        imported = await _runWithProgress(() => importLayerFile(sourcePath,
+            fileName: fileName, shapefileName: shapefileName));
+      } on MultipleShapefilesException catch (e) {
+        if (!mounted) return;
+        shapefileName = await showShapefilePicker(context, e.names);
+        if (shapefileName == null) return;
+      } on LayerImportException catch (e) {
+        logWarn('Impor layer "$fileName" ditolak: ${e.message}', tag: 'LAYER');
+        _showError(e.message);
+        return;
+      } catch (e, st) {
+        logError('Impor layer "$fileName" gagal',
+            tag: 'LAYER', error: e, stack: st);
+        _showError('Gagal membaca berkas: $e');
+        return;
+      }
     }
     logInfo(
-        'Impor layer "$fileName" (${imported.format.name}): '
+        'Impor layer "$fileName"${shapefileName == null ? '' : ' [$shapefileName]'} '
+        '(${imported.format.name}): '
         '${imported.featureCount} fitur ${imported.geometryType}',
         tag: 'LAYER');
 
@@ -79,7 +90,7 @@ class _LayersScreenState extends State<LayersScreen> {
     final layerId = _uuid.v4();
     final newLayer = LayerModel(
       id: layerId,
-      name: imported.defaultName,
+      name: shapefileName?.split('/').last ?? imported.defaultName,
       filePath: sourcePath, // temp; replaced after import
       geometryType: geometryType,
       style: _defaultStyleForType(geometryType),
@@ -299,13 +310,15 @@ class _LayersScreenState extends State<LayersScreen> {
                     .headlineSmall
                     ?.copyWith(color: Colors.grey[700], fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            Text('Import a GeoJSON file to add a layer',
+            Text('Import a GeoJSON, zipped Shapefile, GPX, or KML file\n'
+                'to add a layer',
+                textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey[500], fontSize: 15)),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _importLayer,
               icon: const Icon(Icons.upload_file_rounded),
-              label: const Text('Import GeoJSON', style: TextStyle(fontWeight: FontWeight.bold)),
+              label: const Text('Import Layer', style: TextStyle(fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primaryColor,
                 foregroundColor: Colors.white,
