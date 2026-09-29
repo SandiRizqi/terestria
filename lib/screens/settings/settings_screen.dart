@@ -4,6 +4,7 @@ import 'dart:io';
 import '../../models/settings/app_settings.dart';
 import '../../services/settings_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/settings/diagnostic_log_section.dart';
 import 'gps_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -338,8 +339,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
 
+            const SizedBox(height: 24),
+
+            // Log diagnostik: Mode Diagnostik, bagikan & hapus log
+            _buildSectionTitle('Diagnostic Logs'),
+            DiagnosticLogSection(),
+
             const SizedBox(height: 32),
-            
+
             // Preview Card
             _buildSectionTitle('Preview'),
             _buildPreviewCard(),
