@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import '../../models/geo_data_model.dart';
 import '../../utils/app_logger.dart';
 import '../location_service_v2.dart';
+import 'tracking_session.dart';
 import 'tracking_session_manager.dart';
 
 /// Pemilik TUNGGAL feed GPS tracking di level app (bukan layar).
@@ -21,9 +23,13 @@ class TrackingEngine {
     required bool Function() isServiceRunning,
     Timer Function(Duration, void Function(Timer))? periodicTimer,
     DateTime Function()? now,
+    Stream<GeoPoint>? phoneFeed,
+    Stream<GeoPoint>? emlidFeed,
     this.heartbeatInterval = const Duration(seconds: 5),
     this.restartBackoff = const Duration(seconds: 30),
-  })  : _startService = startService,
+  })  : _phoneFeed = phoneFeed,
+        _emlidFeed = emlidFeed,
+        _startService = startService,
         _stopService = stopService,
         _sendHeartbeat = sendHeartbeat,
         _isServiceRunning = isServiceRunning,
@@ -40,6 +46,8 @@ class TrackingEngine {
     },
     sendHeartbeat: () => LocationServiceV2().sendHeartbeat(),
     isServiceRunning: () => LocationServiceV2().isBackgroundServiceRunning,
+    phoneFeed: LocationServiceV2().backgroundLocationStream,
+    emlidFeed: LocationServiceV2().emlidLocationStream,
   );
 
   final TrackingSessionManager manager;
@@ -51,6 +59,9 @@ class TrackingEngine {
   final bool Function() _isServiceRunning;
   final Timer Function(Duration, void Function(Timer)) _periodicTimer;
   final DateTime Function() _now;
+  final Stream<GeoPoint>? _phoneFeed;
+  final Stream<GeoPoint>? _emlidFeed;
+  final List<StreamSubscription<GeoPoint>> _feedSubs = [];
 
   bool _attached = false;
   bool _active = false;
@@ -73,6 +84,7 @@ class TrackingEngine {
     _attached = false;
     _heartbeat?.cancel();
     _heartbeat = null;
+    _unsubscribeFeeds();
     _active = false;
   }
 
@@ -84,12 +96,38 @@ class TrackingEngine {
       _heartbeat?.cancel();
       _heartbeat = _periodicTimer(heartbeatInterval, (_) => tick());
       _sendHeartbeat();
+      _subscribeFeeds();
       unawaited(ensureRunning());
     } else {
       _heartbeat?.cancel();
       _heartbeat = null;
+      _unsubscribeFeeds();
       unawaited(_stop());
     }
+  }
+
+  /// SATU-SATUNYA jalur titik ke sesi: feed HP (background service) dan feed
+  /// RTK (socket Emlid) masing-masing hanya masuk ke sesi bersumber sama.
+  /// Tak bergantung pada layar mana pun yang terbuka.
+  void _subscribeFeeds() {
+    _unsubscribeFeeds();
+    final phone = _phoneFeed;
+    if (phone != null) {
+      _feedSubs.add(phone.listen(
+          (p) => manager.ingest(p, source: TrackSource.phone)));
+    }
+    final emlid = _emlidFeed;
+    if (emlid != null) {
+      _feedSubs.add(emlid.listen(
+          (p) => manager.ingest(p, source: TrackSource.emlid)));
+    }
+  }
+
+  void _unsubscribeFeeds() {
+    for (final s in _feedSubs) {
+      s.cancel();
+    }
+    _feedSubs.clear();
   }
 
   Future<void> _stop() async {

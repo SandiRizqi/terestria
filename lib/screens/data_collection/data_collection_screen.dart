@@ -22,6 +22,7 @@ import '../../models/form_field_model.dart';
 import '../../services/location_service_v2.dart';
 import '../../services/storage_service.dart';
 import '../../services/tracking/tracking_engine.dart';
+import '../../services/tracking/tracking_session.dart';
 import '../../services/tracking/tracking_session_manager.dart';
 import '../../services/basemap_service.dart';
 import '../../services/tile_cache_sqlite_service.dart';
@@ -1458,11 +1459,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             _markerTargetLatLng = newLatLng;
             _currentLocation = location;
 
-            // Marker SELALU mengikuti. Titik jalur direkam LANGSUNG ke tampilan
-            // (jalur andal foreground) DAN ke sesi manajer via addTrackingPoint
-            // (di bawah, untuk multi-project + background + recovery). Saat
-            // kembali/resume, _syncCollectedFromSession menambal titik yang
-            // terkumpul selagi layar di background.
+            // Marker SELALU mengikuti. Titik ke SESI diumpankan TrackingEngine
+            // (feed per sumber, tak bergantung layar); tampilan jalur di sini
+            // hanya cermin lokal selama layar terbuka. Saat kembali/resume,
+            // _syncCollectedFromSession menambal titik dari sesi.
             if (_isTracking && !_isPaused && location.recordable) {
               _collectedPoints.add(location);
             }
@@ -1470,11 +1470,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
           // Jalankan animasi smooth dari posisi lama ke baru (di luar setState)
           _markerAnimController.forward(from: 0);
-
-          // Update service tracking points (tidak perlu setState)
-          if (_isTracking && !_isPaused && location.recordable) {
-            _locationService.addTrackingPoint(location);
-          }
         }
       },
       onError: (error) {
@@ -1539,8 +1534,13 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       }
     }
 
-    // 2b. Daftarkan sesi ke manajer multi-project (guard cap + no-dup).
-    final startRes = TrackingSessionManager.instance.start(widget.project);
+    // 2b. Daftarkan sesi ke manajer multi-project (guard cap + no-dup), terikat
+    //     ke sumber GPS aktif agar jalur RTK tak tercampur GPS HP.
+    final source = _locationService.currentProvider == LocationProvider.emlid
+        ? TrackSource.emlid
+        : TrackSource.phone;
+    final startRes =
+        TrackingSessionManager.instance.start(widget.project, source: source);
     if (startRes.status == StartStatus.capReached) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1553,6 +1553,23 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         );
       }
       return;
+    }
+    // Melanjutkan sesi lama yang direkam dari sumber GPS lain → beri tahu:
+    // titik dari provider aktif sekarang tidak akan masuk ke sesi ini.
+    final existing = startRes.session;
+    if (startRes.status == StartStatus.alreadyActive &&
+        existing != null &&
+        existing.source != source &&
+        mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(existing.source == TrackSource.emlid
+              ? 'Sesi ini direkam dengan RTK GPS — sambungkan Emlid agar titik bertambah.'
+              : 'Sesi ini direkam dengan GPS HP — ganti provider ke Phone agar titik bertambah.'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
     // Lanjutkan sesi bila sebelumnya di-pause (mis. re-start setelah finish).
     TrackingSessionManager.instance.resume(widget.project.id);

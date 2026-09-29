@@ -25,6 +25,7 @@ class SessionRepository {
         'startedAt': s.startedAt.millisecondsSinceEpoch,
         // Kolom lama `paused` menyimpan kode SessionState: 0/1/2.
         'paused': s.state.index,
+        'provider': s.source.name,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       };
 
@@ -43,8 +44,17 @@ class SessionRepository {
         startedAt:
             DateTime.fromMillisecondsSinceEpoch(row['startedAt'] as int),
         state: stateFromCode(row['paused'] as int?),
+        source: TrackSource.values.firstWhere(
+          (v) => v.name == row['provider'],
+          orElse: () => TrackSource.phone, // baris lama (DB v4)
+        ),
         points: points,
       );
+
+  /// Migrasi v5: tambah kolom `provider` hanya bila belum ada (hasil
+  /// `PRAGMA table_info(tracking_sessions)`) — aman dijalankan berulang.
+  static bool needsProviderColumn(List<Map<String, Object?>> tableInfo) =>
+      !tableInfo.any((c) => c['name'] == 'provider');
 
   /// Kode kolom → status; nilai tak dikenal diperlakukan paused (aman: tak
   /// merekam diam-diam, tetap bisa dilanjutkan/disimpan user).

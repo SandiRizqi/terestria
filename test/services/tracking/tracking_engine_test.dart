@@ -1,9 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/tracking/tracking_engine.dart';
+import 'package:geoform_app/services/tracking/tracking_session.dart';
 import 'package:geoform_app/services/tracking/tracking_session_manager.dart';
+
+GeoPoint _gp(double lon) => GeoPoint(
+    latitude: 0, longitude: lon, timestamp: DateTime(2026, 1, 1, 0, 0, lon.toInt()));
 
 Project _proj(String id) => Project(
       id: id,
@@ -146,6 +151,46 @@ void main() {
     await settle();
     expect(svc.stops, 1);
     expect(engine.isActive, isFalse);
+  });
+
+  test('engine meneruskan feed HP & RTK ke sesi yang sesuai sumbernya',
+      () async {
+    final phone = StreamController<GeoPoint>.broadcast();
+    final rtk = StreamController<GeoPoint>.broadcast();
+    final m = TrackingSessionManager(maxConcurrent: 3);
+    final e = TrackingEngine(
+      manager: m,
+      startService: svc.start,
+      stopService: svc.stop,
+      sendHeartbeat: () {},
+      isServiceRunning: () => svc.running,
+      periodicTimer: (_, __) => _FakeTimer(),
+      phoneFeed: phone.stream,
+      emlidFeed: rtk.stream,
+    )..attach();
+
+    m.start(_proj('hp'));
+    m.start(_proj('rtk'), source: TrackSource.emlid);
+    await settle();
+
+    phone.add(_gp(0));
+    rtk.add(_gp(1));
+    rtk.add(_gp(2));
+    await settle();
+    expect(m.sessionFor('hp')!.points.length, 1);
+    expect(m.sessionFor('rtk')!.points.length, 2);
+
+    // Tak ada sesi merekam → feed dilepas; titik berikutnya diabaikan.
+    m.finish('hp');
+    m.finish('rtk');
+    await settle();
+    phone.add(_gp(3));
+    await settle();
+    expect(m.sessionFor('hp')!.points.length, 1);
+
+    e.detach();
+    await phone.close();
+    await rtk.close();
   });
 
   test('ensureRunning: panggilan bersamaan berbagi satu start', () async {

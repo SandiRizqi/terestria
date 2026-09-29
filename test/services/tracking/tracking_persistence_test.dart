@@ -52,6 +52,15 @@ void main() {
     });
   });
 
+  group('providerSwitchWarningText', () {
+    test('tak ada sesi di sumber lain → null (tak perlu konfirmasi)', () {
+      expect(providerSwitchWarningText(0), isNull);
+    });
+    test('ada sesi terdampak → teks menyebut jumlahnya', () {
+      expect(providerSwitchWarningText(2), contains('2 project'));
+    });
+  });
+
   group('pendingAppendCount', () {
     test('titik baru sejak flush', () {
       expect(pendingAppendCount(5, 3), 2);

@@ -5,6 +5,7 @@ import '../models/project_model.dart';
 import '../models/geo_data_model.dart';
 import '../models/form_field_model.dart';
 import '../models/notification_model.dart';
+import 'tracking/session_repository.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -12,7 +13,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 4;
+  static const int _databaseVersion = 5;
   static const String _databaseName = 'geoform.db';
 
   Future<Database> get database async {
@@ -117,7 +118,8 @@ class DatabaseService {
         projectJson TEXT NOT NULL,
         startedAt INTEGER NOT NULL,
         paused INTEGER NOT NULL DEFAULT 0,
-        updatedAt INTEGER NOT NULL
+        updatedAt INTEGER NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'phone'
       )
     ''');
     await db.execute('''
@@ -168,6 +170,16 @@ class DatabaseService {
     if (oldVersion < 4) {
       // Tabel persistensi sesi tracking (multi-project concurrent tracking)
       await _createTrackingTables(db);
+    }
+
+    if (oldVersion < 5) {
+      // Sumber GPS per sesi (phone/emlid). Tabel dari v<4 sudah dibuat dengan
+      // kolom ini di atas → cek dulu agar ALTER tak gagal (idempoten).
+      final info = await db.rawQuery('PRAGMA table_info(tracking_sessions)');
+      if (SessionRepository.needsProviderColumn(info)) {
+        await db.execute(
+            "ALTER TABLE tracking_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'phone'");
+      }
     }
   }
 

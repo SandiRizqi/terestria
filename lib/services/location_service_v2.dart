@@ -10,7 +10,6 @@ import 'background/background_tracking_service.dart';
 import 'background/phone_gps_service.dart';
 import 'gps_logger_service.dart';
 import 'gps_settings_service.dart';
-import 'tracking/tracking_session_manager.dart';
 import 'crashlytics_service.dart';
 import '../utils/app_logger.dart';
 import '../config/location_config.dart';
@@ -252,14 +251,13 @@ Future<bool> initialize() async {
     logDebug('⏹️ Active tracking stopped');
   }
 
+  /// Buffer & log GPS lama. Titik ke sesi multi-project TIDAK lewat sini —
+  /// TrackingEngine berlangganan feed langsung (satu jalur, per sumber).
   void addTrackingPoint(GeoPoint point) {
     if (_isActivelyTracking) {
       _activeTrackingPoints.add(point);
       _gpsLogger.log(point);
     }
-    // Fan-out multi-project: titik recordable diteruskan ke sesi aktif di
-    // TrackingSessionManager (inert bila belum ada sesi → parity mode lama).
-    TrackingSessionManager.instance.ingest(point);
   }
 
   /// Expose GPS log file listing for export / debug screens.

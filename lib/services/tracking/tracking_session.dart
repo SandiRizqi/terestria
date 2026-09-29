@@ -16,18 +16,24 @@ enum SessionState {
   pendingSave,
 }
 
+/// Sumber GPS yang merekam sebuah sesi. Diikat saat Start agar jalur RTK tak
+/// tercampur titik GPS HP (dan sebaliknya).
+enum TrackSource { phone, emlid }
+
 /// Satu sesi tracking untuk sebuah project. Menyimpan titik yang direkam
-/// SEJAK [startedAt] (fan-out dari satu stream GPS).
+/// SEJAK [startedAt] dari sumber [source].
 class TrackingSession {
   final Project project;
   final DateTime startedAt;
   final List<GeoPoint> points;
+  final TrackSource source;
   SessionState state;
 
   TrackingSession({
     required this.project,
     required this.startedAt,
     List<GeoPoint>? points,
+    this.source = TrackSource.phone,
     this.state = SessionState.recording,
   }) : points = points ?? <GeoPoint>[];
 

@@ -205,6 +205,30 @@ void main() {
       expect(m.sessionFor('a')!.state, SessionState.pendingSave);
     });
 
+    test('titik hanya masuk ke sesi dengan sumber GPS yang sama', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('hp'));
+      m.start(_proj('rtk'), source: TrackSource.emlid);
+
+      m.ingest(_pt(0, 0)); // default: phone
+      m.ingest(_pt(0, 1), source: TrackSource.emlid);
+      m.ingest(_pt(0, 2), source: TrackSource.emlid);
+
+      expect(m.sessionFor('hp')!.points.length, 1);
+      expect(m.sessionFor('rtk')!.points.length, 2);
+      expect(m.sessionFor('rtk')!.source, TrackSource.emlid);
+    });
+
+    test('recordingOnOtherSource menghitung sesi merekam di sumber lain', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.start(_proj('b'), source: TrackSource.emlid);
+      m.start(_proj('c'), source: TrackSource.emlid);
+      m.pause('c');
+      expect(m.recordingOnOtherSource(TrackSource.phone), 1); // b
+      expect(m.recordingOnOtherSource(TrackSource.emlid), 1); // a
+    });
+
     test('notifyListeners terpanggil saat start & addPoint', () {
       final m = TrackingSessionManager(maxConcurrent: 3);
       var n = 0;

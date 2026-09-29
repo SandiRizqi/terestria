@@ -55,6 +55,41 @@ void main() {
     }
   });
 
+  test('sumber GPS sesi disimpan di kolom provider', () {
+    final s = TrackingSession(
+        project: _proj('a', GeometryType.line),
+        startedAt: DateTime(2026, 1, 1),
+        source: TrackSource.emlid);
+    final row = SessionRepository.sessionRow(s);
+    expect(row['provider'], 'emlid');
+    expect(SessionRepository.sessionFromRow(row, const []).source,
+        TrackSource.emlid);
+  });
+
+  test('baris lama tanpa provider (DB v4) → phone', () {
+    final row = SessionRepository.sessionRow(TrackingSession(
+        project: _proj('a', GeometryType.line), startedAt: DateTime(2026)))
+      ..remove('provider');
+    expect(SessionRepository.sessionFromRow(row, const []).source,
+        TrackSource.phone);
+  });
+
+  test('migrasi v5: kolom provider ditambah hanya bila belum ada (idempoten)',
+      () {
+    expect(
+        SessionRepository.needsProviderColumn([
+          {'name': 'projectId'},
+          {'name': 'paused'},
+        ]),
+        isTrue);
+    expect(
+        SessionRepository.needsProviderColumn([
+          {'name': 'projectId'},
+          {'name': 'provider'},
+        ]),
+        isFalse);
+  });
+
   test('nilai kolom tak dikenal → paused (aman)', () {
     final row = SessionRepository.sessionRow(TrackingSession(
         project: _proj('a', GeometryType.line), startedAt: DateTime(2026)))

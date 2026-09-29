@@ -54,7 +54,8 @@ class TrackingSessionManager extends ChangeNotifier {
   /// Mulai sesi untuk [project]. Tolak bila melebihi cap (recording+paused).
   /// Sesi yang sudah ada → alreadyActive; draft pendingSave hanya boleh
   /// dilanjutkan bila masih ada slot.
-  StartResult start(Project project) {
+  StartResult start(Project project,
+      {TrackSource source = TrackSource.phone}) {
     final existing = _sessions[project.id];
     if (existing != null) {
       if (existing.pendingSave && liveCount >= _maxConcurrent) {
@@ -65,29 +66,36 @@ class TrackingSessionManager extends ChangeNotifier {
     if (liveCount >= _maxConcurrent) {
       return const StartResult(StartStatus.capReached);
     }
-    final s = TrackingSession(project: project, startedAt: DateTime.now());
+    final s = TrackingSession(
+        project: project, startedAt: DateTime.now(), source: source);
     _sessions[project.id] = s;
     notifyListeners();
     return StartResult(StartStatus.started, s);
   }
 
-  /// Intake dari stream GPS: hanya titik **recordable** yang di-fan-out.
-  /// Aman dipanggil walau tak ada sesi aktif (no-op).
-  void ingest(GeoPoint point) {
+  /// Intake dari feed GPS [source]: hanya titik **recordable** yang di-fan-out,
+  /// dan hanya ke sesi dengan sumber yang sama. Aman tanpa sesi (no-op).
+  void ingest(GeoPoint point, {TrackSource source = TrackSource.phone}) {
     if (!point.recordable) return;
     if (_sessions.isEmpty) return;
-    addPointToActiveSessions(point);
+    addPointToActiveSessions(point, source: source);
   }
 
-  /// Fan-out satu titik GPS ke semua sesi yang sedang merekam.
+  /// Sesi merekam yang memakai sumber SELAIN [source] — untuk memperingatkan
+  /// user saat mengganti provider (sesi itu berhenti menerima titik).
+  int recordingOnOtherSource(TrackSource source) => _sessions.values
+      .where((s) => s.isRecording && s.source != source)
+      .length;
+
+  /// Fan-out satu titik GPS ke semua sesi merekam bersumber [source].
   ///
-  /// Fix identik beruntun (timestamp + lat + lon sama) DILEWATI — melindungi
-  /// dari double-delivery satu fix lewat dua jalur (listener service + layar)
-  /// tanpa mengutak-atik alur titik yang rapuh & per-provider.
-  void addPointToActiveSessions(GeoPoint point) {
+  /// Fix identik beruntun (timestamp + lat + lon sama) DILEWATI — pengaman
+  /// bila satu fix terkirim dua kali.
+  void addPointToActiveSessions(GeoPoint point,
+      {TrackSource source = TrackSource.phone}) {
     var changed = false;
     for (final s in _sessions.values) {
-      if (!s.isRecording) continue;
+      if (!s.isRecording || s.source != source) continue;
       if (_isDuplicateOfLast(s, point)) continue;
       s.points.add(point);
       changed = true;

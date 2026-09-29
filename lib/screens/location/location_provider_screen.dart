@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../services/location_service_v2.dart';
+import '../../services/tracking/tracking_notification.dart';
+import '../../services/tracking/tracking_session.dart';
+import '../../services/tracking/tracking_session_manager.dart';
 import '../../models/geo_data_model.dart';
 import '../../theme/app_theme.dart';
 import 'dart:async';
@@ -298,6 +301,34 @@ class _LocationProviderScreenState extends State<LocationProviderScreen> {
   Future<void> _saveSettings() async {
     // Stop testing stream if active
     _locationSubscription?.cancel();
+
+    // Sesi multi-project terikat sumber GPS saat Start. Ganti provider saat
+    // ada sesi merekam dari sumber lama → sesi itu berhenti menerima titik.
+    final newSource = _selectedProvider == LocationProvider.emlid
+        ? TrackSource.emlid
+        : TrackSource.phone;
+    final warning = providerSwitchWarningText(
+        TrackingSessionManager.instance.recordingOnOtherSource(newSource));
+    if (warning != null) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Ganti provider GPS?'),
+          content: Text(warning),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ganti'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
+    }
 
     try {
       await _locationService.setLocationProvider(
