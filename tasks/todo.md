@@ -18,7 +18,7 @@ Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Branch: `main`
 - [x] **Task 5 — Sesi terikat provider + feed tunggal di engine** (M) ✅ 8 test — DB v5 `provider`; Emlid & phone di-fan-out oleh engine
 - [x] **Task 6 — DataCollectionScreen = view sesi** (M) ✅ 3 test (manajer+persistensi) — `_draftPoints` dari sesi; hapus append ganda & sync
 - [x] **Task 7 — Bersihkan state global + notifikasi tunggal** (M) ✅ 6 test — hapus `isActivelyTracking` dkk.; label notifikasi dari engine
-- [ ] **Task 8 — Skenario end-to-end (fake)** (S) — regresi C1 terkunci
+- [x] **Task 8 — Skenario end-to-end (fake)** (S) ✅ 1 test skenario, lolos uji mutasi — regresi C1 terkunci
 
 ## Phase 3 — UX pengelola tracking
 - [ ] **Task 9 — Panel "Tracking Aktif" interaktif** (M) — chip status, jeda/lanjut, durasi & titik live, ringkasan banner per status
