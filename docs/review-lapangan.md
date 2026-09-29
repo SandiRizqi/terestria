@@ -390,8 +390,9 @@ menyarankan Bahasa Indonesia). Komentar kode tetap berbahasa Indonesia sesuai ko
 ### Verifikasi
 
 - `flutter analyze`: 0 error, tidak ada warning baru dibanding baseline (42 warning lama).
-- `flutter test`: 579 lulus, 1 gagal — `routing_data_manager_test.dart` "shared OSM sheet exposes
-  server download + saved roads (parity)", **sudah gagal sebelum perubahan ini** (tidak terkait).
+- `flutter test`: 583 lulus, 0 gagal. Tes sheet data jalan (`routing_data_manager_test.dart`)
+  yang sebelumnya selalu gagal di host desktop kini menyetel ketersediaan routing secara
+  eksplisit dan mencakup ketiga kondisi sheet serta dialog platform tak didukung.
 - Plugin Kotlin `DeviceHealthPlugin` dikompilasi terhadap `android.jar`; kode Swift (iOS) belum
   dikompilasi (tidak ada toolchain iOS di lingkungan ini).
 - Belum diuji di perangkat. Skenario uji lapangan di bagian D perlu dijalankan di HP (terutama
