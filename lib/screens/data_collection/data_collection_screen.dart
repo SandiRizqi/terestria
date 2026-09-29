@@ -15,7 +15,6 @@ import '../../widgets/map/compass_button.dart';
 import '../../widgets/map/map_controls_column.dart';
 import '../../widgets/map/map_tool_button.dart';
 import '../../widgets/map/basemap_layers.dart';
-import '../../services/basemap/pdf_overlay.dart';
 import '../../services/basemap/pdf_overlay_controller.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../models/project_model.dart';
@@ -2686,7 +2685,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           setState(() => _selectedBasemap = basemap);
           _basemapService.setSelectedBasemap(basemap.id);
           _pdfOverlay.show(basemap);
-          _fitToPdfIfOffscreen(basemap);
+          fitCameraToPdfIfOffscreen(_mapController, basemap);
         },
       ),
     );
@@ -3075,27 +3074,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         userAgentPackageName: ApiConfig.bundleName,
         tileProvider: NetworkTileProvider(),
       );
-
-  /// Setelah ganti ke basemap PDF: pindahkan kamera ke PDF HANYA bila PDF
-  /// sama sekali tak terlihat (dulu kamera diam → PDF di area lain terkesan
-  /// "tidak muncul"). Bila sudah beririsan dengan tampilan, kamera dibiarkan.
-  void _fitToPdfIfOffscreen(Basemap basemap) {
-    final pdf = pdfBoundsOf(basemap);
-    if (pdf == null) return;
-    try {
-      if (!shouldFitToPdf(
-          visible: _mapController.camera.visibleBounds, pdf: pdf)) {
-        return;
-      }
-      _mapController.fitCamera(
-        CameraFit.bounds(bounds: pdf, padding: const EdgeInsets.all(50)),
-      );
-      logInfo('Kamera dipindah ke PDF "${basemap.name}" (di luar layar)',
-          tag: 'BASEMAP');
-    } catch (e) {
-      logWarn('Gagal memindah kamera ke PDF: $e', tag: 'BASEMAP');
-    }
-  }
 
   // P0: Satu layer per tipe geometri, bukan satu layer per record
   List<Widget> _buildExistingDataLayers() {

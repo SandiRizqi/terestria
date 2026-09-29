@@ -5,6 +5,7 @@ import '../../config/api_config.dart';
 import '../../models/basemap_model.dart';
 import '../../services/basemap/pdf_overlay.dart';
 import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
+import '../../utils/app_logger.dart';
 
 /// Layer basemap untuk `FlutterMap` — dipakai DataCollection, Navigasi, dan
 /// Notification Map.
@@ -62,6 +63,29 @@ List<Widget> buildBasemapLayers(
       ),
     ),
   ];
+}
+
+/// Setelah ganti ke basemap PDF: pindahkan kamera ke PDF HANYA bila PDF sama
+/// sekali tak terlihat (dulu kamera diam → PDF di area lain terkesan "tidak
+/// muncul"). Bila sudah beririsan dengan tampilan, kamera dibiarkan — user
+/// mungkin sedang bekerja di area itu. true bila kamera dipindah.
+bool fitCameraToPdfIfOffscreen(MapController controller, Basemap basemap) {
+  final pdf = pdfBoundsOf(basemap);
+  if (pdf == null) return false;
+  try {
+    if (!shouldFitToPdf(visible: controller.camera.visibleBounds, pdf: pdf)) {
+      return false;
+    }
+    controller.fitCamera(
+      CameraFit.bounds(bounds: pdf, padding: const EdgeInsets.all(50)),
+    );
+    logInfo('Kamera dipindah ke PDF "${basemap.name}" (di luar layar)',
+        tag: 'BASEMAP');
+    return true;
+  } catch (e) {
+    logWarn('Gagal memindah kamera ke PDF: $e', tag: 'BASEMAP');
+    return false;
+  }
 }
 
 /// Chip "Memuat peta PDF…" selama overlay di-decode. Letakkan sebagai anak

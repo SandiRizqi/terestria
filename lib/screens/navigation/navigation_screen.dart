@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -21,12 +20,13 @@ import '../../services/layer_service.dart';
 import '../../services/location_service_v2.dart';
 import '../../services/routing_service.dart';
 import '../../services/settings_service.dart';
-import '../../services/tile_providers/sqlite_cached_tile_provider.dart';
 import '../../mixins/routing_data_manager.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../widgets/map/map_controls_column.dart';
 import '../../widgets/map/map_tool_button.dart';
 import '../../widgets/map/road_network_layer.dart';
+import '../../widgets/map/basemap_layers.dart';
+import '../../services/basemap/pdf_overlay_controller.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
 import '../data_collection/widgets/user_location_marker.dart';
@@ -52,6 +52,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   final _routingService   = RoutingService();
   final _settingsService  = SettingsService();
   final _mapController    = MapController();
+  late final PdfOverlayController _pdfOverlay;
 
   // ─── GPS ───────────────────────────────────────────────────────────────────
   StreamSubscription<GeoPoint>? _gpsSub;
@@ -131,8 +132,24 @@ class _NavigationScreenState extends State<NavigationScreen>
       vsync:    this,
       duration: const Duration(milliseconds: 400),
     )..addListener(() { if (mounted) setState(() {}); });
+    // Overlay PDF disiapkan sekali per ganti basemap (bukan di build).
+    _pdfOverlay = PdfOverlayController(onProblem: _showBasemapProblem)
+      ..addListener(_onPdfOverlayChanged);
     _initCompass(); // Start compass independently — must not wait for GPS
     _init();
+  }
+
+  void _onPdfOverlayChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _showBasemapProblem(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.orange,
+      duration: const Duration(seconds: 4),
+    ));
   }
 
   Future<void> _init() async {
@@ -150,6 +167,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _pdfOverlay
+      ..removeListener(_onPdfOverlayChanged)
+      ..dispose();
     _gpsSub?.cancel();
     _compassSub?.cancel();
     _recalcDebounce?.cancel();
@@ -163,7 +183,9 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   Future<void> _loadBasemap() async {
     final b = await _basemapService.getSelectedBasemap();
-    if (mounted) setState(() => _selectedBasemap = b);
+    if (!mounted) return;
+    setState(() => _selectedBasemap = b);
+    _pdfOverlay.show(b);
   }
 
   Future<void> _loadActiveLayers() async {
@@ -561,8 +583,13 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
       children: [
         // Basemap
+        // Tanpa I/O: overlay PDF disiapkan _pdfOverlay saat ganti basemap.
         if (_selectedBasemap != null)
-          ..._buildBasemapLayers(_selectedBasemap!)
+          ...buildBasemapLayers(
+            _selectedBasemap!,
+            overlay: _pdfOverlay.spec,
+            fallback: _osmFallback,
+          )
         else
           TileLayer(
             urlTemplate:          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -622,6 +649,9 @@ class _NavigationScreenState extends State<NavigationScreen>
 
         // Map measure tool overlays (shared, scratch).
         ...buildMapToolsLayers(),
+
+        // Overlay PDF sedang di-decode (ganti basemap).
+        if (_pdfOverlay.loading) const PdfOverlayLoadingChip(),
       ],
     );
   }
@@ -683,6 +713,14 @@ class _NavigationScreenState extends State<NavigationScreen>
         onBasemapSelected: (basemap) async {
           await _basemapService.setSelectedBasemap(basemap.id);
           await _loadBasemap();
+          // PDF di luar layar → kamera ke PDF; matikan follow agar GPS tak
+          // langsung menarik kamera kembali (sama seperti geser manual).
+          final b = _selectedBasemap;
+          if (mounted &&
+              b != null &&
+              fitCameraToPdfIfOffscreen(_mapController, b)) {
+            setState(() => _isFollowingUser = false);
+          }
         },
       ),
     );
@@ -1238,63 +1276,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   // ─────────────────────────────────────────────────────────────────────────
   // LAYER BUILDERS
   // ─────────────────────────────────────────────────────────────────────────
-
-  List<Widget> _buildBasemapLayers(Basemap basemap) {
-    // PDF georeferenced overlay
-    if (basemap.useOverlayMode &&
-        basemap.pdfOverlayImagePath != null &&
-        basemap.hasPdfGeoreferencing) {
-      final imageFile = File(basemap.pdfOverlayImagePath!);
-      if (!imageFile.existsSync() ||
-          basemap.pdfMinLat == null || basemap.pdfMinLon == null ||
-          basemap.pdfMaxLat == null || basemap.pdfMaxLon == null ||
-          basemap.pdfMinLat! >= basemap.pdfMaxLat! ||
-          basemap.pdfMinLon! >= basemap.pdfMaxLon!) {
-        return [_osmFallback()];
-      }
-      try {
-        final bounds = LatLngBounds(
-          LatLng(basemap.pdfMinLat!, basemap.pdfMinLon!),
-          LatLng(basemap.pdfMaxLat!, basemap.pdfMaxLon!),
-        );
-        return [
-          _osmFallback(),
-          OverlayImageLayer(
-            overlayImages: [
-              OverlayImage(
-                bounds:          bounds,
-                imageProvider:   FileImage(imageFile),
-                opacity:         1.0,
-                gaplessPlayback: true,
-              ),
-            ],
-          ),
-        ];
-      } catch (_) {
-        return [_osmFallback()];
-      }
-    }
-
-    // Semua basemap lain (builtin maupun custom) — selalu pakai
-    // SqliteCachedTileProvider agar tile yang sudah di-cache tetap
-    // muncul saat offline.  URL sqlite:// / overlay:// dikosongkan
-    // supaya provider yang mengambil tile dari database lokal.
-    return [
-      TileLayer(
-        urlTemplate: basemap.urlTemplate.startsWith('sqlite://') ||
-                basemap.urlTemplate.startsWith('overlay://')
-            ? ''
-            : basemap.urlTemplate,
-        userAgentPackageName: ApiConfig.bundleName,
-        minZoom: basemap.minZoom.toDouble(),
-        maxZoom: basemap.maxZoom.toDouble(),
-        tileProvider: SqliteCachedTileProvider(
-          basemapId: basemap.id,
-          maxStale:  const Duration(days: 30),
-        ),
-      ),
-    ];
-  }
 
   TileLayer _osmFallback() => TileLayer(
         urlTemplate:          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',

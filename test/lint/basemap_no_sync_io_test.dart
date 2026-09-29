@@ -18,6 +18,8 @@ void main() {
   test('layar peta tak lagi membaca berkas overlay PDF sendiri', () {
     for (final path in [
       'lib/screens/data_collection/data_collection_screen.dart',
+      'lib/screens/navigation/navigation_screen.dart',
+      'lib/screens/notifications/notification_map_screen.dart',
     ]) {
       final src = File(path).readAsStringSync();
       expect(src, isNot(contains('readAsBytesSync')), reason: path);

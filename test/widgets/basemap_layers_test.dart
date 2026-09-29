@@ -101,6 +101,39 @@ void main() {
     });
   });
 
+  testWidgets(
+      'fitCameraToPdfIfOffscreen: PDF di luar layar → kamera pindah; '
+      'sudah terlihat → kamera diam', (tester) async {
+    final controller = MapController();
+    await tester.pumpWidget(MaterialApp(
+      home: Center(
+        child: SizedBox(
+          width: 400,
+          height: 400,
+          child: FlutterMap(
+            mapController: controller,
+            options: const MapOptions(
+                initialCenter: LatLng(-7.8, 112.6), initialZoom: 12),
+            children: const [],
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final pdf = _overlay('a'); // area Jakarta, kamera di Malang
+    expect(fitCameraToPdfIfOffscreen(controller, pdf), isTrue);
+    expect(pdfBoundsOf(pdf)!.contains(controller.camera.center), isTrue);
+
+    final before = controller.camera.center;
+    expect(fitCameraToPdfIfOffscreen(controller, pdf), isFalse);
+    expect(controller.camera.center, before);
+
+    final osm = Basemap(
+        id: 'osm', name: 'OSM', type: BasemapType.builtin, urlTemplate: 'x');
+    expect(fitCameraToPdfIfOffscreen(controller, osm), isFalse);
+  });
+
   testWidgets('chip loading tampil, tak menghalangi gestur peta, muat di 360 dp',
       (tester) async {
     tester.view.physicalSize = const Size(360, 740);
