@@ -14,7 +14,9 @@ import "services/photo_migration_service.dart";
 import 'services/update_service.dart';
 import 'app_initializer.dart';
 import 'services/settings_service.dart';
+import 'services/logging/log_setup.dart';
 import 'services/tracking/tracking_engine.dart';
+import 'utils/app_logger.dart';
 import 'services/tracking/tracking_persistence_coordinator.dart';
 
 /// Koordinator persistensi sesi tracking (restore + flush ke SQLite). Disimpan
@@ -27,6 +29,10 @@ void main() async {
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // 0. Log berkas diagnostik (bisa dibagikan dari Settings) — paling awal
+      //    agar kegagalan init berikutnya ikut tercatat.
+      await initAppLogging(source: 'app');
 
       // 1. Initialize Firebase FIRST (CRITICAL!)
       try {
@@ -49,6 +55,8 @@ void main() async {
         // Crashlytics may not be ready yet, so just log locally
         debugPrint(stack.toString());
       }
+      // Error tak tertangkap juga ke berkas log (handler Crashlytics tetap).
+      installErrorLogging();
 
       // 4. Initialize app services (includes FCM if Firebase is ready)
       await AppInitializer().initialize();
@@ -69,7 +77,7 @@ void main() async {
     },
     // Zone-level catcher: records as fatal so it groups like a crash
     (error, stack) {
-      debugPrint('🔴 [Zone] Uncaught error: $error');
+      logError('Uncaught zone error', tag: 'APP', error: error, stack: stack);
       crashlytics.recordFatalError(
         error,
         stack,
@@ -166,6 +174,8 @@ class _TerestriaAppState extends State<TerestriaApp>
       // saat app dibuka lagi), lalu hentikan service (kebijakan: app di-kill →
       // GPS background berhenti, hemat baterai).
       await trackingPersistence?.flushNow();
+      logInfo('App ditutup (detached)', tag: 'APP');
+      await AppLogger.flush();
       if (TrackingEngine.instance.isActive) {
         debugPrint('⚠️ [MAIN APP] Stopping active background tracking...');
         await LocationServiceV2().stopBackgroundTracking();

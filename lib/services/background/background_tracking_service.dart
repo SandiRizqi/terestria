@@ -11,6 +11,7 @@ import 'notification_service.dart';
 import 'permission_service.dart';
 import '../gps_settings_service.dart';
 import '../gps/gps_filter_pipeline.dart';
+import '../logging/log_setup.dart';
 import '../../utils/app_logger.dart';
 
 /// Keputusan saat [BackgroundTrackingService.start] dipanggil.
@@ -331,6 +332,17 @@ class BackgroundTrackingService {
     }
   }
 
+  /// Teruskan status Mode Diagnostik ke isolate (null = mati).
+  void setDiagnosticUntil(DateTime? until) {
+    if (!_isRunning) return;
+    try {
+      _service.invoke(
+          'set_diagnostic', {'until': until?.millisecondsSinceEpoch});
+    } catch (e) {
+      logError('❌ Error sending diagnostic mode: $e');
+    }
+  }
+
   /// Send heartbeat to background service
   void sendHeartbeat() {
     if (!_isRunning) return;
@@ -415,8 +427,9 @@ class BackgroundTrackingService {
   
   /// Laporkan ke app bahwa service berhenti SEBELUM stopSelf(), agar cache
   /// `_isRunning` di app tidak basi (Start berikutnya menyalakan ulang).
-  static void _reportStoppedAndStop(ServiceInstance service) {
+  static Future<void> _reportStoppedAndStop(ServiceInstance service) async {
     service.invoke('service_status', {'isRunning': false});
+    await AppLogger.flush(); // log isolate jangan hilang saat isolate mati
     service.stopSelf();
   }
 
@@ -434,6 +447,13 @@ class BackgroundTrackingService {
     // Add delay to ensure plugins fully initialized
     await Future.delayed(const Duration(milliseconds: 500));
     logDebug('✅ Flutter bindings initialized');
+    // Isolate ini punya berkas log sendiri (bg-*.log) — digabung saat ekspor.
+    await initAppLogging(source: 'bg');
+    service.on('set_diagnostic').listen((event) {
+      final ms = event?['until'];
+      AppLogger.setDiagnosticUntil(
+          ms is int ? DateTime.fromMillisecondsSinceEpoch(ms) : null);
+    });
     
     bool isPaused = false;
     int locationCount = 0;
