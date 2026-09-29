@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import '../config/api_config.dart';
+import '../utils/app_logger.dart';
 
 class ConnectivityService {
   static final ConnectivityService _instance = ConnectivityService._internal();
@@ -15,19 +16,25 @@ class ConnectivityService {
   
   Timer? _timer;
 
-  // Start monitoring connectivity
+  /// Mulai memantau koneksi. Idempoten: beberapa layar memanggilnya — dulu
+  /// setiap panggilan menambah timer 5 dtk baru (timer lama tak pernah
+  /// dihentikan) sehingga lookup DNS berlipat dan menguras baterai.
   void startMonitoring() {
     _checkConnection();
+    if (_timer?.isActive ?? false) return;
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
       _checkConnection();
     });
   }
 
-  // Stop monitoring
+  /// Hentikan pemantauan. Stream TIDAK ditutup (singleton dipakai seluruh
+  /// app; menutupnya membuat semua listener mati permanen).
   void stopMonitoring() {
     _timer?.cancel();
-    _connectivityController.close();
+    _timer = null;
   }
+
+  bool get isMonitoring => _timer?.isActive ?? false;
 
   // Check internet connection
   Future<void> _checkConnection() async {
@@ -52,7 +59,10 @@ class ConnectivityService {
   void _updateStatus(bool status) {
     if (_isOnline != status) {
       _isOnline = status;
-      _connectivityController.add(_isOnline);
+      logInfo('Connection ${status ? 'online' : 'offline'}', tag: 'NET');
+      if (!_connectivityController.isClosed) {
+        _connectivityController.add(_isOnline);
+      }
     }
   }
 

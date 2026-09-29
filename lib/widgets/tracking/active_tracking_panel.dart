@@ -81,7 +81,12 @@ Duration sessionElapsed(TrackingSession s, DateTime now) {
 /// panel. Hilang bila tak ada sesi.
 class ActiveTrackingBanner extends StatelessWidget {
   final VoidCallback onTap;
-  const ActiveTrackingBanner({super.key, required this.onTap});
+  final EdgeInsetsGeometry padding;
+  const ActiveTrackingBanner({
+    super.key,
+    required this.onTap,
+    this.padding = const EdgeInsets.fromLTRB(16, 12, 16, 0),
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +114,7 @@ class ActiveTrackingBanner extends StatelessWidget {
             : '${names.take(2).join(', ')} +${names.length - 2}';
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: padding,
           child: Material(
             color: color.withOpacity(0.08),
             borderRadius: BorderRadius.circular(12),

@@ -27,6 +27,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
 import '../../services/export/geo_export.dart';
+import '../../services/photo_sync_service.dart';
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
 
@@ -54,6 +55,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   String _syncProgress = '';
   int _totalPhotosToProcess = 0;
   int _processedPhotos = 0;
+  int _pendingPhotoCount = 0;
   String? _currentUsername;
 
   // ── Filter state ──
@@ -257,29 +259,30 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _loadGeoData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final data = await _storageService.loadGeoData(_currentProject.id);
-    
-      
-      // Check if any data has null collectedBy (old data)
-      //final dataWithoutCollector = data.where((d) => d.collectedBy == null).length;
-      
+      // Foto yang belum ter-upload (antrean di kartu sync).
+      var photos = 0;
+      final photoSync = PhotoSyncService();
+      for (final d in data) {
+        if (d.isSynced) continue;
+        photos += photoSync.pendingPhotoUploads(d.formData, _currentProject).length;
+      }
+      if (!mounted) return;
       setState(() {
         _geoDataList = data;
+        _pendingPhotoCount = photos;
         _isLoading = false;
       });
       // Terapkan ulang filter yang mungkin aktif setelah reload
       _applyFilters();
-      
-      
-    } catch (e) {
+    } catch (e, st) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e')),
-        );
-      }
+      showErrorFeedback(context, 'Could not load the records',
+          error: e, stack: st, tag: 'PROJECT');
     }
   }
 
@@ -753,415 +756,167 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
-  Future<void> _syncProject() async {
-    // Check if online
+  /// Sinkron satu tombol: project (bila belum ada di server) → record → foto.
+  /// Memakai [SyncService.syncProjectAndData] yang eksklusif sehingga tak
+  /// pernah bentrok dengan auto-sync. [onlyIds] dipakai "Retry failed".
+  Future<void> _syncNow({Set<String>? onlyIds}) async {
+    if (_isSyncing) return;
     if (!_isOnline) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.wifi_off, color: Colors.white),
-              SizedBox(width: 8),
-              Text('No internet connection. Please connect to sync project.'),
-            ],
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      showInfoFeedback(
+          context,
+          'No internet connection. Your data is safe on this phone — sync '
+          'when you are online.',
+          warning: true);
+      return;
+    }
+    final pending =
+        onlyIds?.length ?? _geoDataList.where((d) => !d.isSynced).length;
+    if (pending == 0 && _currentProject.isSynced) {
+      showInfoFeedback(context, 'Everything is already synced.',
+          success: true);
       return;
     }
 
-    // Show confirmation dialog
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sync Project'),
-        content: Text('Sync project "${_currentProject.name}" to server?\n\nThis will upload project structure and form fields.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sync'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    // Show loading
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Syncing project to server...'),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    try {
-      // Sync project to backend
-      final result = await _syncService.syncProject(_currentProject);
-      
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        
-        if (result.success) {
-          // SyncService.syncProject sudah menandai isSynced=true di storage.
-          // Reload dari storage sebagai satu-satunya sumber kebenaran —
-          // saveProject di sini dulu justru meng-clobber status sync.
-          final refreshed =
-              await _storageService.getProjectById(_currentProject.id);
-
-          setState(() {
-            _currentProject = refreshed ?? _currentProject;
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(result.message),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else {
-          // Show error dialog
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.error, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text('Sync Failed'),
-                ],
-              ),
-              content: Text(result.message),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Error syncing project: $e')),
-              ],
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _syncAllData() async {
-    // Check if online
-    if (!_isOnline) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.wifi_off, color: Colors.white),
-              SizedBox(width: 8),
-              Text('No internet connection. Please connect to sync data.'),
-            ],
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    // Gate: geodata tidak boleh di-push sebelum project-nya tersinkron ke
-    // server (kalau tidak, server menolak: "project does not exist").
-    if (!_currentProject.isSynced) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.cloud_off, color: Colors.white),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Project belum tersinkron ke server. Sync project dulu sebelum push data.',
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.orange[800],
-        ),
-      );
-      return;
-    }
-
-    final unsyncedData = _geoDataList.where((data) => !data.isSynced).toList();
-    
-    if (unsyncedData.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('All data is already synced')),
-      );
-      return;
-    }
-
-    // Show confirmation dialog
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sync Data'),
-        content: Text('Sync ${unsyncedData.length} record${unsyncedData.length > 1 ? "s" : ""} to server?\n\nThis will upload photos to cloud storage.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sync'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    // Set syncing state
     setState(() {
       _isSyncing = true;
-      _syncProgress = 'Preparing to upload...';
+      _syncProgress = _syncService.isSyncing.value
+          ? 'Waiting for the background sync to finish…'
+          : 'Preparing…';
     });
+    logInfo(
+        'Sync "${_currentProject.name}": $pending record(s)'
+        '${onlyIds != null ? ' (retry failed)' : ''}'
+        '${_currentProject.isSynced ? '' : ' + project'}',
+        tag: 'SYNC');
 
+    BatchSyncResult? result;
     try {
-      int successCount = 0;
-      List<String> errors = [];
-      bool abortedConnection = false;
-
-      // Pre-flight: pastikan host server benar-benar bisa dijangkau
-      // (internet umum bisa ada tapi domain server gagal di-resolve).
-      final reachable = await _connectivityService.checkServerReachable();
-      if (!reachable) {
-        abortedConnection = true;
-      } else {
-        // Sync each unsynced data to backend
-        for (var i = 0; i < unsyncedData.length; i++) {
-          final data = unsyncedData[i];
-
-          setState(() {
-            _syncProgress = 'Uploading record ${i + 1}/${unsyncedData.length}...';
-          });
-
-          final result = await _syncService.syncGeoData(data, _currentProject);
-
-          if (result.success) {
-            successCount++;
-          } else {
-            // Early-abort: koneksi putus → hentikan, sisanya tetap tersimpan.
-            if (result.isConnectionError) {
-              abortedConnection = true;
-              break;
-            }
-            errors.add(result.message);
-          }
-        }
-      }
-
-      // Reload data
-      await _loadGeoData();
-
+      result = await _syncService.syncProjectAndData(
+        _currentProject,
+        onlyIds: onlyIds,
+        onProgress: (message, {done, total}) {
+          if (mounted) setState(() => _syncProgress = message);
+        },
+      );
+    } catch (e, st) {
       if (mounted) {
-        final grouped = SyncService.groupErrors(errors);
-
-        if (abortedConnection) {
-          // Satu pesan ringkas, bukan tembok error koneksi.
-          final remaining = unsyncedData.length - successCount;
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.wifi_off, color: Colors.orange),
-                  SizedBox(width: 8),
-                  Text('Sync Tertunda'),
-                ],
-              ),
-              content: Text(
-                'Tidak ada koneksi ke server.\n\n'
-                '$successCount data terkirim, $remaining belum. '
-                'Data tersimpan aman dan akan bisa disync lagi saat sinyal stabil.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        } else if (successCount == unsyncedData.length) {
-          // All synced successfully
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$successCount record${successCount > 1 ? "s" : ""} synced successfully',
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else if (successCount > 0) {
-          // Partial success
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.orange),
-                  SizedBox(width: 8),
-                  Text('Partial Sync'),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('$successCount of ${unsyncedData.length} records synced.'),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Errors:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    ...grouped.take(5).map((error) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        '• $error',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    )),
-                    if (grouped.length > 5)
-                      Text('... dan ${grouped.length - 5} error lain'),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        } else {
-          // All failed
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.error, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text('Sync Failed'),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Failed to sync data to server.'),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Errors:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    ...grouped.take(5).map((error) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        '• $error',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    )),
-                    if (grouped.length > 5)
-                      Text('... dan ${grouped.length - 5} error lain'),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Error syncing data: $e')),
-              ],
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSyncing = false;
-          _syncProgress = '';
-        });
+        showErrorFeedback(context, 'Sync failed',
+            error: e, stack: st, tag: 'SYNC');
       }
     }
+
+    // Storage = satu-satunya sumber kebenaran status sync.
+    final refreshed = await _storageService.getProjectById(_currentProject.id);
+    await _loadGeoData();
+    if (!mounted) return;
+    setState(() {
+      if (refreshed != null) _currentProject = refreshed;
+      _isSyncing = false;
+      _syncProgress = '';
+    });
+    if (result != null) _showSyncResult(result);
+  }
+
+  /// Ringkasan hasil sync dengan bahasa manusia + "Retry failed".
+  void _showSyncResult(BatchSyncResult r) {
+    logInfo(
+        'Sync result "${_currentProject.name}": ${r.successCount}/${r.total} '
+        'uploaded, failed=${r.failedIds.length}, projectFailed=${r.projectFailed}, '
+        'offline=${r.abortedDueToConnection}, auth=${r.abortedDueToAuth}',
+        tag: 'SYNC');
+    if (r.abortedDueToAuth) {
+      showInfoFeedback(
+        context,
+        'Your session expired — sign in again, then tap Sync.',
+        warning: true,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Sign in',
+          onPressed: AuthService().requestReLogin,
+        ),
+      );
+      return;
+    }
+    if (r.abortedDueToConnection) {
+      showInfoFeedback(
+        context,
+        '${r.successCount} uploaded, ${r.failedIds.length} still waiting. The '
+        'server could not be reached — your data is safe on this phone.',
+        warning: true,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Retry',
+          onPressed: () => _syncNow(
+              onlyIds: r.failedIds.isEmpty ? null : r.failedIds.toSet()),
+        ),
+      );
+      return;
+    }
+    if (!r.hasErrors && !r.projectFailed) {
+      showInfoFeedback(
+          context,
+          r.total == 0
+              ? 'Project is on the server now.'
+              : 'All ${r.total} record${r.total == 1 ? '' : 's'} uploaded.',
+          success: true);
+      return;
+    }
+
+    final grouped = SyncService.groupErrors(r.errors);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.cloud_off_rounded,
+            color: Colors.orange, size: 32),
+        title: Text(r.projectFailed
+            ? 'Project could not be uploaded'
+            : r.successCount > 0
+                ? 'Some records were not uploaded'
+                : 'Nothing was uploaded'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(r.projectFailed
+                  ? 'The project has to be on the server before its records '
+                      'can be uploaded. Your data is safe on this phone.'
+                  : '${r.successCount} of ${r.total} records uploaded. The '
+                      'rest stay safely on this phone.'),
+              if (grouped.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('Reasons:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                ...grouped.take(5).map((e) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('• $e', style: const TextStyle(fontSize: 13)),
+                    )),
+                if (grouped.length > 5)
+                  Text('…and ${grouped.length - 5} more',
+                      style: const TextStyle(fontSize: 13)),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _syncNow(
+                  onlyIds: r.projectFailed || r.failedIds.isEmpty
+                      ? null
+                      : r.failedIds.toSet());
+            },
+            child: const Text('Retry failed'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _deleteGeoData(GeoData data) async {
@@ -1519,7 +1274,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               } else if (value == 'pull_since_date') {
                 _pullSinceDate();
               } else if (value == 'sync_to_server') {
-                _syncAllData();
+                _syncNow();
               } else if (value == 'info') {
                 _showProjectInfo();
               }
@@ -1786,63 +1541,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ],
             ),
           ),
-          // Banner: project belum tersinkron → tawarkan Sync Project.
-          // Push geodata baru aktif setelah project synced.
-          if (!_currentProject.isSynced) ...[
+          // Antrean sync + satu tombol (project → record → foto sekaligus;
+          // dulu "Sync Project" dan "Sync Now" terpisah).
+          if (!_currentProject.isSynced || unsyncedCount > 0)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.08),
-                border: Border(
-                  top: BorderSide(color: Colors.grey[300]!, width: 1),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.cloud_off, size: 18, color: Colors.blue[700]),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Project belum tersinkron. Sync project dulu agar data bisa di-push.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.blue[800],
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: (_isOnline && !_isSyncing) ? _syncProject : null,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Sync Project',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _isOnline ? Colors.blue[800] : Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.cloud_sync, size: 16, color: _isOnline ? Colors.blue[800] : Colors.grey),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          if (unsyncedCount > 0) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
               decoration: BoxDecoration(
                 color: Colors.orange.withOpacity(0.1),
                 border: Border(
@@ -1851,48 +1555,51 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.cloud_upload, size: 18, color: Colors.orange[700]),
-                  const SizedBox(width: 8),
-                  Text(
-                    '$unsyncedCount ${unsyncedCount == 1 ? "record" : "records"} not synced',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.orange[800],
+                  Icon(Icons.cloud_upload, size: 20, color: Colors.orange[700]),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          unsyncedCount == 0
+                              ? 'Project not on the server yet'
+                              : [
+                                  '$unsyncedCount ${unsyncedCount == 1 ? 'record' : 'records'}',
+                                  if (_pendingPhotoCount > 0)
+                                    '$_pendingPhotoCount ${_pendingPhotoCount == 1 ? 'photo' : 'photos'}',
+                                ].join(' · ') + ' waiting',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.orange[900],
+                          ),
+                        ),
+                        Text(
+                          !_isOnline
+                              ? 'Offline — safe on this phone'
+                              : !_currentProject.isSynced
+                                  ? 'Sync uploads the project first'
+                                  : 'Tap Sync to upload',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey[700]),
+                        ),
+                      ],
                     ),
                   ),
-                  const Spacer(),
-                  // Push geodata hanya aktif kalau online DAN project sudah synced.
-                  Builder(builder: (context) {
-                    final canPush = _isOnline && _currentProject.isSynced;
-                    return TextButton(
-                      onPressed: canPush ? _syncAllData : null,
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Sync Now',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: canPush ? Colors.orange[800] : Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.sync, size: 16, color: canPush ? Colors.orange[800] : Colors.grey),
-                        ],
-                      ),
-                    );
-                  }),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: (_isOnline && !_isSyncing) ? _syncNow : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.orange[800],
+                      minimumSize: const Size(0, 44),
+                    ),
+                    icon: const Icon(Icons.sync, size: 18),
+                    label: const Text('Sync'),
+                  ),
                 ],
               ),
             ),
-          ],
         ],
       ),
     );

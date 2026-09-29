@@ -29,6 +29,11 @@ import 'dart:async';
 import '../utils/app_logger.dart';
 import '../utils/ui_feedback.dart';
 import '../widgets/backup/backup_actions.dart';
+import '../widgets/home/home_menu.dart';
+import '../widgets/home/home_status_section.dart';
+import '../services/auto_sync_service.dart';
+import 'project/project_detail_screen.dart';
+import 'readiness/field_readiness_screen.dart';
 class MenuScreen extends StatefulWidget {
   const MenuScreen({Key? key}) : super(key: key);
 
@@ -48,6 +53,8 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   StreamSubscription<NotificationEvent>? _notificationSubscription;
   int _unreadNotificationCount = 0;
   User? _currentUser;
+  final GlobalKey<HomeStatusSectionState> _statusKey =
+      GlobalKey<HomeStatusSectionState>();
 
   @override
   void initState() {
@@ -59,6 +66,14 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     _listenToNotificationEvents();
     _setupFirebaseMessagingCallback();
     _loadCurrentUser();
+    // Auto-sync (bila diaktifkan di Settings) selama user login.
+    AutoSyncService.instance.start();
+  }
+
+  /// Buka layar lalu segarkan kartu status saat kembali ke beranda.
+  Future<void> _open(Widget screen) async {
+    await Navigator.push(context, SmoothPageRoute(builder: (_) => screen));
+    if (mounted) _statusKey.currentState?.refresh();
   }
 
   Future<void> _loadCurrentUser() async {
@@ -77,10 +92,9 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   /// Greeting berdasarkan jam lokal
   String get _greeting {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'Selamat Pagi';
-    if (hour < 15) return 'Selamat Siang';
-    if (hour < 18) return 'Selamat Sore';
-    return 'Selamat Malam';
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
   }
 
   /// Nama tampilan: prioritas fullName, fallback ke username
@@ -158,6 +172,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _loadUnreadNotificationCount();
       _syncNotifications();
+      _statusKey.currentState?.refresh();
     }
   }
 
@@ -171,6 +186,7 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _firebaseMessagingService.onNewNotificationCallback = null;
+    AutoSyncService.instance.stop();
     _connectivitySubscription?.cancel();
     _notificationSubscription?.cancel();
     super.dispose();
@@ -386,270 +402,113 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
             ),
           ),
           
-          const SizedBox(height: 16),
-          
-          // Menu Grid
+          // Status lapangan + menu berkelompok (beranda = dasbor lapangan).
           Expanded(
-            child: GridView.count(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              crossAxisCount: 2,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 0.9,
-              children: [
-                _buildMenuCard(
-                  context,
-                  icon: Icons.analytics_rounded,
-                  title: 'Analysis Report',
-                  description: 'Hasil analisis',
-                  color: AppTheme.primaryBlue,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const AnalysisTypesScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.folder_rounded,
-                  title: 'Projects',
-                  description: 'Manage data',
-                  color: AppTheme.primaryGreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const ProjectsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.layers_rounded,
-                  title: 'Layers',
-                  description: 'Manage overlays',
-                  color: AppTheme.darkGreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const LayersScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.map_rounded,
-                  title: 'Basemaps',
-                  description: 'Custom basemaps',
-                  color: AppTheme.accentGreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const BasemapManagementScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.notifications_rounded,
-                  title: 'Notifications',
-                  description: 'Stay updated',
-                  color: AppTheme.primaryGreen,
-                  badge: _unreadNotificationCount > 0 ? _unreadNotificationCount : null,
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const NotificationsScreen(),
-                      ),
-                    );
-                    _loadUnreadNotificationCount();
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.satellite_alt_rounded,
-                  title: 'Location',
-                  description: 'GPS Provider',
-                  color: AppTheme.darkGreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const LocationProviderScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.settings_rounded,
-                  title: 'Settings',
-                  description: 'Preferences',
-                  color: AppTheme.accentGreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const SettingsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.navigation_rounded,
-                  title: 'Navigation',
-                  description: 'Route & navigate',
-                  color: AppTheme.primaryGreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const NavigationScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  icon: Icons.person_rounded,
-                  title: 'Profile',
-                  description: 'Account info',
-                  color: AppTheme.primaryGreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SmoothPageRoute(
-                        builder: (context) => const ProfileScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ],
+            child: RefreshIndicator(
+              color: AppTheme.primaryColor,
+              onRefresh: () async => _statusKey.currentState?.refresh(),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                children: [
+                  HomeStatusSection(
+                    key: _statusKey,
+                    onOpenProject: (project) => _open(
+                        ProjectDetailScreen(project: project)),
+                    onOpenReadiness: () =>
+                        _open(const FieldReadinessScreen()),
+                  ),
+                  const HomeSectionLabel('Survey'),
+                  HomeMenuGrid(children: [
+                    HomeMenuCard(
+                      icon: Icons.folder_rounded,
+                      title: 'Projects',
+                      description: 'Collect & manage data',
+                      color: AppTheme.primaryGreen,
+                      onTap: () => _open(const ProjectsScreen()),
+                    ),
+                    HomeMenuCard(
+                      icon: Icons.layers_rounded,
+                      title: 'Layers',
+                      description: 'Overlays',
+                      color: AppTheme.darkGreen,
+                      onTap: () => _open(const LayersScreen()),
+                    ),
+                    HomeMenuCard(
+                      icon: Icons.map_rounded,
+                      title: 'Basemaps',
+                      description: 'Offline maps',
+                      color: AppTheme.accentGreen,
+                      onTap: () => _open(const BasemapManagementScreen()),
+                    ),
+                  ]),
+                  const HomeSectionLabel('Tools'),
+                  HomeMenuGrid(children: [
+                    HomeMenuCard(
+                      icon: Icons.navigation_rounded,
+                      title: 'Navigation',
+                      description: 'Route & navigate',
+                      color: AppTheme.primaryGreen,
+                      onTap: () => _open(const NavigationScreen()),
+                    ),
+                    HomeMenuCard(
+                      icon: Icons.analytics_rounded,
+                      title: 'Analysis',
+                      description: 'Reports',
+                      color: AppTheme.primaryBlue,
+                      onTap: () => _open(const AnalysisTypesScreen()),
+                    ),
+                    HomeMenuCard(
+                      icon: Icons.fact_check_rounded,
+                      title: 'Readiness',
+                      description: 'Pre-field check',
+                      color: Colors.orange.shade800,
+                      onTap: () => _open(const FieldReadinessScreen()),
+                    ),
+                  ]),
+                  const HomeSectionLabel('Account & device'),
+                  HomeMenuGrid(children: [
+                    HomeMenuCard(
+                      icon: Icons.notifications_rounded,
+                      title: 'Notifications',
+                      description: 'Updates',
+                      color: AppTheme.primaryGreen,
+                      badge: _unreadNotificationCount > 0
+                          ? _unreadNotificationCount
+                          : null,
+                      onTap: () async {
+                        await _open(const NotificationsScreen());
+                        _loadUnreadNotificationCount();
+                      },
+                    ),
+                    HomeMenuCard(
+                      icon: Icons.satellite_alt_rounded,
+                      title: 'Location',
+                      description: 'GPS provider',
+                      color: AppTheme.darkGreen,
+                      onTap: () => _open(const LocationProviderScreen()),
+                    ),
+                    HomeMenuCard(
+                      icon: Icons.settings_rounded,
+                      title: 'Settings',
+                      description: 'Preferences',
+                      color: AppTheme.accentGreen,
+                      onTap: () => _open(const SettingsScreen()),
+                    ),
+                    HomeMenuCard(
+                      icon: Icons.person_rounded,
+                      title: 'Profile',
+                      description: 'Account',
+                      color: AppTheme.primaryGreen,
+                      onTap: () => _open(const ProfileScreen()),
+                    ),
+                  ]),
+                ],
+              ),
             ),
           ),
         ],
       ),
     ),
-    );
-  }
-
-  Widget _buildMenuCard(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String description,
-    required Color color,
-    required VoidCallback onTap,
-    int? badge,
-  }) {
-    return Container(
-      decoration: AppTheme.getCardDecoration,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-        child: InkWell(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            onTap();
-          },
-          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: color.withOpacity(0.15),
-                          width: 1,
-                        ),
-                      ),
-                      child: Icon(
-                        icon,
-                        size: 32,
-                        color: color,
-                      ),
-                    ),
-                    if (badge != null && badge > 0)
-                      Positioned(
-                        top: -6,
-                        right: -6,
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade600,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 2.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.red.withOpacity(0.4),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            badge > 99 ? '99+' : badge.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
-                    letterSpacing: 0.2,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textSecondary,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -753,6 +612,16 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
 
     // Reset app ke kondisi awal (hapus data user ini) lalu ke layar login.
     _showBlockingProgress(context, 'Logging out and clearing this phone…');
+    // Jangan menghapus DB saat sync masih menulis: hentikan auto-sync dan
+    // tunggu sync yang sedang berjalan (maks 30 dtk).
+    AutoSyncService.instance.stop();
+    try {
+      await SyncService()
+          .runExclusive(() async {})
+          .timeout(const Duration(seconds: 30));
+    } catch (e) {
+      logWarn('Logout: a sync was still running after 30 s ($e)', tag: 'AUTH');
+    }
     final report = await AppResetService().reset();
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(

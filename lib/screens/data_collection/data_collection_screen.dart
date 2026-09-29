@@ -48,6 +48,8 @@ import '../../services/collection_draft_service.dart';
 import '../../services/device_health_service.dart';
 import '../../services/geometry_validation.dart';
 import '../../utils/ui_feedback.dart';
+import '../../widgets/readiness/daily_readiness_check.dart';
+import '../readiness/field_readiness_screen.dart';
 import '../../widgets/collection/gps_status_banners.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1546,6 +1548,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     if (!await confirmStorageFor(context, action: 'Tracking')) return;
     if (!mounted) return;
 
+    // 1c. Start pertama hari ini: tawarkan checklist bila ada setelan yang
+    //     bisa menghentikan tracking (izin, GPS mati, optimasi baterai).
+    if (!await maybeShowDailyReadinessCheck(context)) return;
+    if (!mounted) return;
+
     // 2. GOOGLE PLAY: Prominent Disclosure sebelum meminta izin background.
     //    Android: foreground service tetap merekam dengan izin "saat
     //    digunakan", jadi "Not now" TIDAK memblokir tracking (dulu memblokir).
@@ -1777,11 +1784,15 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(dialogContext);
-              await PermissionService.openAppSettings();
+              // Checklist dengan tombol perbaikan per butir (izin, baterai…).
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const FieldReadinessScreen()));
             },
-            child: const Text('Open settings'),
+            child: const Text('Check & fix'),
           ),
           ElevatedButton(
             onPressed: () {
