@@ -343,7 +343,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             // Log diagnostik: Mode Diagnostik, bagikan & hapus log
             _buildSectionTitle('Diagnostic Logs'),
-            DiagnosticLogSection(),
+            const DiagnosticLogSection(),
 
             const SizedBox(height: 32),
 

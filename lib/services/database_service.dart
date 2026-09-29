@@ -14,6 +14,9 @@ class DatabaseService {
 
   static Database? _database;
   static const int _databaseVersion = 5;
+
+  /// Versi skema DB (dicantumkan di info log diagnostik).
+  static const int schemaVersion = _databaseVersion;
   static const String _databaseName = 'geoform.db';
 
   Future<Database> get database async {

@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../services/background/background_tracking_service.dart';
 import '../../services/logging/diagnostic_mode.dart';
+import '../../services/logging/log_exporter.dart';
 import '../../services/logging/log_setup.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
@@ -99,14 +99,9 @@ class DefaultDiagnosticLogActions implements DiagnosticLogActions {
     logInfo('Log dihapus oleh user', tag: 'LOG');
   }
 
+  /// Zip: log app+bg, 3 CSV GPS terbaru, info perangkat, snapshot tracking.
   @override
-  Future<void> share(BuildContext context) async {
-    await AppLogger.flush();
-    final files = await _logFiles();
-    if (files.isEmpty) return;
-    await Share.shareXFiles(files.map((f) => XFile(f.path)).toList(),
-        subject: 'Log Terestria');
-  }
+  Future<void> share(BuildContext context) => exportAndShareLogs();
 }
 
 // ─── Widget ──────────────────────────────────────────────────────────────────
@@ -117,7 +112,7 @@ class DiagnosticLogSection extends StatefulWidget {
   final DiagnosticLogActions actions;
   final DateTime Function() now;
 
-  DiagnosticLogSection({
+  const DiagnosticLogSection({
     super.key,
     DiagnosticLogActions? actions,
     DateTime Function()? now,

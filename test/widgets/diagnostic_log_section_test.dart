@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/widgets/settings/diagnostic_log_section.dart';
@@ -28,6 +30,13 @@ class _FakeActions implements DiagnosticLogActions {
 
   @override
   Future<void> share(BuildContext context) async => shares++;
+}
+
+class _ThrowingShare extends _FakeActions {
+  _ThrowingShare(super.now);
+  @override
+  Future<void> share(BuildContext context) async =>
+      throw const FileSystemException('disk penuh');
 }
 
 void main() {
@@ -86,6 +95,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('share-logs')));
     await tester.pumpAndSettle();
     expect(a.shares, 1);
+  });
+
+  testWidgets('ekspor gagal → pesan jelas, app tak crash', (tester) async {
+    final a = _ThrowingShare(now);
+    await tester.pumpWidget(host(a));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('share-logs')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Gagal membagikan log'), findsOneWidget);
   });
 
   testWidgets('Hapus butuh konfirmasi lalu memperbarui ukuran',

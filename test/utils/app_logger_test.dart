@@ -36,6 +36,7 @@ void main() {
   });
 
   tearDown(() async {
+    await AppLogger.flush(); // tunggu tulis berkas selesai (Windows mengunci)
     AppLogger.detach();
     await dir.delete(recursive: true);
   });
