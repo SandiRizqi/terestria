@@ -229,6 +229,35 @@ void main() {
       expect(m.recordingOnOtherSource(TrackSource.emlid), 1); // a
     });
 
+    test('appendManual menambah titik manual walau sesi tidak merekam', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.finish('a'); // draft
+      m.appendManual('a', _pt(0, 0));
+      expect(m.sessionFor('a')!.points.length, 1);
+    });
+
+    test('removeLast & clearPoints mengubah titik + menaikkan editVersion', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.addPointToActiveSessions(_pt(0, 0));
+      m.addPointToActiveSessions(_pt(0, 1));
+      var n = 0;
+      m.addListener(() => n++);
+
+      m.removeLast('a');
+      expect(m.sessionFor('a')!.points.length, 1);
+      expect(m.sessionFor('a')!.editVersion, 1);
+
+      m.clearPoints('a');
+      expect(m.sessionFor('a')!.points, isEmpty);
+      expect(m.sessionFor('a')!.editVersion, 2);
+      expect(n, 2);
+
+      m.removeLast('a'); // kosong → no-op
+      expect(m.sessionFor('a')!.editVersion, 2);
+    });
+
     test('notifyListeners terpanggil saat start & addPoint', () {
       final m = TrackingSessionManager(maxConcurrent: 3);
       var n = 0;

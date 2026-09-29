@@ -89,6 +89,18 @@ class SessionRepository {
     await batch.commit(noResult: true);
   }
 
+  /// Tulis ulang seluruh titik sesi (setelah undo/clear) dalam satu batch.
+  Future<void> replacePoints(String projectId, List<GeoPoint> points) async {
+    final db = await _dbService.database;
+    final batch = db.batch();
+    batch.delete('tracking_session_points',
+        where: 'projectId = ?', whereArgs: [projectId]);
+    for (var i = 0; i < points.length; i++) {
+      batch.insert('tracking_session_points', pointRow(projectId, i, points[i]));
+    }
+    await batch.commit(noResult: true);
+  }
+
   /// Hapus sesi + titiknya (dipakai saat stop/save selesai).
   Future<void> deleteSession(String projectId) async {
     final db = await _dbService.database;

@@ -29,6 +29,10 @@ class TrackingSession {
   final TrackSource source;
   SessionState state;
 
+  /// Naik setiap edit destruktif (undo/clear) — persistensi append-only lalu
+  /// menulis ulang titik sesi ini alih-alih menambah dari posisi basi.
+  int editVersion = 0;
+
   TrackingSession({
     required this.project,
     required this.startedAt,

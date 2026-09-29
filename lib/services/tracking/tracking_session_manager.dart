@@ -128,6 +128,33 @@ class TrackingSessionManager extends ChangeNotifier {
     }
   }
 
+  /// Titik manual (tambah-titik-tengah / tap peta) — aksi user, jadi diterima
+  /// apa pun status sesinya.
+  void appendManual(String projectId, GeoPoint point) {
+    final s = _sessions[projectId];
+    if (s == null) return;
+    s.points.add(point);
+    notifyListeners();
+  }
+
+  /// Undo titik terakhir sesi.
+  void removeLast(String projectId) {
+    final s = _sessions[projectId];
+    if (s == null || s.points.isEmpty) return;
+    s.points.removeLast();
+    s.editVersion++;
+    notifyListeners();
+  }
+
+  /// Hapus semua titik sesi (sesi tetap ada).
+  void clearPoints(String projectId) {
+    final s = _sessions[projectId];
+    if (s == null || s.points.isEmpty) return;
+    s.points.clear();
+    s.editVersion++;
+    notifyListeners();
+  }
+
   /// Stop perekaman → draft menunggu disimpan/dibuang (tak lagi menahan cap
   /// maupun service). Simpan/Buang memanggil [stop] untuk melepasnya.
   void finish(String projectId) {

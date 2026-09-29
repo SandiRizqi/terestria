@@ -73,8 +73,26 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   final _formKey = GlobalKey<FormState>();
   final _uuid = const Uuid();
 
-  List<GeoPoint> _collectedPoints = [];
+  /// Titik mode manual/drawing saat project ini TIDAK punya sesi tracking.
+  final List<GeoPoint> _manualPoints = [];
   GeoPoint? _currentLocation;
+
+  // ─── Layar = tampilan atas sesi ────────────────────────────────────────────
+  // Sesi di TrackingSessionManager adalah SATU-SATUNYA sumber titik & status
+  // tracking project ini (diumpankan TrackingEngine, tak bergantung layar).
+  TrackingSession? get _session =>
+      TrackingSessionManager.instance.sessionFor(widget.project.id);
+
+  /// Titik yang digambar/divalidasi/disimpan: milik sesi bila ada.
+  List<GeoPoint> get _collectedPoints => _session?.points ?? _manualPoints;
+
+  /// Sedang tracking = sesi ada & belum di-Stop (draft pendingSave = selesai).
+  bool get _isTracking {
+    final s = _session;
+    return s != null && !s.pendingSave;
+  }
+
+  bool get _isPaused => _session?.paused ?? false;
 
   // ─── Marker animation ──────────────────────────────────────────────────────
   // Marker dianimasikan dari _markerBeginLatLng → _markerTargetLatLng
@@ -86,8 +104,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   // 🔧 FIX: Single unified stream for both tracking and blue marker
   StreamSubscription<GeoPoint>? _unifiedLocationSubscription;
-  bool _isTracking = false;
-  bool _isPaused = false;
   bool _isSaving = false;
   Map<String, dynamic> _formData = {};
   CollectionMode _collectionMode = CollectionMode.tracking;
@@ -152,24 +168,37 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _initializeServiceAndLocation();
     _loadBasemap();
     _initCompass();
-    _restoreTrackingState();
     _loadActiveLayers();
     _loadUsername();
 
     // Rebuild marker cache setiap kali user mengubah settings
     _settingsService.addListener(_onSettingsChanged);
 
+    // Layar mengikuti sesi project ini (titik & status) secara live.
+    TrackingSessionManager.instance.addListener(_onSessionsChanged);
+    _onSessionsChanged();
   }
 
-  /// Tambal [_collectedPoints] dari sesi manajer bila sesi punya lebih banyak
-  /// titik (mis. terkumpul lewat feed background saat layar di-pause/ditutup).
-  /// Hanya menambah — tak pernah mengecilkan; perekaman foreground tetap lewat
-  /// append langsung di stream (andal, tak bergantung rantai listener).
-  void _syncCollectedFromSession() {
-    final s = TrackingSessionManager.instance.sessionFor(widget.project.id);
-    if (s == null) return;
-    if (s.points.length <= _collectedPoints.length) return;
-    setState(() => _collectedPoints = List.of(s.points));
+  // Jejak terakhir yang dirender — manajer memberi notifikasi untuk SEMUA
+  // project, jadi rebuild hanya bila sesi project ini benar-benar berubah.
+  int _seenPointCount = -1;
+  int _seenEditVersion = -1;
+  SessionState? _seenState;
+
+  void _onSessionsChanged() {
+    if (!mounted) return;
+    final s = _session;
+    final count = s?.points.length ?? -1;
+    final version = s?.editVersion ?? -1;
+    if (count == _seenPointCount &&
+        version == _seenEditVersion &&
+        s?.state == _seenState) {
+      return;
+    }
+    _seenPointCount = count;
+    _seenEditVersion = version;
+    _seenState = s?.state;
+    setState(() {});
   }
 
   /// Dipanggil setiap frame animasi marker — cukup trigger setState
@@ -212,13 +241,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         }
         // ✅ FIX: DON'T restart stream if already tracking
         // Background stream sudah jalan, biarkan terus
+        // Tracking aktif: titik tetap masuk ke sesi lewat TrackingEngine selagi
+        // app di background; layar cukup menampilkan sesi (listener manajer).
         if (!_isTracking) {
           // Only restart if not tracking (untuk blue dot)
           _startUnifiedLocationStream();
-        } else {
-          // Tracking aktif: tambal titik yang terkumpul via feed background
-          // selagi layar di-pause (agar tampilan tak tertinggal / "melonjak").
-          _syncCollectedFromSession();
         }
         break;
 
@@ -590,27 +617,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       statusBarIconBrightness: Brightness.dark,
       statusBarBrightness: Brightness.light,
     ));
-  }
-
-  void _restoreTrackingState() {
-    // Pulihkan state HANYA bila sesi project INI aktif di manajer. Isolasi
-    // per-project — JANGAN pakai state global (isActivelyTracking/
-    // activeTrackingPoints) karena itu milik project mana pun yang sedang
-    // tracking → dulu menyebabkan project lain ikut "tracking" + titik tercampur.
-    final session =
-        TrackingSessionManager.instance.sessionFor(widget.project.id);
-    if (session != null) {
-      print('🔄 Restoring tracking state (sesi manajer)...');
-      setState(() {
-        // Draft pendingSave = tracking sudah di-Stop: tampilkan titiknya agar
-        // bisa disimpan (atau Start lagi untuk melanjutkan).
-        _isTracking = !session.pendingSave;
-        // Status Play/Pause mengikuti sesi (mis. hasil restore = paused).
-        _isPaused = session.paused;
-        _collectedPoints = List.from(session.points);
-      });
-      print('✅ Restored ${_collectedPoints.length} points');
-    }
   }
 
   /// Load settings terlebih dahulu, baru load existing data.
@@ -1250,6 +1256,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
+    TrackingSessionManager.instance.removeListener(_onSessionsChanged);
 
     // Cancel compass stream (UI only)
     _compassSubscription?.cancel();
@@ -1458,14 +1465,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             _markerBeginLatLng = _markerTargetLatLng ?? newLatLng;
             _markerTargetLatLng = newLatLng;
             _currentLocation = location;
-
-            // Marker SELALU mengikuti. Titik ke SESI diumpankan TrackingEngine
-            // (feed per sumber, tak bergantung layar); tampilan jalur di sini
-            // hanya cermin lokal selama layar terbuka. Saat kembali/resume,
-            // _syncCollectedFromSession menambal titik dari sesi.
-            if (_isTracking && !_isPaused && location.recordable) {
-              _collectedPoints.add(location);
-            }
+            // Stream ini HANYA untuk marker. Titik jalur masuk ke sesi lewat
+            // TrackingEngine (feed per sumber) dan tampil via _onSessionsChanged.
           });
 
           // Jalankan animasi smooth dari posisi lama ke baru (di luar setState)
@@ -1571,8 +1572,18 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         ),
       );
     }
-    // Lanjutkan sesi bila sebelumnya di-pause (mis. re-start setelah finish).
-    TrackingSessionManager.instance.resume(widget.project.id);
+    final mgr = TrackingSessionManager.instance;
+    // Sesi baru: titik manual yang sudah ada ikut masuk (perilaku lama —
+    // tracking melanjutkan daftar titik yang sama).
+    if (startRes.status == StartStatus.started && _manualPoints.isNotEmpty) {
+      for (final p in _manualPoints) {
+        mgr.appendManual(widget.project.id, p);
+      }
+      _manualPoints.clear();
+    }
+    // Lanjutkan sesi bila sebelumnya di-pause / draft (re-start setelah Stop).
+    final prevState = existing?.state;
+    mgr.resume(widget.project.id);
 
     // 3. Pastikan feed GPS hidup. Service + heartbeat dimiliki TrackingEngine
     //    (app-level) — tetap jalan walau layar ini ditutup.
@@ -1596,9 +1607,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       crashlytics.recordError(e, stack,
           reason: 'DataCollection: startBackgroundTracking failed');
 
-      // Rollback pendaftaran sesi bila kita yang baru mendaftarkannya.
+      // Rollback: sesi baru dilepas (titik manual dikembalikan); sesi lama
+      // dikembalikan ke status sebelumnya.
       if (startRes.status == StartStatus.started) {
-        TrackingSessionManager.instance.stop(widget.project.id);
+        _manualPoints.addAll(mgr.stop(widget.project.id)?.points ?? const []);
+      } else if (prevState == SessionState.pendingSave) {
+        mgr.finish(widget.project.id);
+      } else if (prevState == SessionState.paused) {
+        mgr.pause(widget.project.id);
       }
 
       if (mounted) {
@@ -1609,11 +1625,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // 3. Set persistent tracking state in service
     _locationService.startActiveTracking();
-
-    setState(() {
-      _isTracking = true;
-      _isPaused = false;
-    });
 
     print('✅ Tracking started successfully (provider: ${_locationService.currentProvider.name})');
 
@@ -1791,9 +1802,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _pauseTracking() async {
-    setState(() => _isPaused = true);
-    // Sinkronkan pause ke sesi manajer agar tak terus merekam saat di-pause.
-    // Bila ini sesi merekam terakhir, TrackingEngine mematikan service.
+    // Status pause milik sesi (layar ikut via listener). Bila ini sesi merekam
+    // terakhir, TrackingEngine mematikan service.
     TrackingSessionManager.instance.pause(widget.project.id);
     _startUnifiedLocationStream(); // pilih ulang stream (bg ↔ fg)
 
@@ -1808,7 +1818,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _resumeTracking() async {
-    setState(() => _isPaused = false);
     TrackingSessionManager.instance.resume(widget.project.id);
 
     // Resume bisa menyalakan service kembali (mis. sesi hasil restore).
@@ -1816,7 +1825,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     if (!mounted) return;
     if (!ok) {
       TrackingSessionManager.instance.pause(widget.project.id);
-      setState(() => _isPaused = true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Gagal menyalakan GPS background. Cek izin lokasi.'),
@@ -1838,11 +1846,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   }
 
   void _finishTracking() async {
-    setState(() {
-      _isTracking = false;
-      _isPaused = false;
-    });
-
     // Sesi jadi draft pendingSave: berhenti bertambah, tak menahan cap maupun
     // service (TrackingEngine mematikan service bila tak ada project lain yang
     // merekam). Simpan/Buang melepas sesi sepenuhnya.
@@ -1862,6 +1865,32 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
     // 🔧 FIXED: Restart stream for foreground location only
     _startUnifiedLocationStream();
+  }
+
+  // ─── Mutasi titik: lewat sesi bila ada (ter-persist & tampil di panel),
+  //     selain itu daftar manual lokal. ────────────────────────────────────
+  void _appendPoint(GeoPoint p) {
+    if (_session != null) {
+      TrackingSessionManager.instance.appendManual(widget.project.id, p);
+    } else {
+      setState(() => _manualPoints.add(p));
+    }
+  }
+
+  void _removeLastPoint() {
+    if (_session != null) {
+      TrackingSessionManager.instance.removeLast(widget.project.id);
+    } else if (_manualPoints.isNotEmpty) {
+      _manualPoints.removeLast();
+    }
+  }
+
+  void _clearAllPoints() {
+    if (_session != null) {
+      TrackingSessionManager.instance.clearPoints(widget.project.id);
+    } else {
+      _manualPoints.clear();
+    }
   }
 
   void _addCurrentPoint() async {
@@ -1885,9 +1914,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       timestamp: DateTime.now(),
     );
 
-    setState(() {
-      _collectedPoints.add(centerPoint);
-    });
+    _appendPoint(centerPoint);
 
     // Peringatkan (tanpa memblok) bila fix GPS saat ini di bawah syarat
     // kualitas yang dipilih — jangan diam-diam menyimpan titk bermutu rendah.
@@ -1971,7 +1998,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   void _undoLastPoint() {
     if (_collectedPoints.isNotEmpty) {
       setState(() {
-        _collectedPoints.removeLast();
+        _removeLastPoint();
         // Hide form if below minimum points
         if (widget.project.geometryType == GeometryType.point &&
             _collectedPoints.isEmpty) {
@@ -1989,7 +2016,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   void _clearPoints() {
     setState(() {
-      _collectedPoints.clear();
+      _clearAllPoints();
       _showForm = false;
       // _isFormValid = false;
     });
@@ -2067,7 +2094,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         id: _uuid.v4(),
         projectId: widget.project.id,
         formData: _formData,
-        points: _collectedPoints,
+        // Salinan: list sesi dilepas setelah simpan (manager.stop).
+        points: List.of(_collectedPoints),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         collectedBy: username, // Set username sebagai collectedBy
@@ -2077,6 +2105,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
       // Sesi project ini selesai → lepas dari manajer multi-project.
       TrackingSessionManager.instance.stop(widget.project.id);
+      _manualPoints.clear();
 
       if (mounted) {
         // Reset saving state sebelum pop
@@ -2134,9 +2163,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         timestamp: DateTime.now(),
       );
 
-      setState(() {
-        _collectedPoints.add(geoPoint);
-      });
+      _appendPoint(geoPoint);
     }
   }
 

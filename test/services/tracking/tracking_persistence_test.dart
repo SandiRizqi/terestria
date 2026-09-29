@@ -37,6 +37,16 @@ class _FakeRepo extends SessionRepository {
     appended.addAll(pts);
     onAppend?.call();
   }
+
+  /// Isi DB setelah replace (tulis ulang penuh).
+  List<GeoPoint>? replaced;
+  @override
+  Future<void> replacePoints(String id, List<GeoPoint> pts) async {
+    replaced = List.of(pts);
+    appended
+      ..clear()
+      ..addAll(pts);
+  }
 }
 
 /// Helper murni untuk persistensi & notifikasi multi-sesi (koordinator penuh
@@ -137,6 +147,30 @@ void main() {
     expect(repo.appended.length, 2);
 
     mgr.stop('a');
+  });
+
+  test('undo lalu titik baru → DB ditulis ulang, bukan append basi', () async {
+    final mgr = TrackingSessionManager(maxConcurrent: 3);
+    final repo = _FakeRepo();
+    final coord = TrackingPersistenceCoordinator(
+        manager: mgr, repo: repo, notify: (_) {});
+    mgr.start(_proj('u'));
+    mgr.addPointToActiveSessions(_pt(0));
+    mgr.addPointToActiveSessions(_pt(1));
+    await coord.flushNow();
+    expect(repo.appended.length, 2);
+
+    mgr.removeLast('u'); // undo titik ke-2
+    mgr.addPointToActiveSessions(_pt(5)); // panjang kembali 2, isi berbeda
+    await coord.flushNow();
+
+    expect(repo.replaced?.map((p) => p.longitude), [0, 5]);
+    expect(repo.appended.map((p) => p.longitude), [0, 5]);
+
+    mgr.addPointToActiveSessions(_pt(6)); // setelah replace → append normal
+    await coord.flushNow();
+    expect(repo.appended.map((p) => p.longitude), [0, 5, 6]);
+    mgr.stop('u');
   });
 
   test('restore memuat sesi sebagai PAUSED (feed GPS tak menyala sendiri)',

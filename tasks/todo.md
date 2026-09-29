@@ -16,7 +16,7 @@ Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Branch: `main`
 ## Phase 2 — Refactor: satu sumber kebenaran (I1–I5)
 - [x] **Task 4 — Status sesi recording/paused/pendingSave** (M) ✅ 11 test — finish → pendingSave; cap = recording+paused
 - [x] **Task 5 — Sesi terikat provider + feed tunggal di engine** (M) ✅ 8 test — DB v5 `provider`; Emlid & phone di-fan-out oleh engine
-- [ ] **Task 6 — DataCollectionScreen = view sesi** (M) — `_draftPoints` dari sesi; hapus append ganda & sync
+- [x] **Task 6 — DataCollectionScreen = view sesi** (M) ✅ 3 test (manajer+persistensi) — `_draftPoints` dari sesi; hapus append ganda & sync
 - [ ] **Task 7 — Bersihkan state global + notifikasi tunggal** (M) — hapus `isActivelyTracking` dkk.; label notifikasi dari engine
 - [ ] **Task 8 — Skenario end-to-end (fake)** (S) — regresi C1 terkunci
 

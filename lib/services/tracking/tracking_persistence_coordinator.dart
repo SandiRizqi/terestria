@@ -71,6 +71,7 @@ class TrackingPersistenceCoordinator {
                 NotificationService.updateNotification('Terestria Tracking', text));
 
   final Map<String, int> _flushed = {}; // projectId → jumlah titik ter-flush
+  final Map<String, int> _flushedVersion = {}; // projectId → editVersion ter-flush
   Set<String> _knownIds = {};
   Timer? _debounceTimer;
   bool _attached = false;
@@ -137,6 +138,7 @@ class TrackingPersistenceCoordinator {
     for (final id in removedIds(_knownIds, currentIds)) {
       await repo.deleteSession(id);
       _flushed.remove(id);
+      _flushedVersion.remove(id);
     }
 
     // Sesi aktif → upsert + append titik baru.
@@ -146,6 +148,16 @@ class TrackingPersistenceCoordinator {
       // Snapshot panjang SEBELUM await — bila fix baru tiba saat append berjalan,
       // titik itu tak ikut ter-mark flushed (dikirim di flush berikutnya).
       final len = s.points.length;
+
+      // Undo/clear sejak flush terakhir → posisi append basi; tulis ulang.
+      final version = s.editVersion;
+      if ((_flushedVersion[s.projectId] ?? 0) != version) {
+        await repo.replacePoints(s.projectId, s.points.sublist(0, len));
+        _flushed[s.projectId] = len;
+        _flushedVersion[s.projectId] = version;
+        continue;
+      }
+
       final pending = pendingAppendCount(len, flushed);
       if (pending > 0) {
         await repo.appendPoints(
