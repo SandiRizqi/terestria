@@ -1,31 +1,31 @@
-# TODO — Perbaikan Multi-Project Tracking (TrackingEngine)
+# TODO — Sistem Log Diagnostik + Hapus print()
 
-Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Branch: `main`
+Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-tracking-engine.md](plan-tracking-engine.md) · Branch: `main`
 
-## Phase 1 — Hotfix: titik terekam lagi (C1–C3)
-- [x] **Task 1 — Status background service nyata** (S) ✅ 7 test — isolate lapor `isRunning:false` sebelum `stopSelf`; `start()` verifikasi ke plugin
-- [x] **Task 2 — TrackingEngine keep-alive app-level** (M) ✅ 8 test engine — heartbeat & start/stop service pindah dari layar ke engine (0→1 / 1→0)
-- [x] **Task 3 — Restore & re-entry terhubung engine** (S) ✅ 2 test — restore = paused; `_isPaused` dipulihkan; Resume menyalakan engine
+## Phase 1 — Fondasi logger
+- [ ] **Task 1 — Inti logger berkas** (S–M) — format, redaksi rahasia, buffer, rotasi harian, prune 7 hari/5 MB
+- [ ] **Task 2 — Sambung logger ke app & isolate + state Mode Diagnostik** (M) — konsol hanya debug; `bg-*.log` dari isolate; FlutterError → log
 
-### Checkpoint A (device)
-- [x] Test + analyze hijau (52 test tracking)
-- [ ] Start A → back → Start B → keduanya bertambah ≥2 menit dengan layar tertutup
-- [ ] Stop A → A berhenti, B lanjut; Stop B → service & notifikasi mati
-- [ ] Review user sebelum Phase 2
+### Checkpoint A
+- [ ] Test hijau; berkas `app-*.log` & `bg-*.log` muncul saat tracking
 
-## Phase 2 — Refactor: satu sumber kebenaran (I1–I5)
-- [x] **Task 4 — Status sesi recording/paused/pendingSave** (M) ✅ 11 test — finish → pendingSave; cap = recording+paused
-- [x] **Task 5 — Sesi terikat provider + feed tunggal di engine** (M) ✅ 8 test — DB v5 `provider`; Emlid & phone di-fan-out oleh engine
-- [x] **Task 6 — DataCollectionScreen = view sesi** (M) ✅ 3 test (manajer+persistensi) — `_draftPoints` dari sesi; hapus append ganda & sync
-- [x] **Task 7 — Bersihkan state global + notifikasi tunggal** (M) ✅ 6 test — hapus `isActivelyTracking` dkk.; label notifikasi dari engine
-- [x] **Task 8 — Skenario end-to-end (fake)** (S) ✅ 1 test skenario, lolos uji mutasi — regresi C1 terkunci
+## Phase 2 — Isi log & ekspor
+- [ ] **Task 3 — Event tracking + ringkasan per menit** (M) — SESSION/ENGINE/SERVICE/GPS, alasan `stopSelf`
+- [ ] **Task 4 — Settings "Log Diagnostik"** (M) — toggle 24 jam, ukuran log, Bagikan, Hapus
+- [ ] **Task 5 — Paket ekspor zip** (M) — log app+bg, 3 CSV GPS, info.txt, snapshot.txt → share
+- [ ] **Task 6 — Breadcrumb Crashlytics** (S) — warn/error → breadcrumb; rate-limit recordError
 
-## Phase 3 — UX pengelola tracking
-- [x] **Task 9 — Panel "Tracking Aktif" interaktif** (M) ✅ 13 test (termasuk layar 360 dp) — chip status, jeda/lanjut, durasi & titik live, ringkasan banner per status
+### Checkpoint B
+- [ ] Device: Mode Diagnostik ON → tracking 5 menit → Bagikan Log → zip berisi event + ringkasan
 
-### Checkpoint B (complete)
-- [x] Semua test tracking hijau (343 lulus; 2 gagal lama di luar tracking: photoWatermark, OSM sheet parity); analyze 0 error
-- [ ] Manual Android + iOS: 1-project, multi 2–3, layar tertutup ≥5 menit, kill/restore, Emlid, cap, ganti provider
+## Phase 3 — Hilangkan print()
+- [ ] **Task 7a — Tracking & data collection** (M)
+- [ ] **Task 7b — Sync, auth, cloud, notifikasi** (M) — tanpa nilai token
+- [ ] **Task 7c — Basemap, tile, PDF** (M)
+- [ ] **Task 7d — Sisa UI + gerbang `avoid_print: error` + test no-print** (M)
 
-## Keputusan
-Restore → paused · pendingSave di luar cap · provider per sesi · semua phase berurutan (tes device oleh user setelah build)
+### Checkpoint C
+- [ ] `flutter test` hijau (kecuali 2 kegagalan lama); analyze 0 error; release tanpa spam print
+
+## Keputusan default
+Koordinat lengkap · Mode Diagnostik 24 jam · retensi 7 hari/5 MB · release tulis info+ ke berkas

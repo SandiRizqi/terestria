@@ -1,270 +1,202 @@
-# Rencana Perbaikan: Multi-Project Tracking — TrackingEngine
+# Rencana: Sistem Log Diagnostik (in-app, bisa diekspor) + Hapus print()
 
 Status: **DRAFT — menunggu review**
 Tanggal: 2026-09-29 · Branch: `main` (commit per task)
-Sumber: hasil review multi-project tracking (C1–C3, I1–I5). Spec induk: [SPEC.md](../SPEC.md)
+Plan sebelumnya (TrackingEngine, selesai): [plan-tracking-engine.md](plan-tracking-engine.md)
 
 ## Overview
-Titik GPS tidak terekam per project karena **siklus hidup service GPS masih
-dimiliki layar `DataCollectionScreen`**. Heartbeat hanya dikirim layar, jadi
-service background mematikan diri ±15 dtk setelah layar ditutup (C1). Status
-`_isRunning` basi membuat Start berikutnya tak menyalakan service (C2). Sesi yang
-dipulihkan tak pernah dihubungkan ke GPS (C3).
+Log tracking saat ini tidak bisa diperiksa di lapangan. Penyebabnya:
+- `logDebug()` diam di build release.
+- Ada ±370 `print`/`debugPrint` di 34 file yang hanya masuk logcat dan hilang saat app ditutup.
+- Log dari isolate background tidak tersimpan di mana pun.
 
-Perbaikannya: pindahkan kepemilikan feed GPS ke **`TrackingEngine`** di level app.
-Engine menyala saat ada sesi *recording* dan mati saat tak ada. Layar hanya
-**menampilkan** sesi dan **memberi perintah** ke manajer.
+Yang dibangun:
+- **Log berkas bergulir** di HP: berlevel dan bertag, dari app maupun isolate background.
+- **Mode Diagnostik** untuk log detail, mati otomatis setelah 24 jam.
+- Tombol **Bagikan Log**: zip berisi log, info perangkat, dan kondisi tracking saat itu, dikirim lewat share sheet.
+- Warn/error diteruskan ke Crashlytics sebagai breadcrumb.
+
+Terakhir, **semua `print()`/`debugPrint()` di `lib/` diganti logger**, dan larangannya dikunci dengan lint serta test.
 
 ## Architecture Decisions
-- **TrackingEngine = satu-satunya pemilik feed.** Engine memegang start/stop
-  background service, heartbeat, langganan Emlid, log GPS, dan teks notifikasi.
-  Layar tak lagi memanggil `startBackgroundTracking`, `sendHeartbeat`, atau
-  `start/stopActiveTracking`.
-- **Keputusan berbasis jumlah sesi recording.** Engine menyala saat
-  `recordingCount` 0→1 dan mati saat 1→0. Ini menggantikan
-  `shouldStopBackgroundOnFinish` dan `onAllSessionsStopped`.
-- **Status service nyata, bukan cache.** Isolate mengirim
-  `service_status{isRunning:false}` sebelum setiap `stopSelf()`. `start()` juga
-  mengecek `FlutterBackgroundService().isRunning()`.
-- **Status sesi eksplisit:** `recording | paused | pendingSave`.
-  - Cap dihitung dari `recording + paused`.
-  - `pendingSave` = sudah Stop, belum disimpan. Status ini tak memblokir Start,
-    tak menerima titik, dan tampil di panel dengan Simpan/Buang.
-  - Kolom DB `paused` (INTEGER) dipakai ulang: 0/1/2, tanpa migrasi.
-- **Sesi terikat provider saat Start** (phone/emlid). Titik hanya masuk ke sesi
-  dengan provider yang sama, jadi RTK tak tercampur GPS HP. Butuh kolom
-  `provider` (DB v5).
-- **Satu sumber data titik:** `TrackingSession.points`. Layar menggambar jalur
-  dari sesi. `_collectedPoints` hanya untuk mode manual/drawing tanpa sesi.
-  Mekanisme `_syncCollectedFromSession` dan append ganda dihapus.
-- **Restore setelah app di-kill → sesi `paused`.** User menekan "Lanjutkan" di
-  layar project atau panel. Ini aman untuk alur izin (iOS harus di foreground).
-- **Uji tanpa dependency baru.** `pubspec.yaml` tidak disentuh (ada perubahan
-  lokal user). Engine menerima *port* yang bisa diganti fake (start/stop service,
-  heartbeat, timer factory), dan test memanggil `tick()` manual.
+- **Satu logger, API tetap.** `logDebug`/`logInfo`/`logWarn`/`logError(msg, {tag})` di [app_logger.dart](../lib/utils/app_logger.dart), sehingga pemanggil lama (7 file tracking) otomatis ikut.
+  - Konsol hanya di build debug.
+  - Berkas: `info`+ selalu ditulis; `debug` hanya saat Mode Diagnostik aktif.
+- **Isolate background punya berkas sendiri** (`bg-YYYYMMDD.log`). Isolate tak berbagi objek dengan app, dan dua isolate yang menulis satu berkas rawan rusak. Saat ekspor, berkas-berkas digabung.
+- **Tulis ber-buffer, bukan tiap baris.** Flush tiap 2 dtk, atau segera untuk `error`. Aman baterai di hot path GPS.
+- **Rotasi:** satu berkas per hari per sumber. Hapus berkas > 7 hari, dan total dibatasi 5 MB (berkas tertua dibuang dulu).
+- **Event tracking terstruktur, bukan per fix.** Event: sesi start/jeda/stop/buang, engine aktif/idle, service start/stop/mati sendiri/restart, heartbeat timeout. Plus **ringkasan per menit** (titik per sesi, fix ditolak filter). Detail per fix hanya di level `debug`.
+- **Keamanan:** redaksi otomatis pola rahasia (token FCM, `Authorization`, `password`, `Bearer`) sebelum ditulis. Ekspor hanya lewat tombol user.
+- **Tanpa dependency baru.** Pakai `path_provider`, `archive`, `share_plus`, `permission_handler` yang sudah ada. `pubspec.yaml` tidak disentuh.
+- **Hapus print:** migrasi mekanis per area.
+  - `❌` → `logError`, `⚠️` → `logWarn`, sisanya → `logDebug`.
+  - Kunci dengan `avoid_print: error` di `analysis_options.yaml`, plus test yang gagal bila ada `print(`/`debugPrint(` di `lib/` selain logger.
 
 ## Dependency Graph
 ```
-T1 status service nyata ──┐
-                          ├─► T2 TrackingEngine (keep-alive app-level) ─► T3 restore/re-entry
-TrackingSessionManager ───┘                 │
-                                            ├─► T4 status sesi (recording/paused/pendingSave)
-                                            │        └─► T5 provider binding + feed tunggal (Emlid & phone)
-                                            │                 └─► T6 layar = view sesi
-                                            └─► T7 bersihkan state global + notifikasi
-                                                          └─► T8 skenario end-to-end (fake) + manual device
+T1 inti logger (format, redaksi, sink berkas, rotasi)
+ └─► T2 sambung app_logger + init app & isolate + Mode Diagnostik (state)
+      ├─► T3 event tracking + ringkasan per menit
+      ├─► T4 UI Settings: Mode Diagnostik, Bagikan/Hapus Log ─► T5 paket ekspor (zip + info + snapshot)
+      ├─► T6 breadcrumb Crashlytics
+      └─► T7a–T7d migrasi print() per area ─► T7d gerbang lint + test
 ```
 
 ## Task List
 
-### Phase 1 — Hotfix: titik terekam lagi (C1–C3)
+### Phase 1 — Fondasi logger
 
-#### Task 1: Status background service yang nyata
-**Description:** Hapus `_isRunning` yang basi. Isolate memberi tahu app setiap
-kali berhenti sendiri (heartbeat timeout, lokasi mati, error, `stop_service`),
-dan `start()` memverifikasi status ke plugin sebelum menganggap service
-"already running".
+#### Task 1: Inti logger berkas (format, redaksi, rotasi)
+**Description:** Buat `AppLog` murni-Dart dengan direktori, jam, dan ukuran yang bisa disuntik.
+- Format baris: `2026-09-29T08:00:01.123 I ENGINE  pesan`.
+- Redaksi rahasia sebelum ditulis.
+- Buffer + flush periodik; `error` di-flush segera.
+- Berkas harian per sumber (`app`/`bg`); prune > 7 hari dan > 5 MB total.
 
 **Acceptance criteria:**
-- [ ] Setiap jalur `stopSelf()` di `_onStart` mengirim `service_status{isRunning:false}` lebih dulu.
-- [ ] `start()` memanggil `FlutterBackgroundService().isRunning()` saat cache bilang "running". Bila ternyata mati, cache direset lalu service dinyalakan ulang.
-- [ ] Listener `location_update` dipasang ulang setelah restart (tak ada listener ganda).
+- [ ] Baris ditulis ke `logs/<source>-YYYYMMDD.log` dengan format di atas; ganti hari → berkas baru.
+- [ ] Token/`Authorization`/`password`/`Bearer xxx` tersamar (`***`) di berkas.
+- [ ] Prune menghapus berkas tertua sampai ≤ 7 hari dan ≤ 5 MB.
 
-**Verification:**
-- [ ] Unit: helper murni `needsRestart(cached, actual)` diuji.
-- [ ] `flutter analyze lib/services/background/` bersih.
-- [ ] Manual: Start → tunggu self-stop (matikan heartbeat) → Start lagi → log "Background service started", titik masuk.
-
+**Verification:** `flutter test test/services/logging/app_log_test.dart` (temp dir, jam palsu).
 **Dependencies:** None
-**Files:** `lib/services/background/background_tracking_service.dart`, `test/services/background/background_running_state_test.dart`
-**Scope:** S
+**Files:** `lib/services/logging/app_log.dart`, `lib/services/logging/log_redactor.dart`, test
+**Scope:** S–M
 
-#### Task 2: TrackingEngine — keep-alive di level app
-**Description:** Buat `TrackingEngine` (singleton) yang mendengarkan manajer.
-- Saat `activeCount` 0→1: pastikan service jalan dan mulai heartbeat app-level (5 dtk).
-- Saat 1→0: hentikan heartbeat dan service.
-
-Layar tak lagi mengurus heartbeat atau service:
-- `_startHeartbeat`/`_stopHeartbeat` dan `start/stopBackgroundTracking` dihapus dari layar.
-- Start di layar = `manager.start` + `await engine.ensureRunning()`. Bila gagal: rollback sesi + dialog error.
-- `onAllSessionsStopped` di `main.dart` diganti engine.
+#### Task 2: Sambungkan logger ke app & isolate + state Mode Diagnostik
+**Description:**
+- `app_logger.dart` meneruskan ke `AppLog`; tambah `logInfo`/`logWarn` dan parameter `tag`. Konsol hanya di debug build.
+- Init di `main()` (source `app`), pasang hook `FlutterError.onError` & zona error ke log (Crashlytics tetap).
+- Init di `_onStart` isolate (source `bg`).
+- Mode Diagnostik: `AppSettings.diagnosticUntil` (null = mati), dibaca kedua isolate lewat SharedPreferences, kedaluwarsa 24 jam.
 
 **Acceptance criteria:**
-- [ ] Heartbeat terus terkirim walau tak ada `DataCollectionScreen` terbuka, selama ada sesi.
-- [ ] Service tak dimatikan saat 1 dari 2 sesi berhenti; dimatikan saat sesi terakhir berhenti.
-- [ ] Gagal start service → sesi di-rollback, layar menampilkan dialog error seperti sekarang.
+- [ ] `logDebug` tertulis ke berkas hanya saat Mode Diagnostik aktif dan belum kedaluwarsa; `logInfo`+ selalu tertulis.
+- [ ] Di release, tak ada output konsol dari logger.
+- [ ] Error Flutter tak tertangkap ikut tercatat di berkas `app`.
 
-**Verification:**
-- [ ] Unit (`tracking_engine_test.dart`, port fake): start A → service start 1×; `tick()` berulang → heartbeat terkirim tanpa layar; start B → tak start ulang; stop A → service tetap; stop B → service stop 1×.
-- [ ] Manual: Start A → back ke daftar project → tunggu 60 dtk → jumlah titik A di panel terus naik; logcat tak ada "No heartbeat".
-
+**Verification:** unit test gating level × mode diagnostik × kedaluwarsa (jam palsu); `flutter analyze` 0 error.
 **Dependencies:** T1
-**Files:** `lib/services/tracking/tracking_engine.dart` (baru), `lib/main.dart`, `lib/screens/data_collection/data_collection_screen.dart`, `lib/services/tracking/tracking_persistence_coordinator.dart`, `test/services/tracking/tracking_engine_test.dart`
+**Files:** `lib/utils/app_logger.dart`, `lib/main.dart`, `lib/services/background/background_tracking_service.dart`, `lib/models/settings/app_settings.dart`, test
 **Scope:** M
 
-#### Task 3: Restore & masuk ulang layar terhubung ke engine
-**Description:**
-- Sesi hasil restore dari SQLite dimuat sebagai `paused`.
-- `_restoreTrackingState` memulihkan `_isPaused` dari sesi.
-- Tombol Resume memanggil `manager.resume`, lalu engine menyala otomatis (0→1). Resume memakai alur izin yang sama dengan Start.
+### Checkpoint A
+- [ ] Test hijau; install debug → berkas `app-*.log` & `bg-*.log` muncul saat tracking.
+
+### Phase 2 — Isi log & ekspor
+
+#### Task 3: Event tracking + ringkasan per menit
+**Description:** Catat event berlevel `info` bertag:
+- `SESSION`: start/jeda/lanjut/stop/buang/simpan, dengan id & sumber project.
+- `ENGINE`: aktif/idle, ensureRunning ok/gagal, restart + backoff.
+- `SERVICE`: start/stop/mati sendiri + alasan (heartbeat timeout, lokasi mati, error).
+- `GPS`: ringkasan tiap 60 dtk per sesi — +titik, total, fix ditolak filter, akurasi median.
 
 **Acceptance criteria:**
-- [ ] Kill app saat 2 sesi → buka → kedua sesi tampil `paused` dengan titik utuh; REC tak berkedip untuk sesi paused.
-- [ ] Resume salah satu → service menyala dan titik bertambah hanya untuk sesi itu.
-- [ ] Masuk ulang ke project yang sedang recording menampilkan status Play/Pause yang benar.
+- [ ] Setiap transisi status sesi & engine menghasilkan satu baris `info` (bukan per fix).
+- [ ] Ringkasan per menit dihitung benar dan hanya ditulis bila ada sesi merekam.
+- [ ] Isolate mencatat alasan setiap `stopSelf()`.
 
-**Verification:**
-- [ ] Unit: `partitionRestorable` + restore menandai paused; engine start saat resume.
-- [ ] Manual: skenario kill → buka → resume.
-
+**Verification:** unit test engine/manager dengan sink palsu; test agregator ringkasan (murni).
 **Dependencies:** T2
-**Files:** `lib/services/tracking/tracking_persistence_coordinator.dart`, `lib/screens/data_collection/data_collection_screen.dart`, `test/services/tracking/tracking_persistence_test.dart`
+**Files:** `lib/services/tracking/tracking_engine.dart`, `tracking_session_manager.dart`, `lib/services/tracking/tracking_log_summary.dart` (baru), `background_tracking_service.dart`, test
+**Scope:** M
+
+#### Task 4: Settings — "Log Diagnostik"
+**Description:** Section baru di Settings:
+- Toggle **Mode Diagnostik** (label sisa waktu, mis. "aktif 23 jam lagi").
+- Info ukuran & jumlah berkas log.
+- Tombol **Bagikan Log** dan **Hapus Log** (dengan konfirmasi).
+
+**Acceptance criteria:**
+- [ ] Toggle menyetel/menghapus `diagnosticUntil`; label sisa waktu benar.
+- [ ] Hapus Log mengosongkan folder log (log baru tetap bisa ditulis).
+- [ ] Tampilan tanpa overflow di lebar 360 dp.
+
+**Verification:** widget test section (toggle, label, konfirmasi hapus) + test 360 dp.
+**Dependencies:** T2
+**Files:** `lib/screens/settings/settings_screen.dart`, `lib/widgets/settings/diagnostic_log_section.dart` (baru), test
+**Scope:** M
+
+#### Task 5: Paket ekspor "Bagikan Log"
+**Description:** Flush semua buffer lalu buat `terestria-log-<device>-<waktu>.zip` berisi:
+- semua `app-*.log` & `bg-*.log`;
+- 3 CSV GPS terbaru;
+- `info.txt`: OS & versi, model, provider GPS, versi DB, setelan GPS & cap;
+- `snapshot.txt`: sesi aktif, status engine/service, izin lokasi (when-in-use/always), optimasi baterai, notifikasi.
+
+Zip lalu dibagikan via `share_plus`.
+
+**Acceptance criteria:**
+- [ ] Zip berisi entri di atas; tak ada rahasia (redaksi berlaku).
+- [ ] Snapshot memuat status tiap sesi + titik + sumber.
+- [ ] Gagal buat zip → pesan jelas, app tak crash.
+
+**Verification:** unit test builder snapshot/info (murni) + test zip di temp dir (daftar entri).
+**Dependencies:** T3, T4
+**Files:** `lib/services/logging/log_exporter.dart` (baru), `diagnostic_log_section.dart`, test
+**Scope:** M
+
+#### Task 6: Breadcrumb Crashlytics
+**Description:**
+- `warn`/`error` dari isolate app diteruskan ke `crashlytics.log`.
+- `logError(..., error:, stack:)` → `recordError` non-fatal, dengan rate-limit (maks 1× per pesan per 5 menit) agar dashboard tak banjir.
+- `CrashlyticsService.log` tak lagi `debugPrint`.
+
+**Acceptance criteria:**
+- [ ] `warn`/`error` muncul sebagai breadcrumb; `debug`/`info` tidak.
+- [ ] Pesan error identik beruntun tak dikirim ulang dalam 5 menit.
+
+**Verification:** unit test forwarder dengan crashlytics palsu.
+**Dependencies:** T2
+**Files:** `lib/utils/app_logger.dart`, `lib/services/crashlytics_service.dart`, test
 **Scope:** S
 
-### Checkpoint A — Hotfix (tes di device sebelum lanjut)
-- [ ] `flutter test test/services/tracking/ test/widgets/` hijau; `flutter analyze` 0 error di file berubah.
-- [ ] Device (phone GPS): Start A → back → Start B → keduanya bertambah selama ≥2 menit dengan layar tertutup.
-- [ ] Stop A → A berhenti bertambah, B lanjut; Stop B → notifikasi hilang, service mati.
-- [ ] **Review dengan user** sebelum Phase 2.
+### Checkpoint B
+- [ ] Test hijau; di device: Mode Diagnostik ON → tracking 5 menit → Bagikan Log → zip terbuka dan berisi event + ringkasan.
 
-### Phase 2 — Refactor: satu sumber kebenaran (I1–I5)
+### Phase 3 — Hilangkan print() (release bersih)
 
-#### Task 4: Status sesi `recording | paused | pendingSave`
-**Description:** Ganti `bool paused` dengan enum `SessionState`.
-- `manager.finish(id)` → `pendingSave` (sebelumnya `pause`).
-- `recordingCount` menggerakkan engine; cap = `recording + paused`.
-- Panel menampilkan label "Belum disimpan" untuk `pendingSave`.
-- Kolom DB `paused` memakai nilai 0/1/2.
+Aturan mekanis:
+- `print('❌…')` → `logError`, `print('⚠️…')` → `logWarn`, sisanya → `logDebug`.
+- Tag diisi sesuai area.
+- Token/kredensial yang tercetak (mis. FCM) diganti keterangan tanpa nilai.
 
-**Acceptance criteria:**
-- [ ] `ingest` hanya menambah ke sesi `recording`.
-- [ ] Sesi `pendingSave` tak menghitung cap dan tak menahan service (Stop B saat A `pendingSave` → service mati).
-- [ ] Round-trip DB 0/1/2 benar, dan data lama (0/1) tetap terbaca.
+#### Task 7a: Migrasi print — tracking & data collection
+`data_collection_screen.dart` (67), `location_provider_screen.dart`, `gps_logger_service.dart`, `notification_service.dart`, `project_card.dart`, `main.dart`.
+**AC:** 0 `print(`/`debugPrint(` di file tersebut; perilaku tak berubah. **Verify:** analyze + test tracking. **Scope:** M
 
-**Verification:**
-- [ ] Unit: manager (cap, ingest per state), repository round-trip, engine (pendingSave tak menahan service).
-- [ ] Widget: panel menampilkan label pendingSave.
+#### Task 7b: Migrasi print — sync, auth, cloud, notifikasi
+`fcm_token_service`, `firebase_messaging_service`, `photo_sync_service`, `photo_migration_service`, `sync_service`, `auth_service`, `cloud_project_service`, `cloud_project_dialog`, `scope_topic_service`, `collector_service`, `notification_sync_service`, `migration_service`, `crashlytics_service`.
+**AC:** 0 print di area ini; tak ada token/kredensial di log. **Verify:** analyze + test sync. **Scope:** M (mekanis)
 
-**Dependencies:** T2
-**Files:** `lib/services/tracking/tracking_session.dart`, `tracking_session_manager.dart`, `session_repository.dart`, `lib/widgets/tracking/active_tracking_panel.dart`, test terkait
-**Scope:** M
+#### Task 7c: Migrasi print — basemap, tile, PDF
+`tile_cache_sqlite_service`, `geopdf_service`, `basemap_service`, `pdf/tile_generator`, `tile_download_manager`, `pdf/pdf_georef_extractor`, `cloud_basemap_service`, `tile_providers/*`, `cache_management_screen`.
+**AC:** 0 print di area ini; loop per-tile hanya `logDebug`. **Verify:** analyze + test basemap. **Scope:** M (mekanis)
 
-#### Task 5: Sesi terikat provider + feed tunggal di engine
-**Description:**
-- `TrackingSession.provider` diisi saat Start (DB v5: kolom `provider`, `ALTER TABLE` di `_onUpgrade`).
-- Engine berlangganan stream background phone **dan** `emlidLocationStream`, lalu memanggil `manager.ingest(point, source)`. Titik hanya masuk ke sesi dengan provider yang sama.
-- Listener di `LocationServiceV2.startBackgroundTracking` tak lagi memanggil `addTrackingPoint`; engine yang jadi konsumen.
+#### Task 7d: Sisa UI + gerbang anti-print
+Sisa file: `photo_field_widget`, `project_detail_screen`, `geo_data_list_item`, `projects_screen`, `menu_screen`, `splash_screen`.
+- Aktifkan `avoid_print: error` di `analysis_options.yaml`.
+- Tambah `test/lint/no_print_test.dart` yang gagal bila ada `print(`/`debugPrint(` di `lib/` selain `lib/utils/app_logger.dart`.
 
-**Acceptance criteria:**
-- [ ] Sesi Emlid terus bertambah walau layar ditutup (selama socket tersambung) dan tak pernah menerima titik phone.
-- [ ] Sesi phone tak menerima titik Emlid.
-- [ ] Ganti provider saat ada sesi → peringatan "N sesi memakai provider lain, sesi itu berhenti menerima titik".
+**AC:** `grep` print di `lib/` = hanya logger; analyze 0 error; test gerbang hijau (dan gagal bila print ditambahkan). **Scope:** M
 
-**Verification:**
-- [ ] Unit: ingest per provider; engine meneruskan dua stream fake ke sesi yang tepat.
-- [ ] Unit: upgrade DB v4→v5 idempoten (baris lama → provider `phone`).
-- [ ] Manual (bila ada Emlid): sesi RTK bertambah setelah back ke daftar project.
-
-**Dependencies:** T4
-**Files:** `tracking_session.dart`, `tracking_session_manager.dart`, `session_repository.dart`, `lib/services/database_service.dart`, `tracking_engine.dart`, `lib/services/location_service_v2.dart`
-**Scope:** M
-
-#### Task 6: DataCollectionScreen = view atas sesi
-**Description:**
-- Titik jalur dibaca dari getter `_draftPoints` = `sessionFor(id)?.points ?? _manualPoints`.
-- Saat ada sesi, undo/clear/tambah-titik-tengah memanggil manajer (`removeLast`, `clear`, `appendManual`).
-- Rebuild layar lewat listener manajer.
-- Dihapus: append langsung di stream, `addTrackingPoint` dari layar, `_syncCollectedFromSession`, dan pemilihan stream berdasarkan `isActivelyTracking`. Marker memakai `engine.displayStream`.
-
-**Acceptance criteria:**
-- [ ] Buka project A saat A recording → jalur = titik sesi A persis (jumlah sama dengan panel), bertambah live.
-- [ ] Undo, Clear, dan Add-center point tetap bekerja, baik dengan maupun tanpa sesi. Mode drawing (tap peta) tak berubah.
-- [ ] Save dari layar menyimpan titik sesi lalu melepas sesi; jumlah titik = yang tampil.
-
-**Verification:**
-- [ ] Unit: `appendManual`/`removeLast`/`clear` di manajer (notify + persist).
-- [ ] `flutter analyze` layar bersih.
-- [ ] Manual: regresi 1-project (point/line/polygon, tracking & drawing) + multi-project.
-
-**Dependencies:** T5
-**Files:** `lib/screens/data_collection/data_collection_screen.dart`, `tracking_session_manager.dart`, `test/services/tracking/tracking_session_manager_test.dart`
-**Scope:** M (satu file besar; bila membengkak, pecah 6a: sumber titik, 6b: stream/marker)
-
-#### Task 7: Bersihkan state global + notifikasi tunggal
-**Description:**
-- Hapus `_isActivelyTracking`, `_activeTrackingPoints`, `start/pause/resume/stopActiveTracking`, dan `addTrackingPoint` dari `LocationServiceV2`. Sesi log GPS dipindah ke engine (0→1 / 1→0).
-- Handler `detached` di `main.dart` dan layar memakai engine.
-- Isolate berhenti menimpa notifikasi dengan "Accuracy | Points". Engine mengirim label `set_notification_text` ("Tracking N project aktif • ±X m") yang dipakai isolate.
-
-**Acceptance criteria:**
-- [ ] `grep isActivelyTracking|activeTrackingPoints|addTrackingPoint lib/` kosong.
-- [ ] Notifikasi selalu menampilkan jumlah project yang benar selama tracking.
-- [ ] App di-swipe (detached) → service berhenti (kebijakan tetap), sesi tersimpan sebagai paused.
-
-**Verification:**
-- [ ] Unit: teks notifikasi + engine mengirim label saat count berubah.
-- [ ] `flutter analyze` 0 error di seluruh `lib/`.
-
-**Dependencies:** T6
-**Files:** `lib/services/location_service_v2.dart`, `lib/services/background/background_tracking_service.dart`, `tracking_engine.dart`, `lib/main.dart`, `data_collection_screen.dart`
-**Scope:** M
-
-#### Task 8: Skenario end-to-end (fake) + checklist device
-**Description:** Satu test skenario lengkap dengan engine, manajer, dan port fake:
-1. Start A → "layar ditutup" (tak ada konsumen UI) → tick > 15 dtk → A bertambah.
-2. Start B → A & B bertambah.
-3. Finish A → A `pendingSave` & berhenti; B lanjut.
-4. Finish B → service stop.
-5. Restore → paused.
-
-Perbarui checklist manual di `tasks/todo.md`.
-
-**Acceptance criteria:**
-- [ ] Test skenario hijau dan gagal bila heartbeat dikembalikan ke layar (menjaga regresi C1).
-
-**Verification:** `flutter test test/services/tracking/tracking_scenario_test.dart`
-**Dependencies:** T7
-**Files:** `test/services/tracking/tracking_scenario_test.dart`
-**Scope:** S
-
-### Phase 3 — UX pengelola tracking (permintaan user: lebih user friendly & interaktif)
-
-#### Task 9: Panel "Tracking Aktif" interaktif
-**Description:** Panel dan banner di daftar project menjadi pusat kendali semua sesi.
-- Tiap kartu sesi menampilkan chip status (Merekam / Jeda / Belum disimpan), ikon provider, titik, jarak, durasi, dan waktu titik terakhir. Semuanya live.
-- Aksi langsung: Jeda/Lanjutkan, Stop & Simpan (form atribut), Buang, dan Buka project.
-- Banner menampilkan ringkasan per status ("2 merekam · 1 belum disimpan").
-
-**Acceptance criteria:**
-- [ ] Jeda/Lanjutkan dari panel mengubah status sesi dan engine (service ikut mati bila tak ada sesi merekam).
-- [ ] Label status, durasi, dan jumlah titik ter-update live tanpa menutup panel.
-- [ ] Banner merangkum per status; hilang bila tak ada sesi.
-
-**Verification:**
-- [ ] Widget test: toggle jeda/lanjut memanggil manajer; label status per state; teks ringkasan banner.
-- [ ] Manual: kelola 3 sesi dari panel tanpa membuka layar project.
-
-**Dependencies:** T4, T5
-**Files:** `lib/widgets/tracking/active_tracking_panel.dart`, `test/widgets/active_tracking_panel_test.dart`
-**Scope:** M
-
-### Checkpoint B — Complete
-- [ ] Semua test hijau; `flutter analyze` 0 error.
-- [ ] Manual device (Android, lalu iOS): skenario 1-project (regresi), multi 2–3 project, layar tertutup ≥5 menit, kill/restore, Emlid (bila tersedia), cap, dan ganti provider.
-- [ ] Siap review.
+### Checkpoint C — Complete
+- [ ] `flutter test` hijau (kecuali 2 kegagalan lama: photoWatermark, OSM sheet parity); `flutter analyze` 0 error.
+- [ ] Build release: logcat tak berisi spam print app; log tetap tercatat di berkas & bisa dibagikan.
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Refactor layar 4.500 baris merusak mode manual/drawing | High | T6 dipisah dari hotfix; getter `_draftPoints` menjaga jalur manual; regresi manual point/line/polygon |
-| Start service butuh izin/UI (dialog rationale) padahal engine non-UI | Med | Rationale tetap di layar sebelum `engine.ensureRunning()`; engine hanya menyalakan service |
-| iOS menangguhkan socket Emlid di background | Med | Didokumentasikan; background RTK di iOS dianggap best-effort, sesi phone tetap andal |
-| Migrasi DB v5 di perangkat lapangan | Med | `ALTER TABLE ... ADD COLUMN` idempoten + default `phone`, diuji |
-| Uji timer tanpa `fake_async` (pubspec tak boleh disentuh) | Low | Timer factory diinjeksi; test memanggil `tick()` manual |
-| App di-kill total → isolate tak bisa fan-out per sesi | Med | Di luar scope: kebijakan tetap "stop saat detached", sesi dipulihkan paused |
+| Tulis berkas di hot path GPS menguras baterai | Med | Buffer + flush 2 dtk; per-fix hanya level debug (Mode Diagnostik) |
+| Berkas log membengkak | Med | Rotasi harian + batas 7 hari / 5 MB |
+| Token/kredensial bocor ke berkas yang dibagikan | High | Redaktor pola rahasia di sink + migrasi FCM tanpa nilai token + test redaksi |
+| Dua isolate menulis bersamaan | Med | Berkas terpisah per isolate (`app`/`bg`) |
+| Migrasi 370 print mengubah perilaku | Low | Mekanis (hanya ganti fungsi log), analyze + test per area, commit per area |
+| path_provider di isolate background | Low | `DartPluginRegistrant.ensureInitialized()` sudah dipanggil; fallback: log isolate diam bila gagal init |
 
-## Keputusan (default usulan dipakai — `/build auto` 2026-09-29)
-1. Restore setelah kill → sesi **paused**, user menekan Lanjutkan.
-2. `pendingSave` **tidak** dihitung cap.
-3. Titik hanya masuk ke sesi dengan **provider yang sama**.
-4. Semua phase dikerjakan berurutan; checkpoint device dilakukan user setelah build.
+## Keputusan (default bila tak ada jawaban lain)
+1. **Koordinat di log: lengkap** (paling berguna untuk debug GPS); ekspor hanya lewat tombol user. Bisa diubah ke pembulatan 4 desimal.
+2. **Mode Diagnostik** mati otomatis setelah **24 jam**.
+3. **Retensi** 7 hari / 5 MB.
+4. Build release tetap mencatat `info`+ ke berkas (tanpa konsol).
