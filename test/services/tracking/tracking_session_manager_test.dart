@@ -149,6 +149,62 @@ void main() {
       expect(m.activeCount, 2);
     });
 
+    test('finish → pendingSave: berhenti menerima titik, sesi tetap ada', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.addPointToActiveSessions(_pt(0, 0));
+      m.finish('a');
+      m.addPointToActiveSessions(_pt(0, 1));
+      final s = m.sessionFor('a')!;
+      expect(s.state, SessionState.pendingSave);
+      expect(s.points.length, 1);
+      expect(m.recordingCount, 0);
+    });
+
+    test('pendingSave tidak dihitung cap → Start project baru tetap boleh', () {
+      final m = TrackingSessionManager(maxConcurrent: 2);
+      m.start(_proj('a'));
+      m.start(_proj('b'));
+      m.finish('a'); // A menunggu disimpan
+      expect(m.start(_proj('c')).status, StartStatus.started);
+      expect(m.liveCount, 2); // b + c
+      expect(m.activeCount, 3); // termasuk draft a
+    });
+
+    test('paused tetap dihitung cap', () {
+      final m = TrackingSessionManager(maxConcurrent: 2);
+      m.start(_proj('a'));
+      m.start(_proj('b'));
+      m.pause('a');
+      expect(m.start(_proj('c')).status, StartStatus.capReached);
+    });
+
+    test('Start ulang draft pendingSave saat cap penuh → capReached', () {
+      final m = TrackingSessionManager(maxConcurrent: 2);
+      m.start(_proj('a'));
+      m.finish('a');
+      m.start(_proj('b'));
+      m.start(_proj('c'));
+      expect(m.start(_proj('a')).status, StartStatus.capReached);
+    });
+
+    test('resume dari pendingSave → merekam lagi (lanjutkan draft)', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.finish('a');
+      expect(m.start(_proj('a')).status, StartStatus.alreadyActive);
+      m.resume('a');
+      expect(m.sessionFor('a')!.state, SessionState.recording);
+    });
+
+    test('pause tak berlaku pada draft pendingSave', () {
+      final m = TrackingSessionManager(maxConcurrent: 3);
+      m.start(_proj('a'));
+      m.finish('a');
+      m.pause('a');
+      expect(m.sessionFor('a')!.state, SessionState.pendingSave);
+    });
+
     test('notifyListeners terpanggil saat start & addPoint', () {
       final m = TrackingSessionManager(maxConcurrent: 3);
       var n = 0;

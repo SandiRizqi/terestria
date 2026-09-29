@@ -137,6 +137,17 @@ void main() {
     expect(engine.isActive, isTrue);
   });
 
+  test('draft pendingSave tidak menahan service', () async {
+    mgr.start(_proj('a'));
+    mgr.start(_proj('b'));
+    await settle();
+    mgr.finish('a'); // A menunggu disimpan
+    mgr.finish('b');
+    await settle();
+    expect(svc.stops, 1);
+    expect(engine.isActive, isFalse);
+  });
+
   test('ensureRunning: panggilan bersamaan berbagi satu start', () async {
     svc.pendingStart = Completer<bool>();
     mgr.start(_proj('a')); // memicu start (belum selesai)

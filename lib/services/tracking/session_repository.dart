@@ -23,7 +23,8 @@ class SessionRepository {
         'projectId': s.projectId,
         'projectJson': jsonEncode(s.project.toJson()),
         'startedAt': s.startedAt.millisecondsSinceEpoch,
-        'paused': s.paused ? 1 : 0,
+        // Kolom lama `paused` menyimpan kode SessionState: 0/1/2.
+        'paused': s.state.index,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       };
 
@@ -41,9 +42,16 @@ class SessionRepository {
             Project.fromJson(jsonDecode(row['projectJson'] as String) as Map<String, dynamic>),
         startedAt:
             DateTime.fromMillisecondsSinceEpoch(row['startedAt'] as int),
-        paused: (row['paused'] as int) == 1,
+        state: stateFromCode(row['paused'] as int?),
         points: points,
       );
+
+  /// Kode kolom → status; nilai tak dikenal diperlakukan paused (aman: tak
+  /// merekam diam-diam, tetap bisa dilanjutkan/disimpan user).
+  static SessionState stateFromCode(int? code) =>
+      (code != null && code >= 0 && code < SessionState.values.length)
+          ? SessionState.values[code]
+          : SessionState.paused;
 
   static GeoPoint pointFromRow(Map<String, Object?> row) =>
       GeoPoint.fromJson(jsonDecode(row['point'] as String) as Map<String, dynamic>);
@@ -69,16 +77,6 @@ class SessionRepository {
           conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
-  }
-
-  Future<void> setPaused(String projectId, bool paused) async {
-    final db = await _dbService.database;
-    await db.update(
-      'tracking_sessions',
-      {'paused': paused ? 1 : 0, 'updatedAt': DateTime.now().millisecondsSinceEpoch},
-      where: 'projectId = ?',
-      whereArgs: [projectId],
-    );
   }
 
   /// Hapus sesi + titiknya (dipakai saat stop/save selesai).

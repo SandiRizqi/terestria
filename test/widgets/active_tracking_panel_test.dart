@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
+import 'package:geoform_app/services/tracking/tracking_session.dart';
 import 'package:geoform_app/services/tracking/tracking_session_manager.dart';
 import 'package:geoform_app/widgets/tracking/active_tracking_panel.dart';
 
@@ -55,6 +56,28 @@ void main() {
 
     mgr.stop('a');
     mgr.stop('b');
+  });
+
+  test('sessionStateLabel per status', () {
+    expect(sessionStateLabel(SessionState.recording), 'Merekam');
+    expect(sessionStateLabel(SessionState.paused), 'Jeda');
+    expect(sessionStateLabel(SessionState.pendingSave), 'Belum disimpan');
+  });
+
+  testWidgets('draft pendingSave diberi label "Belum disimpan" di panel',
+      (tester) async {
+    final mgr = TrackingSessionManager.instance;
+    mgr.stop('d');
+    mgr.start(_proj('d', 'Draft D'));
+    mgr.finish('d');
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ActiveTrackingPanel(onOpenProject: (_) {})),
+    ));
+    await tester.pump();
+    expect(find.textContaining('Belum disimpan'), findsOneWidget);
+
+    mgr.stop('d');
   });
 
   testWidgets('Buang menghentikan sesi tanpa perlu menyimpan (anti zombie)',

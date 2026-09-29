@@ -3,23 +3,41 @@ import 'dart:math' as math;
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
 
-/// Satu sesi tracking aktif untuk sebuah project. Menyimpan titik yang direkam
-/// SEJAK [startedAt] (fan-out dari satu stream GPS). [paused] menahan penambahan
-/// titik tanpa menutup sesi.
+/// Status sesi. Urutan = kode di kolom DB `paused` (0/1/2) — jangan diubah.
+enum SessionState {
+  /// Menerima titik GPS; menahan service & dihitung cap.
+  recording,
+
+  /// Ditahan sementara; dihitung cap, tak menerima titik.
+  paused,
+
+  /// Sudah di-Stop, menunggu disimpan/dibuang. Tak dihitung cap, tak menahan
+  /// service, tak menerima titik.
+  pendingSave,
+}
+
+/// Satu sesi tracking untuk sebuah project. Menyimpan titik yang direkam
+/// SEJAK [startedAt] (fan-out dari satu stream GPS).
 class TrackingSession {
   final Project project;
   final DateTime startedAt;
   final List<GeoPoint> points;
-  bool paused;
+  SessionState state;
 
   TrackingSession({
     required this.project,
     required this.startedAt,
     List<GeoPoint>? points,
-    this.paused = false,
+    this.state = SessionState.recording,
   }) : points = points ?? <GeoPoint>[];
 
   String get projectId => project.id;
+  bool get isRecording => state == SessionState.recording;
+  bool get paused => state == SessionState.paused;
+  bool get pendingSave => state == SessionState.pendingSave;
+
+  /// Masih "hidup" (recording/paused) — dihitung terhadap cap.
+  bool get isLive => state != SessionState.pendingSave;
   int get pointCount => points.length;
 
   /// Panjang jalur (meter) dari titik yang terekam (haversine berurutan).

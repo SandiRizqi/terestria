@@ -38,22 +38,31 @@ class TrackingSessionManager extends ChangeNotifier {
 
   Map<String, TrackingSession> get sessions => Map.unmodifiable(_sessions);
   List<TrackingSession> get activeSessions => _sessions.values.toList();
+  /// Semua sesi, termasuk draft pendingSave.
   int get activeCount => _sessions.length;
 
-  /// Sesi yang sedang merekam (tidak di-pause) — penentu nyala/mati feed GPS.
-  int get recordingCount => _sessions.values.where((s) => !s.paused).length;
+  /// Sesi yang sedang merekam — penentu nyala/mati feed GPS.
+  int get recordingCount => _sessions.values.where((s) => s.isRecording).length;
+
+  /// Sesi recording + paused — yang dihitung terhadap cap.
+  int get liveCount => _sessions.values.where((s) => s.isLive).length;
   bool get hasActive => _sessions.isNotEmpty;
 
   bool isActive(String projectId) => _sessions.containsKey(projectId);
   TrackingSession? sessionFor(String projectId) => _sessions[projectId];
 
-  /// Mulai sesi untuk [project]. Tolak bila sudah aktif atau melebihi cap.
+  /// Mulai sesi untuk [project]. Tolak bila melebihi cap (recording+paused).
+  /// Sesi yang sudah ada → alreadyActive; draft pendingSave hanya boleh
+  /// dilanjutkan bila masih ada slot.
   StartResult start(Project project) {
     final existing = _sessions[project.id];
     if (existing != null) {
+      if (existing.pendingSave && liveCount >= _maxConcurrent) {
+        return const StartResult(StartStatus.capReached);
+      }
       return StartResult(StartStatus.alreadyActive, existing);
     }
-    if (_sessions.length >= _maxConcurrent) {
+    if (liveCount >= _maxConcurrent) {
       return const StartResult(StartStatus.capReached);
     }
     final s = TrackingSession(project: project, startedAt: DateTime.now());
@@ -70,7 +79,7 @@ class TrackingSessionManager extends ChangeNotifier {
     addPointToActiveSessions(point);
   }
 
-  /// Fan-out satu titik GPS ke semua sesi aktif yang tidak paused.
+  /// Fan-out satu titik GPS ke semua sesi yang sedang merekam.
   ///
   /// Fix identik beruntun (timestamp + lat + lon sama) DILEWATI — melindungi
   /// dari double-delivery satu fix lewat dua jalur (listener service + layar)
@@ -78,7 +87,7 @@ class TrackingSessionManager extends ChangeNotifier {
   void addPointToActiveSessions(GeoPoint point) {
     var changed = false;
     for (final s in _sessions.values) {
-      if (s.paused) continue;
+      if (!s.isRecording) continue;
       if (_isDuplicateOfLast(s, point)) continue;
       s.points.add(point);
       changed = true;
@@ -96,16 +105,27 @@ class TrackingSessionManager extends ChangeNotifier {
 
   void pause(String projectId) {
     final s = _sessions[projectId];
-    if (s != null && !s.paused) {
-      s.paused = true;
+    if (s != null && s.isRecording) {
+      s.state = SessionState.paused;
       notifyListeners();
     }
   }
 
+  /// Lanjut merekam dari paused, atau melanjutkan draft pendingSave.
   void resume(String projectId) {
     final s = _sessions[projectId];
-    if (s != null && s.paused) {
-      s.paused = false;
+    if (s != null && !s.isRecording) {
+      s.state = SessionState.recording;
+      notifyListeners();
+    }
+  }
+
+  /// Stop perekaman → draft menunggu disimpan/dibuang (tak lagi menahan cap
+  /// maupun service). Simpan/Buang memanggil [stop] untuk melepasnya.
+  void finish(String projectId) {
+    final s = _sessions[projectId];
+    if (s != null && !s.pendingSave) {
+      s.state = SessionState.pendingSave;
       notifyListeners();
     }
   }

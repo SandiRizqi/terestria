@@ -601,7 +601,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     if (session != null) {
       print('🔄 Restoring tracking state (sesi manajer)...');
       setState(() {
-        _isTracking = true;
+        // Draft pendingSave = tracking sudah di-Stop: tampilkan titiknya agar
+        // bisa disimpan (atau Start lagi untuk melanjutkan).
+        _isTracking = !session.pendingSave;
         // Status Play/Pause mengikuti sesi (mis. hasil restore = paused).
         _isPaused = session.paused;
         _collectedPoints = List.from(session.points);
@@ -1824,10 +1826,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       _isPaused = false;
     });
 
-    // Pause sesi manajer agar TIDAK terus bertambah setelah user menghentikan
-    // tracking di layar ini. Service dimatikan TrackingEngine hanya bila tak
-    // ada project lain yang masih merekam. Save melepas sesi sepenuhnya.
-    TrackingSessionManager.instance.pause(widget.project.id);
+    // Sesi jadi draft pendingSave: berhenti bertambah, tak menahan cap maupun
+    // service (TrackingEngine mematikan service bila tak ada project lain yang
+    // merekam). Simpan/Buang melepas sesi sepenuhnya.
+    TrackingSessionManager.instance.finish(widget.project.id);
 
     print('⏹️ Tracking finished (stream continues for blue marker)');
 

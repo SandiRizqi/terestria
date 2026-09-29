@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../../models/project_model.dart';
+import '../../services/tracking/tracking_session.dart';
 import '../../services/tracking/tracking_session_manager.dart';
 import '../../theme/app_theme.dart';
 import 'attribute_form_sheet.dart';
+
+/// Label status sesi untuk UI.
+String sessionStateLabel(SessionState state) => switch (state) {
+      SessionState.recording => 'Merekam',
+      SessionState.paused => 'Jeda',
+      SessionState.pendingSave => 'Belum disimpan',
+    };
 
 /// Teks banner "Tracking N project aktif" — null bila tak ada sesi.
 String? activeTrackingBannerText(int count) =>
@@ -189,8 +197,8 @@ class _ActiveTrackingPanelState extends State<ActiveTrackingPanel> {
                     title: Text(s.project.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
-                      '${s.pointCount} titik • ${dist.toStringAsFixed(0)} m'
-                      '${s.paused ? ' • paused' : ''}',
+                      '${sessionStateLabel(s.state)} • ${s.pointCount} titik • '
+                      '${dist.toStringAsFixed(0)} m',
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                     trailing: Row(

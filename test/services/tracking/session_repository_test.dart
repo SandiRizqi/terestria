@@ -22,7 +22,7 @@ void main() {
     final s = TrackingSession(
       project: _proj('a', GeometryType.polygon),
       startedAt: started,
-      paused: true,
+      state: SessionState.paused,
     );
     final row = SessionRepository.sessionRow(s);
     expect(row['projectId'], 'a');
@@ -35,8 +35,32 @@ void main() {
     expect(back.projectId, 'a');
     expect(back.project.geometryType, GeometryType.polygon);
     expect(back.startedAt.millisecondsSinceEpoch, 1700000000000);
-    expect(back.paused, isTrue);
+    expect(back.state, SessionState.paused);
     expect(back.points.length, 1);
+  });
+
+  test('status sesi disimpan 0/1/2 di kolom lama `paused` (tanpa migrasi)', () {
+    for (final (state, code) in [
+      (SessionState.recording, 0),
+      (SessionState.paused, 1),
+      (SessionState.pendingSave, 2),
+    ]) {
+      final s = TrackingSession(
+          project: _proj('a', GeometryType.line),
+          startedAt: DateTime(2026, 1, 1),
+          state: state);
+      final row = SessionRepository.sessionRow(s);
+      expect(row['paused'], code);
+      expect(SessionRepository.sessionFromRow(row, const []).state, state);
+    }
+  });
+
+  test('nilai kolom tak dikenal → paused (aman)', () {
+    final row = SessionRepository.sessionRow(TrackingSession(
+        project: _proj('a', GeometryType.line), startedAt: DateTime(2026)))
+      ..['paused'] = 9;
+    expect(SessionRepository.sessionFromRow(row, const []).state,
+        SessionState.paused);
   });
 
   test('pointRow ↔ pointFromRow round-trip', () {

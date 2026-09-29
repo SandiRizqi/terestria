@@ -90,7 +90,7 @@ class TrackingPersistenceCoordinator {
     // background menyala diam-diam saat app dibuka (dan alur izin iOS yang
     // butuh foreground tetap lewat tombol Resume).
     for (final s in part.keep) {
-      s.paused = true;
+      if (s.isRecording) s.state = SessionState.paused;
     }
     manager.restoreSessions(part.keep);
     for (final s in part.keep) {

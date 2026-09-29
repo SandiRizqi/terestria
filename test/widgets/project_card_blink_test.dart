@@ -75,6 +75,11 @@ void main() {
     await tester.pump();
     expect(find.byKey(const ValueKey('tracking-active-card2')), findsOneWidget);
 
+    mgr.finish('card2');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('tracking-pending-card2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tracking-active-card2')), findsNothing);
+
     mgr.stop('card2');
     await tester.pump();
   });

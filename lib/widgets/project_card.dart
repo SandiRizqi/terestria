@@ -38,7 +38,7 @@ class _ProjectCardState extends State<ProjectCard>
 
   /// Sedang merekam (sesi ada & tidak di-pause) → badge REC berkedip.
   bool get _isTracking =>
-      _tracking.sessionFor(widget.project.id)?.paused == false;
+      _tracking.sessionFor(widget.project.id)?.isRecording ?? false;
 
   @override
   void initState() {
@@ -78,24 +78,31 @@ class _ProjectCardState extends State<ProjectCard>
     super.dispose();
   }
 
-  /// Badge statis "JEDA" untuk sesi yang di-pause (mis. hasil restore).
-  Widget _buildPausedBadge() {
+  /// Badge statis untuk sesi yang tidak merekam: JEDA (paused) atau
+  /// BELUM DISIMPAN (sudah Stop, draft menunggu disimpan).
+  Widget _buildIdleSessionBadge() {
+    final pending =
+        _tracking.sessionFor(widget.project.id)?.pendingSave ?? false;
+    final color = pending ? const Color(0xFF1D4ED8) : const Color(0xFFB45309);
     return Container(
-      key: ValueKey('tracking-paused-${widget.project.id}'),
+      key: ValueKey(pending
+          ? 'tracking-pending-${widget.project.id}'
+          : 'tracking-paused-${widget.project.id}'),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFFF59E0B).withOpacity(0.15),
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.pause_rounded, size: 11, color: Color(0xFFB45309)),
-          SizedBox(width: 2),
+          Icon(pending ? Icons.save_outlined : Icons.pause_rounded,
+              size: 11, color: color),
+          const SizedBox(width: 2),
           Text(
-            'JEDA',
+            pending ? 'BELUM DISIMPAN' : 'JEDA',
             style: TextStyle(
-              color: Color(0xFFB45309),
+              color: color,
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
@@ -347,7 +354,7 @@ class _ProjectCardState extends State<ProjectCard>
                               if (_isTracking)
                                 _buildTrackingBadge()
                               else if (_hasSession)
-                                _buildPausedBadge(),
+                                _buildIdleSessionBadge(),
                             ],
                           ),
                         ],
