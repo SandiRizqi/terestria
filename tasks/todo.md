@@ -24,7 +24,7 @@ Baseline mobile: `flutter test` 641 lulus, `flutter analyze` 0 error dan 29 warn
 
 ## Fase 3 — Tap langsung
 - [x] T9: hit-test murni (point/line/polygon, toleransi dp, urutan stabil).
-- [ ] T10: daftar pilihan saat tap mengenai beberapa feature + helper `recordTitle()` bersama.
+- [x] T10: daftar pilihan saat tap mengenai beberapa feature + helper `recordTitle()` bersama.
 - [ ] T11: wiring `_onMapTap` (alat ukur → mode gambar → select) + hapus ikon info di peta project dan navigasi.
 
 ### Checkpoint C (selesai)

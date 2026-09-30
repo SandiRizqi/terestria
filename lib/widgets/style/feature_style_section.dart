@@ -54,7 +54,7 @@ class _FeatureStyleSectionState extends State<FeatureStyleSection> {
               padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
               child: Row(
                 children: [
-                  _StyleSwatch(style: effective, geometry: geometry),
+                  StyleSwatch(style: effective, geometry: geometry),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -99,58 +99,5 @@ class _FeatureStyleSectionState extends State<FeatureStyleSection> {
         ],
       ),
     );
-  }
-}
-
-/// Contoh kecil style di ringkasan: lingkaran (point), garis (line), atau
-/// kotak berisi dengan tepi (polygon).
-class _StyleSwatch extends StatelessWidget {
-  final LayerStyle style;
-  final StyleGeometry geometry;
-  const _StyleSwatch({required this.style, required this.geometry});
-
-  @override
-  Widget build(BuildContext context) {
-    final fill = style.fillColor.withValues(alpha: style.fillOpacity);
-    switch (geometry) {
-      case StyleGeometry.point:
-        return Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: fill,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 1.5),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2)],
-          ),
-        );
-      case StyleGeometry.line:
-        return SizedBox(
-          width: 24,
-          height: 24,
-          child: Center(
-            child: Container(
-              height: style.strokeWidth.clamp(2.0, 6.0).toDouble(),
-              decoration: BoxDecoration(
-                color:
-                    style.strokeColor.withValues(alpha: style.fillOpacity),
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ),
-        );
-      case StyleGeometry.polygon:
-        return Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-                color: style.strokeColor,
-                width: style.strokeWidth.clamp(1.0, 3.0).toDouble()),
-          ),
-        );
-    }
   }
 }

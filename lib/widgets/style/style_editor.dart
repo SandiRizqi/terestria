@@ -305,3 +305,56 @@ class _PreviewPainter extends CustomPainter {
   bool shouldRepaint(_PreviewPainter o) =>
       o.style != style || o.geometry != geometry;
 }
+
+/// Contoh kecil style (ringkasan & daftar): lingkaran (point), garis (line), atau
+/// kotak berisi dengan tepi (polygon).
+class StyleSwatch extends StatelessWidget {
+  final LayerStyle style;
+  final StyleGeometry geometry;
+  const StyleSwatch({super.key, required this.style, required this.geometry});
+
+  @override
+  Widget build(BuildContext context) {
+    final fill = style.fillColor.withValues(alpha: style.fillOpacity);
+    switch (geometry) {
+      case StyleGeometry.point:
+        return Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: fill,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 1.5),
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2)],
+          ),
+        );
+      case StyleGeometry.line:
+        return SizedBox(
+          width: 24,
+          height: 24,
+          child: Center(
+            child: Container(
+              height: style.strokeWidth.clamp(2.0, 6.0).toDouble(),
+              decoration: BoxDecoration(
+                color:
+                    style.strokeColor.withValues(alpha: style.fillOpacity),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+        );
+      case StyleGeometry.polygon:
+        return Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+                color: style.strokeColor,
+                width: style.strokeWidth.clamp(1.0, 3.0).toDouble()),
+          ),
+        );
+    }
+  }
+}

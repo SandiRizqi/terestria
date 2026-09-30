@@ -3,7 +3,7 @@ import 'package:geoform_app/theme/app_theme.dart';
 import 'dart:io';
 import '../models/geo_data_model.dart';
 import '../models/project_model.dart';
-import '../models/form_field_model.dart';
+import '../utils/record_title.dart';
 
 class GeoDataListItem extends StatelessWidget {
   final GeoData geoData;
@@ -396,22 +396,7 @@ class GeoDataListItem extends StatelessWidget {
     );
   }
 
-  String _getTitle() {
-    // Try to get first non-photo form field value as title
-    if (geoData.formData.isNotEmpty) {
-      final firstNonPhotoEntry = geoData.formData.entries.firstWhere(
-        (entry) => !_isPhotoField(entry.key),
-        orElse: () => geoData.formData.entries.first,
-      );
-      final firstValue = firstNonPhotoEntry.value.toString();
-      if (firstValue.isNotEmpty && !firstValue.startsWith('/')) {
-        return firstValue.length > 40 
-            ? '${firstValue.substring(0, 40)}...' 
-            : firstValue;
-      }
-    }
-    return 'Survey Data #${geoData.id.substring(0, 8)}';
-  }
+  String _getTitle() => recordTitle(geoData, project);
 
   String? _getPhotoPath() {
     // Look for photo fields in formData
@@ -453,23 +438,8 @@ class GeoDataListItem extends StatelessWidget {
     return null;
   }
 
-  bool _isPhotoField(String fieldName) {
-    // Jika project tersedia, cek berdasarkan field type
-    if (project != null) {
-      final field = project!.formFields.where((f) => f.label == fieldName).firstOrNull;
-      if (field != null) {
-        return field.type == FieldType.photo;
-      }
-    }
-    
-    // Fallback: cek berdasarkan nama field
-    final lowerName = fieldName.toLowerCase();
-    return lowerName.contains('photo') || 
-           lowerName.contains('image') || 
-           lowerName.contains('picture') ||
-           lowerName.contains('foto') ||
-           lowerName.contains('gambar');
-  }
+  bool _isPhotoField(String fieldName) =>
+      isPhotoFieldName(fieldName, project);
 
   int _getNonPhotoFieldsCount() {
     return geoData.formData.entries
