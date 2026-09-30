@@ -1,31 +1,35 @@
-# TODO — Nama Basemap Analysis + Import SHP/GPX/XML + Reset saat Logout
+# TODO — Perbaikan Hasil Review (30 Sep 2026)
 
-Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-basemap-pdf.md](plan-basemap-pdf.md) · Branch: `main`
+Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-layers-logout.md](plan-layers-logout.md)
+Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per task, tanpa push/deploy
 
-## Phase 1 — Nama basemap Analysis Report
-- [x] **T1 — Prefix project pada nama basemap** (S) — `"<project> · <judul>"`, project = `AnalysisType.name`, tak dobel prefix
+## Phase 1 — Watermark delta pull (Critical #1)
+- [ ] **T1 — Mobile: watermark tertahan sebelum record gagal** (S) — `failedAt − 1 µs`, fake server filter `>`, test pull kedua mengambil ulang
+- [ ] **T2 — Backend: `updated_after` inklusif (`__gte`)** (S) — helper + test mock lokal + kasus batas di test DB (CI)
 
 ### Checkpoint 1
-- [ ] Test hijau; nama basemap lengkap di pemilih basemap
+- [ ] Test mobile & backend lokal hijau; catatan deploy backend
 
-## Phase 2 — Import layer SHP (zip), GPX, XML
-- [x] **T2 — `LayerImporter` satu pintu** (S–M) — deteksi format, GeoJSON lama tetap jalan, parsing di isolate
-- [x] **T3 — GPX → GeoJSON** (S) — wpt/trk/rte + properti
-- [x] **T4 — KML/XML (+KMZ) → GeoJSON** (S–M) — Placemark, polygon berlubang, MultiGeometry
-- [x] **T5 — Pembaca Shapefile .shp + .dbf** (M) — semua tipe geometri, atribut, encoding `.cpg`
-- [x] **T6 — SHP ber-zip: `.prj` WGS84/UTM + wiring** (M) — tolak proyeksi lain, pilih bila >1 shapefile
+## Phase 2 — Logout aman (Important #2, #3)
+- [ ] **T3 — `runExclusive` reentrant + semua jalur tulis sync eksklusif** (M) — pull, pullProjects, syncProject, twoWay
+- [ ] **T4 — Kunci DB selama reset logout** (S–M) — penulis terlambat gagal, tak membuat DB baru
+- [ ] **T5 — Draft koleksi dihitung saat logout & ikut cadangan ZIP** (M)
 
 ### Checkpoint 2
-- [ ] Device: import GeoJSON, SHP zip (UTM), GPX, KML, KMZ → posisi benar di 3 layar peta
+- [ ] Test hijau; device: pull lalu logout cepat → user B bersih; draft muncul di dialog & cadangan
 
-## Phase 3 — Reset app saat logout
-- [x] **T7 — Pengaman data belum sync** (S) — dialog jumlah + Sync dulu / Batal / Hapus (ketik `HAPUS`)
-- [x] **T8 — `AppResetService`** (M) — hapus semua kecuali allowlist, urutan aman
-- [x] **T9 — Reset state in-memory + uji user B** (M) — tak ada data user A setelah login ulang
+## Phase 3 — Perbaikan kecil
+- [ ] **T6 — Reset state auto-sync saat logout** (S)
+- [ ] **T7 — Hasil share cadangan diperiksa (dismissed → peringatan)** (S)
+- [ ] **T8 — Emlid: connect baru mematikan auto-reconnect lama** (S)
+- [ ] **T9 — Edit record mempertahankan `serverKey` foto hasil sync** (S)
+- [ ] **T10 — CSV `created_at` UTC + dokumentasi tindak lanjut** (XS)
 
 ### Checkpoint 3
-- [ ] Test hijau; analyze 0 error; device: logout A (ada data belum sync) → login B bersih
+- [ ] Test hijau; analyze 0 error; device: Emlid putus-sambung, share cadangan iOS, foto galeri iPhone JPEG
+
+## Phase 4 — Butuh keputusan (belum dijadwalkan)
+- [ ] D1 datum tinggi Emlid (elipsoid?) · D2 kebijakan konflik (a/b) · D3 kontak User-Agent tile
 
 ## Open questions (lihat plan.md)
-1. Project = `AnalysisType.name` (level pertama; dikoreksi user)  2. XML = KML (+ .kmz)?  3. SHP: WGS84 + UTM saja?
-4. Boleh tambah dependency `xml` di pubspec?  5. Allowlist logout: setelan tampilan/GPS/Emlid saja?
+1. Deploy backend T2 segera? *(ya)*  2. D1 → tunda  3. D2 → (a) sekarang, (b) spec terpisah  4. D3 → tunda
