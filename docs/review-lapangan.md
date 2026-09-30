@@ -413,7 +413,7 @@ kritis dan beberapa perbaikan lanjutan. Rencana: `tasks/plan.md`.
 | 4 | Riwayat auto-sync (backoff, status terakhir) terbawa ke user berikutnya | ✅ | b8e1cdc |
 | 5 | Share sheet cadangan ditutup tanpa menyimpan tetap dilaporkan "siap" | ✅ Peringatan bila `dismissed` (iOS) | 1f67b53 |
 | 6 | Connect Emlid ulang yang gagal meninggalkan reconnect "hantu" | ✅ | 8d9c106 |
-| 7 | Datum tinggi tak seragam: NMEA = MSL, LLH/XYZ = elipsoid | ⏳ Diputuskan **elipsoid** (T11) | — |
+| 7 | Datum tinggi tak seragam: NMEA = MSL, LLH/XYZ = elipsoid | ✅ Semua format Emlid kini **elipsoid WGS84** (NMEA: MSL + geoid separation). GPS HP: Android elipsoid, iOS MSL (di luar cakupan) | T11 |
 | 8 | Konflik pull "lokal menang": upload lokal menimpa editan rekan di server (server upsert tanpa cek versi) | — Dibiarkan & didokumentasikan; *optimistic concurrency* (409 + UI konflik) butuh spec terpisah | — |
 | 9 | Edit record menghapus `serverKey` foto yang diunggah auto-sync selama mengedit | ✅ | cd36e92 |
 | nit | CSV `created_at` masih waktu lokal | ✅ UTC | T10 |

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../models/geo_data_model.dart';
+import '../../utils/app_logger.dart';
 
 /// Parser murni untuk keluaran posisi Emlid Reach (NMEA / LLH / XYZ).
 ///
@@ -17,6 +18,11 @@ import '../../models/geo_data_model.dart';
 ///
 /// Semua parser mengisi [GeoPoint.accuracy] (akurasi horizontal, meter) agar
 /// UI, dialog simpan, dan ring akurasi tak lagi "N/A"/15 m untuk RTK.
+///
+/// [GeoPoint.altitude] = tinggi **elipsoid WGS84** untuk SEMUA format (LLH &
+/// XYZ memang elipsoid; NMEA dikonversi dari tinggi MSL + geoid separation),
+/// sehingga ganti format di Location Provider tak menggeser tinggi puluhan
+/// meter.
 
 /// Kualitas RTKLIB (kolom Q) → label kualitas app.
 String rtklibQualityLabel(int? q) {
@@ -179,6 +185,7 @@ GeoPoint? parseRtklibXyz(String line, {DateTime? now}) {
 class NmeaStreamParser {
   double? _gstAccuracy;
   String? _gstTime;
+  bool _warnedNoGeoidSeparation = false;
 
   /// Proses satu kalimat; mengembalikan titik untuk `GGA` yang valid.
   GeoPoint? parse(String rawLine, {DateTime? now}) {
@@ -235,10 +242,26 @@ class NmeaStreamParser {
       acc = estimateAccuracyFromHdop(hdop, quality);
     }
 
+    // GGA kolom 9 = tinggi di atas MSL (geoid), kolom 11 = geoid separation
+    // N → tinggi elipsoid h = H + N (seragam dengan LLH/XYZ). Tanpa N tak bisa
+    // dikonversi: tetap MSL (dicatat sekali).
+    final msl = double.tryParse(parts[9]);
+    final geoidSeparation = parts.length > 11 ? double.tryParse(parts[11]) : null;
+    double? altitude = msl;
+    if (msl != null) {
+      if (geoidSeparation != null) {
+        altitude = msl + geoidSeparation;
+      } else if (!_warnedNoGeoidSeparation) {
+        _warnedNoGeoidSeparation = true;
+        logWarn('NMEA GGA has no geoid separation — altitude stays above '
+            'mean sea level (not ellipsoidal)', tag: 'EMLID');
+      }
+    }
+
     return GeoPoint(
       latitude: lat,
       longitude: lon,
-      altitude: double.tryParse(parts[9]),
+      altitude: altitude,
       accuracy: acc,
       timestamp: now ?? DateTime.now(),
       fixQuality: quality,

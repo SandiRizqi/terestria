@@ -25,11 +25,14 @@ Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per ta
 - [x] **T9 — Edit record mempertahankan `serverKey` foto hasil sync** (S)
 - [x] **T10 — CSV `created_at` UTC + dokumentasi tindak lanjut** (XS)
 
+- [x] **T11 — Tinggi Emlid seragam elipsoid (keputusan D1)** (S) — NMEA: MSL + geoid separation
+
 ### Checkpoint 3
 - [ ] Test hijau; analyze 0 error; device: Emlid putus-sambung, share cadangan iOS, foto galeri iPhone JPEG
 
 ## Phase 4 — Butuh keputusan (belum dijadwalkan)
-- [ ] D1 datum tinggi Emlid (elipsoid?) · D2 kebijakan konflik (a/b) · D3 kontak User-Agent tile
+- [x] D1 datum tinggi Emlid → elipsoid (T11)
+- [ ] D2 kebijakan konflik (a/b) · D3 kontak User-Agent tile
 
 ## Open questions (lihat plan.md)
 1. Deploy backend T2 segera? *(ya)*  2. D1 → tunda  3. D2 → (a) sekarang, (b) spec terpisah  4. D3 → tunda

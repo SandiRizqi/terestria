@@ -117,6 +117,19 @@ void main() {
           isNull);
     });
 
+    test('tinggi = elipsoid WGS84 (MSL + geoid separation), seragam dengan '
+        'LLH/XYZ', () {
+      final p = NmeaStreamParser().parse(nmea('GNGGA,104054.60,0612.52874,S,'
+          '10650.73674,E,4,18,0.7,35.1,M,17.0,M,1.0,0000'))!;
+      expect(p.altitude, closeTo(52.1, 1e-9));
+    });
+
+    test('tanpa geoid separation → tetap tinggi MSL (tak bisa dikonversi)', () {
+      final p = NmeaStreamParser().parse(nmea('GPGGA,000000.00,0100.00000,N,'
+          '10000.00000,E,1,8,1.2,5.0,M,,M,,'))!;
+      expect(p.altitude, closeTo(5.0, 1e-9));
+    });
+
     test('tanpa checksum tetap diterima', () {
       final p = NmeaStreamParser().parse(r'$GPGGA,000000.00,0100.00000,N,'
           r'10000.00000,E,1,8,1.2,5.0,M,0.0,M,,');

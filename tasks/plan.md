@@ -154,15 +154,20 @@ Phase 4  D1 datum tinggi · D2 kebijakan konflik · D3 kontak UA   (menunggu kep
   `docs/review-lapangan.md` bagian "Tindak lanjut review 30 Sep" (status #1–#9).
 - Files: `lib/services/export/geo_export.dart`, `test/services/geo_export_test.dart`, `docs/review-lapangan.md`.
 
+#### T11: Tinggi Emlid seragam elipsoid — keputusan D1 (S)
+- Diputuskan user (30 Sep): **elipsoid**.
+- AC: NMEA GGA → `altitude = H + N` (kolom 9 + kolom 11); tanpa N → tetap H + dicatat sekali;
+  LLH/XYZ tak berubah (sudah elipsoid). Test parser.
+- Files: `lib/services/gps/emlid_parsers.dart`, `test/services/emlid_parsers_test.dart`, docs.
+
 ### Checkpoint 3 — Complete
 - [ ] `flutter test` hijau; `flutter analyze` 0 error & tak ada warning baru.
 - [ ] Device: Emlid dicabut 30 dtk → tersambung lagi; Connect ulang ke IP salah → tak ada reconnect
       "hantu"; iOS: tutup share sheet cadangan → peringatan; foto galeri iPhone tersimpan JPEG.
 
 ### Phase 4 — Butuh keputusan (tidak dikerjakan sebelum diputuskan)
-- **D1 — Datum tinggi (#7).** NMEA menyimpan tinggi MSL (GGA kolom 9), LLH/XYZ tinggi elipsoid.
-  Usul: seragamkan Emlid ke **elipsoid** (NMEA: H + N dari GGA kolom 11; tanpa N → tetap H + log).
-  Catatan: GPS HP Android = elipsoid, iOS = MSL — di luar cakupan. Setelah disetujui → task S.
+- **D1 — Datum tinggi (#7).** ✅ Diputuskan **elipsoid** (30 Sep) → dikerjakan sebagai T11.
+  Catatan: GPS HP Android = elipsoid, iOS = MSL — di luar cakupan.
 - **D2 — Kebijakan konflik (#8).** Server upsert tanpa cek versi (`views.py:675-686`), jadi upload
   lokal menimpa editan rekan. Opsi: (a) biarkan "lokal menang" + dokumentasikan; (b) *optimistic
   concurrency*: server membalas 409 bila versinya lebih baru dari versi dasar klien — perlu kolom
