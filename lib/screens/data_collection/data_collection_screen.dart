@@ -16,6 +16,7 @@ import '../../widgets/map/basemap_layers.dart';
 import '../../services/basemap/pdf_overlay_controller.dart';
 import '../../mixins/map_tools_host.dart';
 import '../../models/project_model.dart';
+import '../../models/feature_style.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/basemap_model.dart';
 import '../../models/form_field_model.dart';
@@ -52,6 +53,7 @@ import '../../widgets/readiness/daily_readiness_check.dart';
 import '../readiness/field_readiness_screen.dart';
 import '../../widgets/collection/gps_status_banners.dart';
 import '../../widgets/map/project_feature_layers.dart';
+import '../../widgets/style/feature_style_section.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 
@@ -134,6 +136,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   bool _isSaving = false;
   late final PdfOverlayController _pdfOverlay;
   Map<String, dynamic> _formData = {};
+
+  /// Style feature yang sedang diisi (null = default Settings). Bertahan
+  /// antar "Save & next" dalam sesi layar ini; ikut draft.
+  LayerStyle? _featureStyle;
   CollectionMode _collectionMode = CollectionMode.tracking;
   Basemap? _selectedBasemap;
   bool _isLoadingLocation = true;
@@ -1871,6 +1877,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       widget.project.id,
       points: _session == null ? List.of(_manualPoints) : const [],
       formData: _formData,
+      style: _featureStyle,
     ));
   }
 
@@ -1886,6 +1893,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           ..addAll(draft.points);
       }
       _formData = Map<String, dynamic>.of(draft.formData);
+      _featureStyle = draft.style;
     });
     logInfo(
         'Restored collection draft: '
@@ -1911,6 +1919,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     setState(() {
       if (_session == null) _manualPoints.clear();
       _formData = {};
+      _featureStyle = null;
     });
     _draftDebounce?.cancel();
     unawaited(_draftService.clear(widget.project.id));
@@ -2152,6 +2161,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         collectedBy: user?.username,
+        style: _featureStyle,
       );
 
       await _storageService.saveGeoData(geoData);
@@ -2905,6 +2915,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                               longitude: _currentLocation?.longitude,
                               locationProvider: () => _locationNotifier.value,
                               onChanged: () {
+                                _scheduleDraftSave();
+                                if (context.mounted) setModalState(() {});
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            FeatureStyleSection(
+                              geometryType: widget.project.geometryType,
+                              style: _featureStyle,
+                              defaultStyle: defaultFeatureStyle(
+                                  widget.project.geometryType,
+                                  _settingsService.settings),
+                              onChanged: (style) {
+                                _featureStyle = style;
                                 _scheduleDraftSave();
                                 if (context.mounted) setModalState(() {});
                               },
