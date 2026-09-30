@@ -28,6 +28,8 @@ import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
 import '../../services/export/geo_export.dart';
 import '../../services/photo_sync_service.dart';
+import '../../models/sync_conflict.dart';
+import '../../widgets/sync/conflict_sheet.dart';
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
 
@@ -258,11 +260,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     });
   }
 
+  /// Record project ini yang berkonflik dengan versi server (lihat banner).
+  List<SyncConflict> _conflicts = const [];
+
   Future<void> _loadGeoData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final data = await _storageService.loadGeoData(_currentProject.id);
+      var conflicts = const <SyncConflict>[];
+      try {
+        conflicts =
+            await _storageService.getSyncConflicts(projectId: _currentProject.id);
+      } catch (e) {
+        logWarn('Could not load sync conflicts: $e', tag: 'PROJECT');
+      }
       // Foto yang belum ter-upload (antrean di kartu sync).
       var photos = 0;
       final photoSync = PhotoSyncService();
@@ -273,6 +285,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       if (!mounted) return;
       setState(() {
         _geoDataList = data;
+        _conflicts = conflicts;
         _pendingPhotoCount = photos;
         _isLoading = false;
       });
@@ -284,6 +297,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       showErrorFeedback(context, 'Could not load the records',
           error: e, stack: st, tag: 'PROJECT');
     }
+  }
+
+  /// Record yang diubah di server & di HP: user memilih versi per record.
+  Future<void> _openConflicts() async {
+    final entries = [
+      for (final c in _conflicts)
+        ConflictEntry(
+          conflict: c,
+          local: _geoDataList.where((g) => g.id == c.geoDataId).firstOrNull,
+        ),
+    ];
+    await showConflictResolutionSheet(
+      context,
+      project: _currentProject,
+      entries: entries,
+      keepMine: _syncService.resolveKeepMine,
+      useServer: _syncService.resolveUseServer,
+    );
+    await _loadGeoData();
   }
 
   /// Buka sheet filter dinamis (key dari form_fields project) lalu jalankan
@@ -1319,6 +1351,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ),
           
+          // Record yang diubah di server & di HP → user memilih versi.
+          if (_conflicts.isNotEmpty)
+            ConflictBanner(
+              count: _conflicts.length,
+              onResolve: _openConflicts,
+            ),
+
           // Stats Card
           _buildStatsCard(),
 

@@ -414,7 +414,7 @@ kritis dan beberapa perbaikan lanjutan. Rencana: `tasks/plan.md`.
 | 5 | Share sheet cadangan ditutup tanpa menyimpan tetap dilaporkan "siap" | ✅ Peringatan bila `dismissed` (iOS) | 1f67b53 |
 | 6 | Connect Emlid ulang yang gagal meninggalkan reconnect "hantu" | ✅ | 8d9c106 |
 | 7 | Datum tinggi tak seragam: NMEA = MSL, LLH/XYZ = elipsoid | ✅ Semua format Emlid kini **elipsoid WGS84** (NMEA: MSL + geoid separation). GPS HP: Android elipsoid, iOS MSL (di luar cakupan) | T11 |
-| 8 | Konflik pull "lokal menang": upload lokal menimpa editan rekan di server (server upsert tanpa cek versi) | — Dibiarkan & didokumentasikan; *optimistic concurrency* (409 + UI konflik) butuh spec terpisah | — |
+| 8 | Konflik pull "lokal menang": upload lokal menimpa editan rekan di server (server upsert tanpa cek versi) | ✅ **D2 — optimistic concurrency**: app mengirim versi server terakhir yang dilihat (`base_updated_at`); server menolak **409** bila record sudah berubah; app menyimpan versi server, tidak mengunggah ulang otomatis, dan user memilih **Keep mine** / **Use server version** lewat banner di detail project. Kontrak: `docs/sync-push-contract.md` | gis-backend `2cfd135` · ac63378, ed605d5, 8a81f42, M5 |
 | 9 | Edit record menghapus `serverKey` foto yang diunggah auto-sync selama mengedit | ✅ | cd36e92 |
 | nit | CSV `created_at` masih waktu lokal | ✅ UTC | T10 |
 
@@ -424,3 +424,10 @@ Catatan:
 - Backend belum mengurutkan hasil delta `updated_at` menaik (kontrak §1 aturan 4). Tak
   memengaruhi watermark karena klien memproses semua halaman sebelum memajukannya.
 - Kontak User-Agent tile (`api_config.dart`) masih menunggu email/URL yang benar dari pemilik produk.
+- **Project nonaktif** (`is_active = false` di admin) kini menolak push data dengan pesan jelas
+  (HTTP 403 `project_inactive`, gis-backend `79fa50c`). App menampilkan pesan server apa adanya di
+  hasil sync (Beranda, detail project, sebelum logout, Readiness), status auto-sync, dan pada
+  setiap record yang gagal (`lastSyncError`); sisa record project itu tak dikirim ulang dalam
+  run yang sama (ed605d5, 72ca794).
+- Record yang tersinkron sebelum DB v6 belum punya versi server: konflik untuk record itu baru
+  terdeteksi setelah sekali tersinkron dengan app versi baru.

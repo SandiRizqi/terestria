@@ -8,6 +8,7 @@ import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/app_reset/local_backup_service.dart';
 import 'package:geoform_app/services/collection_draft_service.dart';
+import 'package:geoform_app/models/sync_conflict.dart';
 import 'package:geoform_app/services/tracking/tracking_session.dart';
 
 final _t = DateTime.utc(2026, 9, 29, 3);
@@ -179,6 +180,37 @@ void main() {
     final manifest = jsonDecode(
         utf8.decode(archive.findFile('manifest.json')!.content)) as Map;
     expect(manifest['totals']['drafts'], 2);
+  });
+
+  test('konflik sync: versi server ikut cadangan (logout menghapusnya)',
+      () async {
+    final service = LocalBackupService(
+      loadProjects: () async => const [],
+      trackingSessions: () => const [],
+      loadDrafts: () async => const {},
+      loadConflicts: () async => [
+        SyncConflict(
+          geoDataId: 'g1',
+          projectId: 'pA',
+          serverJson: const {'id': 'g1', 'form_data': {'A': 'server'}},
+          detectedAt: DateTime.utc(2026, 9, 30, 9),
+        ),
+      ],
+      outputDir: () async => Directory('${tmp.path}/out'),
+      now: () => DateTime(2026, 9, 30, 10),
+    );
+
+    final result = await service.create();
+
+    expect(result.conflicts, 1);
+    final archive = ZipDecoder().decodeBytes(result.file.readAsBytesSync());
+    final conflicts = jsonDecode(
+        utf8.decode(archive.findFile('conflicts.json')!.content)) as List;
+    expect(conflicts.single['geoDataId'], 'g1');
+    expect(conflicts.single['serverVersion']['form_data'], {'A': 'server'});
+    final manifest = jsonDecode(
+        utf8.decode(archive.findFile('manifest.json')!.content)) as Map;
+    expect(manifest['totals']['conflicts'], 1);
   });
 
   test('gagal membaca → berkas setengah jadi dihapus & error diteruskan',

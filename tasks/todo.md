@@ -20,7 +20,7 @@ Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per ta
 
 ## Phase 3 — Mobile UI
 - [x] **M4 — Pesan error push terlihat** (M) — dialog hasil sync bersama, status auto-sync, error per record
-- [ ] **M5 — UI konflik + cadangan + dokumentasi** (M)
+- [x] **M5 — UI konflik + cadangan + dokumentasi** (M)
 
 ### Checkpoint 3
 - [ ] Test hijau; device: project nonaktif, konflik 2 HP, upgrade DB v5→v6

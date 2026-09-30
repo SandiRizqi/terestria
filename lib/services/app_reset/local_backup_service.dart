@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../config/api_config.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
+import '../../models/sync_conflict.dart';
 import '../../utils/app_logger.dart';
 import '../collection_draft_service.dart';
 import '../export/geo_export.dart';
@@ -31,6 +32,9 @@ class LocalBackupResult {
   /// Draft koleksi (titik & isian form yang belum disimpan) yang ikut dicadangkan.
   final int drafts;
 
+  /// Konflik sync (versi server yang menunggu keputusan) yang ikut dicadangkan.
+  final int conflicts;
+
   const LocalBackupResult({
     required this.file,
     required this.projects,
@@ -41,13 +45,14 @@ class LocalBackupResult {
     required this.trackingSessions,
     required this.bytes,
     this.drafts = 0,
+    this.conflicts = 0,
   });
 
   @override
   String toString() => 'projects=$projects records=$records '
       '(unsynced=$unsyncedRecords) photos=$photos '
       'missingPhotos=${missingPhotos.length} sessions=$trackingSessions '
-      'drafts=$drafts bytes=$bytes';
+      'drafts=$drafts conflicts=$conflicts bytes=$bytes';
 }
 
 /// Cadangan lokal (ZIP) sebelum logout — logout menghapus SEMUA data di HP.
@@ -63,11 +68,14 @@ class LocalBackupService {
     Future<List<GeoData>> Function(String projectId)? loadRecords,
     List<TrackingSession> Function()? trackingSessions,
     Future<Map<String, CollectionDraft>> Function()? loadDrafts,
+    Future<List<SyncConflict>> Function()? loadConflicts,
     Future<Directory> Function()? outputDir,
     DateTime Function()? now,
   })  : _loadProjects = loadProjects ?? StorageService().loadProjects,
         _loadRecords = loadRecords ?? StorageService().loadGeoData,
         _loadDrafts = loadDrafts ?? CollectionDraftService().listDrafts,
+        _loadConflicts = loadConflicts ??
+            (() => StorageService().getSyncConflicts()),
         _trackingSessions = trackingSessions ??
             (() => TrackingSessionManager.instance.activeSessions),
         _outputDir = outputDir ?? getTemporaryDirectory,
@@ -77,6 +85,7 @@ class LocalBackupService {
   final Future<List<GeoData>> Function(String projectId) _loadRecords;
   final List<TrackingSession> Function() _trackingSessions;
   final Future<Map<String, CollectionDraft>> Function() _loadDrafts;
+  final Future<List<SyncConflict>> Function() _loadConflicts;
   final Future<Directory> Function() _outputDir;
   final DateTime Function() _now;
 
@@ -235,6 +244,31 @@ class LocalBackupService {
                 {'type': 'FeatureCollection', 'features': features}));
       }
 
+      // Konflik sync: versi server yang belum dipilih user (logout menghapus
+      // tabelnya) — disimpan agar tak ada versi yang hilang.
+      List<SyncConflict> conflicts;
+      try {
+        conflicts = await _loadConflicts();
+      } catch (e, st) {
+        logError('Backup: could not read sync conflicts',
+            error: e, stack: st, tag: _tag);
+        conflicts = const [];
+      }
+      if (conflicts.isNotEmpty) {
+        _addText(
+            encoder,
+            'conflicts.json',
+            const JsonEncoder.withIndent('  ').convert(GeoExport.jsonSafe([
+              for (final c in conflicts)
+                {
+                  'geoDataId': c.geoDataId,
+                  'projectId': c.projectId,
+                  'detectedAt': c.detectedAt.toUtc().toIso8601String(),
+                  'serverVersion': c.serverJson,
+                },
+            ])));
+      }
+
       final manifest = {
         'app': 'Terestria',
         'appVersion': ApiConfig.appVersion,
@@ -249,6 +283,7 @@ class LocalBackupService {
           'missingPhotos': missing.length,
           'trackingSessions': sessions.length,
           'drafts': draftCount,
+          'conflicts': conflicts.length,
         },
         if (missing.isNotEmpty) 'missingPhotoPaths': missing,
       };
@@ -270,6 +305,7 @@ class LocalBackupService {
         trackingSessions: sessions.length,
         bytes: await file.length(),
         drafts: draftCount,
+        conflicts: conflicts.length,
       );
       logInfo('Backup created: $result', tag: _tag);
       if (missing.isNotEmpty) {
@@ -357,6 +393,8 @@ Contents
   projects/<name>/draft.json/.geojson  Unsaved collection draft (points and
                                 form values not saved as a record yet)
   drafts/<project id>.json      Drafts of projects no longer on the phone
+  conflicts.json                Server versions of records that were changed
+                                on the server AND on this phone (not resolved)
   tracking_sessions.json/.geojson  Tracking sessions that were not saved yet
 
 Send this file to your administrator so unsynced data can be recovered.
