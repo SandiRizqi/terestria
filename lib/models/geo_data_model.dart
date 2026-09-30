@@ -1,4 +1,6 @@
+import 'feature_style.dart';
 import 'json_parse.dart';
+import 'layer_model.dart';
 
 class GeoPoint {
   final double latitude;
@@ -141,6 +143,10 @@ class GeoData {
   /// ada / sudah berhasil.
   final String? lastSyncError;
 
+  /// Style tampilan feature ini (warna/ukuran/opacity) yang dipilih user;
+  /// null = ikut default Settings. Ikut sync (lihat `feature_style.dart`).
+  final LayerStyle? style;
+
   GeoData({
     required this.id,
     required this.projectId,
@@ -153,6 +159,7 @@ class GeoData {
     this.collectedBy,
     this.serverUpdatedAt,
     this.lastSyncError,
+    this.style,
   });
 
   Map<String, dynamic> toJson() {
@@ -169,6 +176,7 @@ class GeoData {
       if (serverUpdatedAt != null)
         'serverUpdatedAt': serverUpdatedAt!.toUtc().toIso8601String(),
       if (lastSyncError != null) 'lastSyncError': lastSyncError,
+      if (style != null) 'style': featureStyleToJson(style),
     };
   }
 
@@ -203,6 +211,8 @@ class GeoData {
       // Hanya dari JSON lokal (backup/draft); pull mengisinya dari updatedAt.
       serverUpdatedAt: parseDateTime(json['serverUpdatedAt']),
       lastSyncError: parseString(json['lastSyncError']),
+      // Lokal & server sama formatnya; rusak/tidak ada → null (default).
+      style: featureStyleFromJson(json['style']),
     );
   }
 
@@ -220,6 +230,8 @@ class GeoData {
     DateTime? serverUpdatedAt,
     String? lastSyncError,
     bool clearLastSyncError = false,
+    LayerStyle? style,
+    bool clearStyle = false,
   }) {
     return GeoData(
       id: id ?? this.id,
@@ -234,6 +246,7 @@ class GeoData {
       serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
       lastSyncError:
           clearLastSyncError ? null : (lastSyncError ?? this.lastSyncError),
+      style: clearStyle ? null : (style ?? this.style),
     );
   }
 }
