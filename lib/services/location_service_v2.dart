@@ -582,6 +582,10 @@ Future<bool> initialize({bool requestBackground = true}) async {
     logInfo('Connecting to Emlid at $host:$port (${coordinateFormat.name})',
         tag: 'EMLID');
     _addConsoleLog('Connecting to $host:$port...');
+    // Sesi lama berhenti total: auto-reconnect baru aktif lagi bila connect
+    // INI sukses. Tanpa ini, putus seketika memicu reconnect "hantu" dari
+    // sesi sebelumnya walau connect dilaporkan gagal.
+    _autoReconnect = false;
     _cancelReconnect();
     await _closeSocket();
     _coordinateFormat = coordinateFormat;
@@ -599,8 +603,10 @@ Future<bool> initialize({bool requestBackground = true}) async {
     _addConsoleLog('Waiting for data...');
     await Future.delayed(const Duration(seconds: 3));
     if (!_isEmlidConnected) {
+      _cancelReconnect();
       _addConsoleLog('✗ Connection lost right after connecting');
       logWarn('Emlid connection lost right after connecting', tag: 'EMLID');
+      _publishEmlidStatus();
       return false;
     }
     if (_bytesSinceConnect == 0) {
@@ -742,6 +748,14 @@ Future<bool> initialize({bool requestBackground = true}) async {
     });
     _publishEmlidStatus();
   }
+
+  /// Auto-reconnect aktif (sesudah connect sukses, sampai Disconnect).
+  @visibleForTesting
+  bool get autoReconnectEnabled => _autoReconnect;
+
+  /// Ada percobaan sambung ulang yang sedang menunggu.
+  @visibleForTesting
+  bool get isReconnectScheduled => _reconnectTimer?.isActive ?? false;
 
   void _cancelReconnect() {
     _reconnectTimer?.cancel();
