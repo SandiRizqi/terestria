@@ -865,9 +865,10 @@ class SyncService {
       final filterParam = _buildFormDataFilterParam(formDataFilters);
 
       // Watermark hanya boleh maju sejauh record yang TUNTAS (disimpan atau
-      // sengaja dilewati). Record gagal menahan watermark di updatedAt-nya
-      // (filter server inklusif → record itu ditarik lagi lain kali). Dulu
-      // watermark maju melewati record gagal → record hilang permanen.
+      // sengaja dilewati). Record gagal menahan watermark tepat SEBELUM
+      // updatedAt-nya, sehingga record itu ditarik lagi lain kali — baik server
+      // memfilter `>` maupun `>=`. Dulu watermark maju melewati record gagal →
+      // record hilang permanen.
       final tracker = PullWatermarkTracker();
 
       int savedCount = 0;
@@ -1217,9 +1218,11 @@ class SyncService {
 }
 
 /// Pelacak watermark delta-pull: maju hanya sejauh record yang tuntas, dan
-/// tertahan di record gagal paling awal (filter server inklusif → record itu
-/// diambil ulang). Record gagal tanpa waktu yang bisa dibaca menahan watermark
-/// sepenuhnya (lebih baik mengunduh ulang daripada kehilangan data).
+/// tertahan 1 µs SEBELUM record gagal paling awal — server lama memfilter
+/// `updated_at > watermark` (kontrak: `>=`), jadi watermark = waktu record
+/// gagal akan membuang record itu sendiri. Record gagal tanpa waktu yang bisa
+/// dibaca menahan watermark sepenuhnya (lebih baik mengunduh ulang daripada
+/// kehilangan data).
 class PullWatermarkTracker {
   DateTime? _maxHandled;
   DateTime? _earliestFailed;
@@ -1248,9 +1251,9 @@ class PullWatermarkTracker {
     if (_blocked) return previous;
     DateTime? candidate = _maxHandled;
     final failedAt = _earliestFailed;
-    if (failedAt != null &&
-        (candidate == null || failedAt.isBefore(candidate))) {
-      candidate = failedAt;
+    if (failedAt != null) {
+      final holdAt = failedAt.subtract(const Duration(microseconds: 1));
+      if (candidate == null || holdAt.isBefore(candidate)) candidate = holdAt;
     }
     if (candidate == null) return previous;
     if (previous != null && !candidate.isAfter(previous)) return previous;

@@ -37,6 +37,38 @@ class _FakeApi implements ApiService {
       super.noSuchMethod(invocation);
 }
 
+/// Server tiruan untuk pull: menyimpan record dan menerapkan filter
+/// `updated_after` PERSIS seperti backend (`updated_at > nilai`, lihat
+/// gis-backend `mobile/views.py` by_project). Dulu test memakai daftar respons
+/// berurutan yang mengabaikan query — bug watermark lolos karenanya.
+class _FakeServer implements ApiService {
+  final List<Map<String, dynamic>> records;
+  final List<DateTime?> requestedAfter = [];
+  _FakeServer(this.records);
+
+  @override
+  Future<http.Response> get(String endpoint,
+      {Map<String, String>? headers,
+      Map<String, dynamic>? queryParameters}) async {
+    final query = Uri.parse('http://server$endpoint').queryParameters;
+    final after = query['updated_after'] == null
+        ? null
+        : DateTime.parse(query['updated_after']!);
+    requestedAfter.add(after);
+    final data = [
+      for (final r in records)
+        if (after == null ||
+            DateTime.parse(r['updated_at'] as String).isAfter(after))
+          r,
+    ];
+    return _page(data);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
+
 class _FakeStorage implements StorageService {
   final Map<String, GeoData> existing = {};
   final List<GeoData> saved = [];
@@ -54,6 +86,7 @@ class _FakeStorage implements StorageService {
   Future<void> saveGeoData(GeoData geoData) async {
     if (failSaveFor.contains(geoData.id)) throw Exception('disk full');
     saved.add(geoData);
+    existing[geoData.id] = geoData;
   }
 
   @override
@@ -150,7 +183,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  SyncService sync(_FakeApi api, _FakeStorage storage) => SyncService.forTest(
+  SyncService sync(ApiService api, _FakeStorage storage) => SyncService.forTest(
         apiService: api,
         storageService: storage,
         photoSyncService: _FakePhotoSync(),
@@ -169,12 +202,22 @@ void main() {
       expect(t.nextWatermark(null), t3);
     });
 
-    test('record gagal menahan watermark di waktunya', () {
+    test('record gagal menahan watermark tepat SEBELUM waktunya', () {
       final t = PullWatermarkTracker()
         ..handled(t1)
         ..failed(t2)
         ..handled(t3);
-      expect(t.nextWatermark(null), t2);
+      // Server memfilter `updated_at > watermark`: watermark = t2 akan
+      // membuang record gagal itu sendiri. −1 µs → record itu ikut lagi.
+      expect(t.nextWatermark(null),
+          t2.subtract(const Duration(microseconds: 1)));
+    });
+
+    test('tahan sebelum record gagal tapi tak pernah mundur', () {
+      final t = PullWatermarkTracker()
+        ..failed(t1.add(const Duration(microseconds: 1)))
+        ..handled(t3);
+      expect(t.nextWatermark(t1), t1);
     });
 
     test('gagal tanpa waktu terbaca → watermark tak bergerak', () {
@@ -239,8 +282,36 @@ void main() {
       expect(result.success, isTrue);
       expect(result.data!['failed'], 1);
       final wm = await SyncWatermarkService().getLastPull('p1');
-      expect(wm!.isAtSameMomentAs(DateTime.utc(2026, 6, 15)), isTrue,
-          reason: 'watermark must stop at the failed record (inclusive)');
+      expect(
+          wm!.isAtSameMomentAs(DateTime.utc(2026, 6, 15)
+              .subtract(const Duration(microseconds: 1))),
+          isTrue,
+          reason: 'watermark must stop just before the failed record');
+    });
+
+    test(
+        'record yang gagal diambil ulang pada pull berikutnya '
+        '(server memfilter updated_at > watermark)', () async {
+      final server = _FakeServer([
+        _rec('ok1', '2026-06-10T00:00:00Z'),
+        _rec('bad', '2026-06-15T00:00:00Z'),
+        _rec('ok2', '2026-06-20T00:00:00Z'),
+      ]);
+      final storage = _FakeStorage()..failSaveFor.add('bad');
+      final s = sync(server, storage);
+
+      final first = await s.pullGeoDataFromServer('p1');
+      expect(first.data!['failed'], 1);
+      expect(storage.existing.keys, isNot(contains('bad')));
+
+      storage.failSaveFor.clear(); // mis. ruang penyimpanan sudah lega
+      final second = await s.pullGeoDataFromServer('p1');
+
+      expect(second.data!['failed'], 0);
+      expect(storage.existing.keys, contains('bad'),
+          reason: 'the failed record must be fetched again');
+      expect(server.requestedAfter.last!.isBefore(DateTime.utc(2026, 6, 15)),
+          isTrue);
     });
   });
 

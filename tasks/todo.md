@@ -4,7 +4,7 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-layers-logout.md](plan-layers
 Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per task, tanpa push/deploy
 
 ## Phase 1 — Watermark delta pull (Critical #1)
-- [ ] **T1 — Mobile: watermark tertahan sebelum record gagal** (S) — `failedAt − 1 µs`, fake server filter `>`, test pull kedua mengambil ulang
+- [x] **T1 — Mobile: watermark tertahan sebelum record gagal** (S) — `failedAt − 1 µs`, fake server filter `>`, test pull kedua mengambil ulang
 - [ ] **T2 — Backend: `updated_after` inklusif (`__gte`)** (S) — helper + test mock lokal + kasus batas di test DB (CI)
 
 ### Checkpoint 1

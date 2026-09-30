@@ -43,6 +43,13 @@ GET /mobile/geodata/by-project/?project_id=1772757095813&page=1&updated_after=20
    (lihat §4).
 5. Nilai waktu diperlakukan sebagai UTC.
 
+> **Catatan implementasi (30 Sep 2026).** Backend sempat memakai `>`
+> (`updated_at__gt`) — melanggar aturan 1 — sehingga record yang gagal disimpan
+> klien tak pernah terkirim lagi. Kini keduanya diperbaiki: backend memakai
+> `>=`, dan klien menahan watermark **1 µs sebelum** record gagal paling awal
+> (`PullWatermarkTracker`), sehingga record itu tetap diambil ulang baik server
+> memfilter `>` maupun `>=`.
+
 ---
 
 ## 2. Response — envelope
