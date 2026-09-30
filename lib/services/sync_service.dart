@@ -6,6 +6,7 @@ import 'api_service.dart';
 import '../config/api_config.dart';
 import '../models/geo_data_model.dart';
 import '../models/project_model.dart';
+import '../models/sync_conflict.dart';
 import '../models/form_field_model.dart';
 import '../models/json_parse.dart';
 import 'storage_service.dart';
@@ -53,6 +54,11 @@ class SyncService {
         _photoSyncService = photoSyncService ?? PhotoSyncService(),
         _connectivity = connectivity ?? ConnectivityService(),
         _watermark = watermark ?? SyncWatermarkService();
+
+  /// Pesan untuk record berkonflik (server & HP sama-sama mengubahnya).
+  static const String conflictMessage =
+      'Changed on the server by someone else — open the project to choose '
+      'which version to keep.';
 
   // ==================== EKSKLUSIVITAS ====================
 
@@ -224,6 +230,30 @@ class SyncService {
           success: false,
           message: 'Your session has expired. Sign in again to continue.',
           isAuthError: true,
+        );
+      }
+
+      if (response.statusCode == 409) {
+        // Server berubah sejak versi yang terakhir dilihat app: simpan versi
+        // server, jangan unggah ulang otomatis — user yang memilih.
+        final body = _decodeObject(response.body);
+        final serverJson = body?['data'];
+        await _storageService.saveSyncConflict(SyncConflict(
+          geoDataId: geoData.id,
+          projectId: geoData.projectId,
+          serverJson: serverJson is Map
+              ? Map<String, dynamic>.from(serverJson)
+              : <String, dynamic>{'id': geoData.id},
+          detectedAt: DateTime.now(),
+        ));
+        logWarn(
+            'Record ${geoData.id} was changed on the server — kept as a '
+            'conflict for the user to resolve',
+            tag: _tag);
+        return SyncResult(
+          success: false,
+          message: conflictMessage,
+          errorCode: 'conflict',
         );
       }
 
@@ -581,13 +611,37 @@ class SyncService {
       if (onlyIds != null) {
         pending = pending.where((g) => onlyIds.contains(g.id)).toList();
       }
-      if (pending.isEmpty) {
-        return BatchSyncResult(
-            total: 0, successCount: 0, failCount: 0, errors: const []);
-      }
-      return syncMultipleGeoData(pending, current, onProgress: onProgress);
+      // Record berkonflik menunggu keputusan user → tak diunggah otomatis.
+      final conflicted = {
+        for (final c
+            in await _storageService.getSyncConflicts(projectId: project.id))
+          c.geoDataId,
+      };
+      final skipped = pending.where((g) => conflicted.contains(g.id)).toList();
+      pending = pending.where((g) => !conflicted.contains(g.id)).toList();
+      final uploaded = pending.isEmpty
+          ? BatchSyncResult(
+              total: 0, successCount: 0, failCount: 0, errors: const [])
+          : await syncMultipleGeoData(pending, current, onProgress: onProgress);
+      return skipped.isEmpty
+          ? uploaded
+          : _withSkippedConflicts(uploaded, skipped);
     });
   }
+
+  /// Gabungkan record berkonflik yang dilewati ke hasil batch.
+  static BatchSyncResult _withSkippedConflicts(
+          BatchSyncResult r, List<GeoData> skipped) =>
+      BatchSyncResult(
+        total: r.total + skipped.length,
+        successCount: r.successCount,
+        failCount: r.failCount + skipped.length,
+        errors: [...r.errors, for (final _ in skipped) conflictMessage],
+        abortedDueToConnection: r.abortedDueToConnection,
+        abortedDueToAuth: r.abortedDueToAuth,
+        projectFailed: r.projectFailed,
+        failedIds: [...r.failedIds, for (final g in skipped) g.id],
+      );
 
   /// Sync all unsynced data to server (Upload)
   Future<FullSyncResult> syncAllUnsyncedData({
@@ -657,6 +711,10 @@ class SyncService {
       final projectCache = <String, Project?>{};
       // Project yang menolak data (nonaktif) → record berikutnya dilewati.
       final inactiveProjects = <String, String>{};
+      // Record berkonflik menunggu keputusan user → tak diunggah otomatis.
+      final conflicted = {
+        for (final c in await _storageService.getSyncConflicts()) c.geoDataId,
+      };
 
       for (var i = 0; i < unsyncedGeoData.length; i++) {
         final geoData = unsyncedGeoData[i];
@@ -678,6 +736,11 @@ class SyncService {
         if (failedProjectIds.contains(project.id) || !project.isSynced) {
           geoDataFail++;
           errors.add('Project ${project.name}: not uploaded yet');
+          continue;
+        }
+        if (conflicted.contains(geoData.id)) {
+          geoDataFail++;
+          errors.add('${project.name}: $conflictMessage');
           continue;
         }
         final inactive = inactiveProjects[project.id];
@@ -1082,8 +1145,20 @@ class SyncService {
               );
               savedCount++;
             } else if (!existingGeoData.isSynced) {
-              // Edit lokal belum ter-upload: JANGAN timpa. Upload berikutnya
-              // mengirim versi lokal ke server.
+              // Edit lokal belum ter-upload: JANGAN timpa.
+              final base = existingGeoData.serverUpdatedAt;
+              if (base != null && geoData.updatedAt.isAfter(base)) {
+                // Server JUGA berubah sejak versi yang dilihat app → konflik
+                // (user memilih). Tanpa base (record sebelum DB v6) tak bisa
+                // dibedakan dari upload kita sendiri → perilaku lama.
+                await _storageService.saveSyncConflict(SyncConflict(
+                  geoDataId: geoData.id,
+                  projectId: geoData.projectId,
+                  serverJson: Map<String, dynamic>.from(raw as Map),
+                  detectedAt: DateTime.now(),
+                ));
+                await _recordSyncError(geoData.id, conflictMessage);
+              }
               conflictCount++;
               logWarn(
                   'Record ${geoData.id} has unsynced local changes; '
@@ -1184,6 +1259,72 @@ class SyncService {
       );
     }
   }
+
+  // ==================== KONFLIK ====================
+
+  /// "Keep mine": unggah versi di HP menimpa versi server (`force`).
+  /// Berhasil → konflik selesai; gagal → konflik tetap (dicoba lagi nanti).
+  Future<SyncResult> resolveKeepMine(String geoDataId) =>
+      runExclusive(() async {
+        final local = await _storageService.getGeoDataById(geoDataId);
+        if (local == null) {
+          await _storageService.deleteSyncConflict(geoDataId);
+          return SyncResult(
+              success: false,
+              message: 'This record no longer exists on this phone.');
+        }
+        final project = await _storageService.getProjectById(local.projectId);
+        if (project == null) {
+          return SyncResult(
+              success: false,
+              message: 'The project of this record is not on this phone.');
+        }
+        final result = await _syncGeoData(local, project, force: true);
+        if (result.success) {
+          await _storageService.deleteSyncConflict(geoDataId);
+          logInfo('Conflict $geoDataId resolved: kept the phone version',
+              tag: _tag);
+        }
+        return result;
+      });
+
+  /// "Use server version": ganti versi di HP dengan versi server (tersinkron).
+  Future<SyncResult> resolveUseServer(String geoDataId) =>
+      runExclusive(() async {
+        final conflict = await _storageService.getSyncConflict(geoDataId);
+        final server = conflict?.serverVersion;
+        if (conflict == null || server == null) {
+          return SyncResult(
+              success: false,
+              message: 'The server version of this record is not available. '
+                  'Sync again to download it.');
+        }
+        try {
+          final project =
+              await _storageService.getProjectById(conflict.projectId);
+          final formData = await _photoSyncService.processFormDataForPull(
+              server.formData, project);
+          await _storageService.saveGeoData(server.copyWith(
+            formData: formData,
+            isSynced: true,
+            syncedAt: DateTime.now(),
+            serverUpdatedAt: server.updatedAt,
+            clearLastSyncError: true,
+          ));
+        } catch (e, st) {
+          logError('Could not apply the server version of $geoDataId',
+              tag: _tag, error: e, stack: st);
+          return SyncResult(
+              success: false,
+              message: 'Could not download the server version. Check the '
+                  'connection and try again.');
+        }
+        await _storageService.deleteSyncConflict(geoDataId);
+        logInfo('Conflict $geoDataId resolved: used the server version',
+            tag: _tag);
+        return SyncResult(
+            success: true, message: 'Replaced with the server version.');
+      });
 
   /// Two-way sync: Upload local changes and download server changes
   /// (eksklusif; langkah di dalamnya berjalan reentrant).
@@ -1414,6 +1555,9 @@ class SyncResult {
 
   /// Kode error dari server (`project_inactive`, `conflict`, …) bila ada.
   final String? errorCode;
+
+  /// Record berubah di server sejak versi yang dilihat app (409).
+  bool get isConflict => errorCode == 'conflict';
 
   SyncResult({
     required this.success,

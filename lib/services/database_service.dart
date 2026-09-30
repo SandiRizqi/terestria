@@ -5,6 +5,7 @@ import '../models/project_model.dart';
 import '../models/geo_data_model.dart';
 import '../models/form_field_model.dart';
 import '../models/notification_model.dart';
+import '../models/sync_conflict.dart';
 import '../utils/app_logger.dart';
 import 'tracking/session_repository.dart';
 
@@ -480,7 +481,66 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [geoDataId],
     );
+    await db.delete('sync_conflicts',
+        where: 'geoDataId = ?', whereArgs: [geoDataId]);
   }
+
+  // ==================== SYNC CONFLICTS ====================
+
+  Future<void> saveSyncConflict(SyncConflict conflict) async {
+    final db = await database;
+    await db.insert(
+      'sync_conflicts',
+      {
+        'geoDataId': conflict.geoDataId,
+        'projectId': conflict.projectId,
+        'serverJson': jsonEncode(conflict.serverJson),
+        'detectedAt': conflict.detectedAt.millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<SyncConflict?> getSyncConflict(String geoDataId) async {
+    final db = await database;
+    final rows = await db.query('sync_conflicts',
+        where: 'geoDataId = ?', whereArgs: [geoDataId], limit: 1);
+    return rows.isEmpty ? null : _syncConflictFromRow(rows.first);
+  }
+
+  Future<List<SyncConflict>> getSyncConflicts({String? projectId}) async {
+    final db = await database;
+    final rows = await db.query(
+      'sync_conflicts',
+      where: projectId == null ? null : 'projectId = ?',
+      whereArgs: projectId == null ? null : [projectId],
+      orderBy: 'detectedAt DESC',
+    );
+    return _mapRows(rows, _syncConflictFromRow, 'sync conflict');
+  }
+
+  Future<int> getSyncConflictCount() async {
+    final db = await database;
+    final result =
+        await db.rawQuery('SELECT COUNT(*) AS count FROM sync_conflicts');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<void> deleteSyncConflict(String geoDataId) async {
+    final db = await database;
+    await db.delete('sync_conflicts',
+        where: 'geoDataId = ?', whereArgs: [geoDataId]);
+  }
+
+  static SyncConflict _syncConflictFromRow(Map<String, dynamic> row) =>
+      SyncConflict(
+        geoDataId: row['geoDataId'] as String,
+        projectId: row['projectId'] as String,
+        serverJson: Map<String, dynamic>.from(
+            jsonDecode(row['serverJson'] as String) as Map),
+        detectedAt:
+            DateTime.fromMillisecondsSinceEpoch(row['detectedAt'] as int),
+      );
 
   Future<void> updateGeoDataSyncStatus(String geoDataId, bool isSynced, {DateTime? syncedAt}) async {
     final db = await database;

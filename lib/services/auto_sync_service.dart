@@ -78,7 +78,10 @@ class AutoSyncService {
 
   static Future<int> _defaultPendingCount() async {
     final storage = StorageService();
-    return await storage.getUnsyncedGeoDataCount() +
+    // Record berkonflik menunggu keputusan user — bukan antrean otomatis.
+    final records = await storage.getUnsyncedGeoDataCount() -
+        await storage.getSyncConflictCount();
+    return (records < 0 ? 0 : records) +
         await storage.getUnsyncedProjectCount();
   }
 

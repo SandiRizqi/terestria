@@ -1,5 +1,6 @@
 import '../models/project_model.dart';
 import '../models/geo_data_model.dart';
+import '../models/sync_conflict.dart';
 import 'database_service.dart';
 
 /// Storage Service - Now using SQLite for better performance and scalability
@@ -72,6 +73,21 @@ class StorageService {
   /// Alasan push terakhir gagal untuk record [id] (null = kosongkan).
   Future<void> setGeoDataSyncError(String id, String? message) =>
       _db.setGeoDataSyncError(id, message);
+
+  /// Konflik sync (versi server yang menunggu keputusan user).
+  Future<void> saveSyncConflict(SyncConflict conflict) =>
+      _db.saveSyncConflict(conflict);
+
+  Future<SyncConflict?> getSyncConflict(String geoDataId) =>
+      _db.getSyncConflict(geoDataId);
+
+  Future<List<SyncConflict>> getSyncConflicts({String? projectId}) =>
+      _db.getSyncConflicts(projectId: projectId);
+
+  Future<int> getSyncConflictCount() => _db.getSyncConflictCount();
+
+  Future<void> deleteSyncConflict(String geoDataId) =>
+      _db.deleteSyncConflict(geoDataId);
 
   /// Load all geo data for a specific project
   Future<List<GeoData>> loadGeoData(String projectId) async {

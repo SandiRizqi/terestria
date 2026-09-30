@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
+import 'package:geoform_app/models/sync_conflict.dart';
 import 'package:geoform_app/services/api_service.dart';
 import 'package:geoform_app/services/connectivity_service.dart';
 import 'package:geoform_app/services/photo_sync_service.dart';
@@ -63,6 +64,9 @@ class _Storage implements StorageService {
 
   @override
   Future<List<Project>> getUnsyncedProjects() async => [];
+
+  @override
+  Future<List<SyncConflict>> getSyncConflicts({String? projectId}) async => [];
 
   @override
   Future<List<Project>> loadProjects() async => [];
