@@ -7,7 +7,7 @@ Baseline mobile: `flutter test` 641 lulus, `flutter analyze` 0 error dan 29 warn
 ## Fase 1 — Kontrak & data
 - [x] T1 (backend, gis-backend `d54d508`): `GeoData.style`, migrasi `0021` (manual), `clean_style`, serializer (tidak valid → dibuang, key tidak ada → dipertahankan, `null` → hapus), `to_mobile_json`. Test mock + test DB di CI.
 - [x] T2: `feature_style.dart` (hex JSON, clamp, nilai awal dari Settings) + `GeoData.style`.
-- [ ] T3: DB v7 (kolom `style`, migrasi idempoten) + draft menyimpan style.
+- [x] T3: DB v7 (kolom `style`, migrasi idempoten) + draft menyimpan style.
 - [ ] T4: push selalu mengirim `style`; pull (objek/`null`/tanpa key); "Use server" membawa style; `docs/sync-push-contract.md`.
 
 ### Checkpoint A

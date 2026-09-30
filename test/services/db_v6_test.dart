@@ -21,8 +21,8 @@ GeoData _geo({DateTime? serverUpdatedAt, String? lastSyncError}) => GeoData(
     );
 
 void main() {
-  test('versi DB naik ke 6', () {
-    expect(DatabaseService.schemaVersion, 6);
+  test('versi DB minimal 6', () {
+    expect(DatabaseService.schemaVersion, greaterThanOrEqualTo(6));
   });
 
   group('missingColumns (migrasi v6 idempoten)', () {

@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/feature_style.dart';
 import '../models/geo_data_model.dart';
+import '../models/layer_model.dart';
 import '../utils/app_logger.dart';
 
 /// Draft pengambilan data per project: titik manual (mode point/drawing,
@@ -16,10 +18,15 @@ class CollectionDraft {
   final Map<String, dynamic> formData;
   final DateTime savedAt;
 
+  /// Style feature yang sedang dipilih di form (null = default). Tidak
+  /// membuat draft "berisi" sendirian — lihat [isEmpty].
+  final LayerStyle? style;
+
   const CollectionDraft({
     required this.points,
     required this.formData,
     required this.savedAt,
+    this.style,
   });
 
   bool get isEmpty => points.isEmpty && formData.isEmpty;
@@ -28,6 +35,7 @@ class CollectionDraft {
         'points': points.map((p) => p.toJson()).toList(),
         'formData': formData,
         'savedAt': savedAt.toUtc().toIso8601String(),
+        if (style != null) 'style': featureStyleToJson(style),
       };
 
   factory CollectionDraft.fromJson(Map<String, dynamic> json) {
@@ -42,6 +50,7 @@ class CollectionDraft {
       formData: rawForm is Map ? Map<String, dynamic>.from(rawForm) : {},
       savedAt: DateTime.tryParse(json['savedAt']?.toString() ?? '')?.toLocal() ??
           DateTime.now(),
+      style: featureStyleFromJson(json['style']),
     );
   }
 }
@@ -67,6 +76,7 @@ class CollectionDraftService {
     String projectId, {
     required List<GeoPoint> points,
     required Map<String, dynamic> formData,
+    LayerStyle? style,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -74,6 +84,7 @@ class CollectionDraftService {
         points: points,
         formData: _sanitize(formData),
         savedAt: DateTime.now(),
+        style: style,
       );
       if (draft.isEmpty) {
         await prefs.remove('$_prefix$projectId');

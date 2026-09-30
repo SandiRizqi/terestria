@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/project_model.dart';
+import '../models/feature_style.dart';
 import '../models/geo_data_model.dart';
 import '../models/form_field_model.dart';
+import '../models/layer_model.dart';
 import '../models/notification_model.dart';
 import '../models/sync_conflict.dart';
 import '../utils/app_logger.dart';
@@ -23,7 +25,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 6;
+  static const int _databaseVersion = 7;
 
   /// Versi skema DB (dicantumkan di info log diagnostik).
   static const int schemaVersion = _databaseVersion;
@@ -115,6 +117,7 @@ class DatabaseService {
         collectedBy TEXT NOT NULL,
         serverUpdatedAt INTEGER,
         lastSyncError TEXT,
+        style TEXT,
         FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
       )
     ''');
@@ -273,6 +276,15 @@ class DatabaseService {
             'ALTER TABLE geo_data ADD COLUMN $column ${types[column]}');
       }
       await _createSyncConflictsTable(db);
+    }
+
+    if (oldVersion < 7) {
+      // Style per feature (JSON, null = ikut default Settings). Hanya MENAMBAH
+      // kolom — data lama utuh (style null).
+      final info = await db.rawQuery('PRAGMA table_info(geo_data)');
+      if (missingColumns(info, const ['style']).isNotEmpty) {
+        await db.execute('ALTER TABLE geo_data ADD COLUMN style TEXT');
+      }
     }
   }
 
@@ -447,6 +459,10 @@ class DatabaseService {
         // milidetik akan membuat setiap push dianggap konflik.
         'serverUpdatedAt': geoData.serverUpdatedAt?.microsecondsSinceEpoch,
         'lastSyncError': geoData.lastSyncError,
+        // JSON kontrak style (lihat feature_style.dart); null = default.
+        'style': geoData.style == null
+            ? null
+            : jsonEncode(featureStyleToJson(geoData.style)),
       };
 
   Future<List<GeoData>> loadGeoData(String projectId) async {
@@ -734,7 +750,19 @@ class DatabaseService {
               isUtc: true)
           : null,
       lastSyncError: map['lastSyncError'] as String?,
+      style: _styleFromColumn(map['style']),
     );
+  }
+
+  /// Kolom `style` → style; kosong/rusak → null (ikut default) tanpa membuat
+  /// record gagal dibaca.
+  static LayerStyle? _styleFromColumn(Object? raw) {
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      return featureStyleFromJson(jsonDecode(raw));
+    } on FormatException {
+      return null;
+    }
   }
 
   // ==================== NOTIFICATION OPERATIONS ====================
