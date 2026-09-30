@@ -20,6 +20,36 @@ FullSyncResult _result({int ok = 1, int fail = 0, bool offline = false}) =>
     );
 
 void main() {
+  test('reset() (logout) menghapus backoff & status run terakhir user lama',
+      () async {
+    var runs = 0;
+    final svc = AutoSyncService(
+      isOnline: () => true,
+      onlineChanges: const Stream<bool>.empty(),
+      syncAll: () async {
+        runs++;
+        return _result(ok: 0, fail: 1);
+      },
+      isSyncing: ValueNotifier(false),
+      enabled: () => true,
+      pendingCount: () async => 1,
+      authBlocked: () => false,
+      loggedIn: () async => true,
+      now: () => DateTime(2026, 9, 30, 8),
+    );
+
+    expect(await svc.runNow('test'), isTrue); // gagal → backoff 1 menit
+    expect(svc.lastRun.value?.ok, isFalse);
+    expect(await svc.runNow('test'), isFalse, reason: 'backing off');
+
+    svc.reset();
+
+    expect(svc.lastRun.value, isNull);
+    expect(await svc.runNow('test'), isTrue,
+        reason: 'the next user must not inherit the backoff');
+    expect(runs, 2);
+  });
+
   test('backoffFor: 0, 1, 2, 4 … maks 30 menit', () {
     expect(AutoSyncService.backoffFor(0), Duration.zero);
     expect(AutoSyncService.backoffFor(1), const Duration(minutes: 1));

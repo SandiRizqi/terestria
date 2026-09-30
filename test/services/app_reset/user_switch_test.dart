@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/app_reset/app_reset_service.dart';
 import 'package:geoform_app/services/auth_service.dart';
+import 'package:geoform_app/services/auto_sync_service.dart';
 import 'package:geoform_app/services/basemap_service.dart';
 import 'package:geoform_app/services/database_service.dart';
 import 'package:geoform_app/services/layer_service.dart';
@@ -117,6 +118,9 @@ void main() {
       updatedAt: DateTime(2026),
     ));
 
+    AutoSyncService.instance.lastRun.value =
+        AutoSyncRun(at: DateTime(2026, 9, 1), ok: false, summary: 'A failed');
+
     // ── Logout A ──
     final report = await AppResetService().reset();
 
@@ -137,6 +141,8 @@ void main() {
     expect(await SyncWatermarkService().getLastPull('p1'), isNull);
     expect(await PinnedValuesService().loadPinnedValues('p1'), isEmpty);
     expect(TrackingSessionManager.instance.activeCount, 0);
+    expect(AutoSyncService.instance.lastRun.value, isNull,
+        reason: "user A's auto-sync status must not be shown to user B");
 
     // Berkas: Documents & Temp kosong; di folder bersama hanya milik app.
     expect(docs.listSync(), isEmpty);

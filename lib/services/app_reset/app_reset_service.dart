@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../utils/app_logger.dart';
 import '../auth_service.dart';
+import '../auto_sync_service.dart';
 import '../crashlytics_service.dart';
 import '../database_service.dart';
 import '../fcm_token_service.dart';
@@ -99,7 +100,8 @@ List<String> get standardResetStepNames =>
 /// 4. auth — logout + lepas topic scope FCM (butuh token & daftar topic di
 ///    prefs, jadi sebelum preferences);
 /// 5. accounts — state user di singleton: topic notifikasi, token FCM
-///    tercatat, auth token FCM, user Crashlytics, graf routing;
+///    tercatat, auth token FCM, user Crashlytics, graf routing, riwayat
+///    auto-sync;
 /// 6. databases — koneksi SQLite ditutup & DB utama DIKUNCI sebelum berkasnya
 ///    dihapus (penulis terlambat gagal, tak membuat DB baru berisi data lama);
 /// 7. files — Documents & Temp dikosongkan; di folder yang juga dipakai
@@ -146,6 +148,7 @@ Future<void> _resetAccountState() async {
   final parts = <String, Future<void> Function()>{
     'registered FCM token': () async => FCMTokenService().forgetRegisteredToken(),
     'routing graph': () async => RoutingService().resetForLogout(),
+    'auto-sync state': () async => AutoSyncService.instance.reset(),
     'FCM auth token': () async => FirebaseMessagingService().clearAuthToken(),
     'notification topics': () => NotificationTopicService()
         .resetForLogout()

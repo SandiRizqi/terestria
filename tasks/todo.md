@@ -19,7 +19,7 @@ Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per ta
 - [ ] Test hijau; device: pull lalu logout cepat → user B bersih; draft muncul di dialog & cadangan
 
 ## Phase 3 — Perbaikan kecil
-- [ ] **T6 — Reset state auto-sync saat logout** (S)
+- [x] **T6 — Reset state auto-sync saat logout** (S)
 - [ ] **T7 — Hasil share cadangan diperiksa (dismissed → peringatan)** (S)
 - [ ] **T8 — Emlid: connect baru mematikan auto-reconnect lama** (S)
 - [ ] **T9 — Edit record mempertahankan `serverKey` foto hasil sync** (S)

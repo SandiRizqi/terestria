@@ -111,6 +111,15 @@ class AutoSyncService {
     logDebug('Auto-sync watcher stopped', tag: _tag);
   }
 
+  /// Lupakan riwayat user yang logout: hitungan gagal (backoff) dan status
+  /// run terakhir — user berikutnya tak mewarisi jeda sampai 30 menit maupun
+  /// status "sync terakhir gagal" milik user lama.
+  void reset() {
+    _failures = 0;
+    _lastFailureAt = null;
+    lastRun.value = null;
+  }
+
   void _onSettingsChanged() {
     if (_enabled() && _isOnline()) schedule('enabled');
   }
