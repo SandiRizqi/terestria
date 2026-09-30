@@ -1,7 +1,6 @@
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/layer_model.dart';
@@ -12,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
 import '../../widgets/layers/shapefile_picker_dialog.dart';
+import '../../widgets/style/style_editor.dart';
 
 class LayersScreen extends StatefulWidget {
   const LayersScreen({Key? key}) : super(key: key);
@@ -453,41 +453,8 @@ class _StyleEditorSheetState extends State<_StyleEditorSheet> {
     super.dispose();
   }
 
-  void _pickColor(Color current, ValueChanged<Color> onChanged) {
-    Color temp = current;
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Pick Color'),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: temp,
-            onColorChanged: (c) => temp = c,
-            enableAlpha: false,
-            labelTypes: const [],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              onChanged(temp);
-              Navigator.pop(context);
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isPoint = widget.layer.geometryType == 'Point';
-    final isLine = widget.layer.geometryType == 'LineString';
-
     return DraggableScrollableSheet(
       initialChildSize: 0.78,
       maxChildSize: 0.94,
@@ -532,7 +499,7 @@ class _StyleEditorSheetState extends State<_StyleEditorSheet> {
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
                 children: [
                   // Name
-                  _SectionLabel('Layer Name'),
+                  const StyleSectionLabel('Layer Name'),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _nameCtrl,
@@ -541,7 +508,7 @@ class _StyleEditorSheetState extends State<_StyleEditorSheet> {
                   ),
 
                   const SizedBox(height: 20),
-                  _SectionLabel('Geometry Type'),
+                  const StyleSectionLabel('Geometry Type'),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -558,88 +525,16 @@ class _StyleEditorSheetState extends State<_StyleEditorSheet> {
                   ),
 
                   const SizedBox(height: 20),
-                  _SectionLabel(isLine ? 'Line Color' : 'Fill Color'),
-                  const SizedBox(height: 8),
-                  _ColorRow(
-                    color: isLine ? _style.strokeColor : _style.fillColor,
-                    onTap: () {
-                      final cur = isLine
-                          ? _style.strokeColor
-                          : _style.fillColor;
-                      _pickColor(cur, (c) {
-                        setState(() {
-                          _style = isLine
-                              ? _style.copyWith(strokeColor: c)
-                              : _style.copyWith(
-                                  fillColor: c, strokeColor: c);
-                        });
-                      });
-                    },
+                  StyleEditorFields(
+                    style: _style,
+                    geometry:
+                        styleGeometryForLayer(widget.layer.geometryType),
+                    onChanged: (s) => setState(() => _style = s),
                   ),
-
-                  if (!isLine && !isPoint) ...[
-                    const SizedBox(height: 20),
-                    _SectionLabel('Border Color'),
-                    const SizedBox(height: 8),
-                    _ColorRow(
-                      color: _style.strokeColor,
-                      onTap: () => _pickColor(
-                          _style.strokeColor,
-                          (c) => setState(
-                              () => _style =
-                                  _style.copyWith(strokeColor: c))),
-                    ),
-                  ],
-
-                  const SizedBox(height: 20),
-                  _SectionLabel(
-                      isLine ? 'Opacity' : 'Fill Opacity'),
-                  const SizedBox(height: 4),
-                  _SliderRow(
-                    value: _style.fillOpacity,
-                    min: 0.05, max: 1.0, divisions: 19,
-                    label:
-                        '${(_style.fillOpacity * 100).round()}%',
-                    onChanged: (v) => setState(() =>
-                        _style = _style.copyWith(fillOpacity: v)),
-                  ),
-
-                  if (!isPoint) ...[
-                    const SizedBox(height: 12),
-                    _SectionLabel('Line Width'),
-                    const SizedBox(height: 4),
-                    _SliderRow(
-                      value: _style.strokeWidth,
-                      min: 0.5, max: 10.0, divisions: 19,
-                      label: _style.strokeWidth.toStringAsFixed(1),
-                      onChanged: (v) => setState(() =>
-                          _style = _style.copyWith(strokeWidth: v)),
-                    ),
-                  ],
-
-                  if (isPoint) ...[
-                    const SizedBox(height: 12),
-                    _SectionLabel('Point Size'),
-                    const SizedBox(height: 4),
-                    _SliderRow(
-                      value: _style.pointSize,
-                      min: 4.0, max: 20.0, divisions: 16,
-                      label: _style.pointSize.toStringAsFixed(0),
-                      onChanged: (v) => setState(() =>
-                          _style = _style.copyWith(pointSize: v)),
-                    ),
-                  ],
-
-                  const SizedBox(height: 16),
-                  _SectionLabel('Preview'),
-                  const SizedBox(height: 8),
-                  _StylePreview(
-                      style: _style,
-                      geometryType: widget.layer.geometryType),
 
                   if (widget.propKeys.isNotEmpty) ...[
                     const SizedBox(height: 20),
-                    _SectionLabel('Label Field'),
+                    const StyleSectionLabel('Label Field'),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String?>(
                       value: _labelField,
@@ -694,154 +589,6 @@ class _StyleEditorSheetState extends State<_StyleEditorSheet> {
 // ─────────────────────────────────────────────
 // Reusable sub-widgets
 // ─────────────────────────────────────────────
-
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  const _SectionLabel(this.label);
-  @override
-  Widget build(BuildContext context) => Text(label,
-      style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[600],
-          letterSpacing: 0.4));
-}
-
-class _ColorRow extends StatelessWidget {
-  final Color color;
-  final VoidCallback onTap;
-  const _ColorRow({required this.color, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8)),
-          child: Row(children: [
-            Container(
-              width: 24, height: 24,
-              decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.grey[400]!)),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
-              style: const TextStyle(
-                  fontFamily: 'monospace', fontSize: 13),
-            ),
-            const Spacer(),
-            Icon(Icons.colorize, size: 18, color: Colors.grey[600]),
-          ]),
-        ),
-      );
-}
-
-class _SliderRow extends StatelessWidget {
-  final double value, min, max;
-  final int divisions;
-  final String label;
-  final ValueChanged<double> onChanged;
-  const _SliderRow(
-      {required this.value,
-      required this.min,
-      required this.max,
-      required this.divisions,
-      required this.label,
-      required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) => Row(children: [
-        Expanded(
-            child: Slider(
-                value: value,
-                min: min,
-                max: max,
-                divisions: divisions,
-                onChanged: onChanged)),
-        SizedBox(
-            width: 48,
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w500),
-                textAlign: TextAlign.end)),
-      ]);
-}
-
-class _StylePreview extends StatelessWidget {
-  final LayerStyle style;
-  final String geometryType;
-  const _StylePreview(
-      {required this.style, required this.geometryType});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        height: 70,
-        decoration: BoxDecoration(
-            color: Colors.grey[100],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300]!)),
-        child: Center(
-            child: CustomPaint(
-                size: const Size(200, 50),
-                painter: _PreviewPainter(
-                    style: style, type: geometryType))),
-      );
-}
-
-class _PreviewPainter extends CustomPainter {
-  final LayerStyle style;
-  final String type;
-  const _PreviewPainter({required this.style, required this.type});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final fill = Paint()
-      ..color = style.fillColor.withOpacity(style.fillOpacity)
-      ..style = PaintingStyle.fill;
-    final stroke = Paint()
-      ..color = style.strokeColor
-      ..strokeWidth = style.strokeWidth.clamp(1.0, 4.0)
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-
-    if (type == 'Point') {
-      final r = style.pointSize.clamp(4.0, 18.0);
-      canvas.drawCircle(Offset(cx, cy), r, fill);
-      canvas.drawCircle(Offset(cx, cy), r, stroke);
-    } else if (type == 'LineString') {
-      canvas.drawPath(
-          Path()
-            ..moveTo(20, cy + 8)
-            ..lineTo(cx - 20, cy - 8)
-            ..lineTo(cx + 20, cy + 8)
-            ..lineTo(size.width - 20, cy - 8),
-          stroke);
-    } else {
-      final rr = RRect.fromRectAndRadius(
-          Rect.fromCenter(
-              center: Offset(cx, cy),
-              width: size.width - 40,
-              height: size.height - 12),
-          const Radius.circular(4));
-      canvas.drawRRect(rr, fill);
-      canvas.drawRRect(rr, stroke);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_PreviewPainter o) =>
-      o.style != style || o.type != type;
-}
 
 class _TypeBadge extends StatelessWidget {
   final String type;
