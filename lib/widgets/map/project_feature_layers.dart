@@ -7,6 +7,7 @@ import '../../models/geo_data_model.dart';
 import '../../models/layer_model.dart';
 import '../../models/project_model.dart';
 import '../../models/settings/app_settings.dart';
+import '../../services/map/feature_hit_test.dart';
 
 /// Gambar feature project di peta (peta project & layar navigasi) dengan style
 /// masing-masing: style record bila ada, selain itu default dari Settings —
@@ -80,4 +81,55 @@ Marker featurePointMarker(
     height: diameter + 4,
     child: child,
   );
+}
+
+/// Feature project yang kena tap di [tap] (select langsung, tanpa ikon info
+/// di tengah feature). Urutan hasil sesuai [hitFeatures]: point terdekat →
+/// line terdekat → polygon terkecil.
+///
+/// - [toScreen]: proyeksi kamera peta (LatLng → piksel layar, termasuk
+///   rotasi) — tap & feature diproyeksikan dengan fungsi yang sama.
+/// - [viewport]: hanya feature yang bbox-nya bersinggungan dengan layar yang
+///   diuji (polygon besar yang di-zoom dari dalam tetap ikut).
+/// - [features]: yang TAMPIL di peta — untuk point, pemanggil hanya memberi
+///   marker yang tampil sendiri (bukan di dalam cluster; tap cluster sudah
+///   ditangani cluster itu dengan zoom-in).
+List<GeoData> projectFeaturesAtTap({
+  required LatLng tap,
+  required Iterable<GeoData> features,
+  required GeometryType type,
+  required AppSettings settings,
+  required Offset Function(LatLng point) toScreen,
+  LatLngBounds? viewport,
+  double tolerance = defaultHitTolerance,
+}) {
+  final shapes = <HitShape<GeoData>>[];
+  for (final data in features) {
+    if (viewport != null && !_bboxIntersects(data, viewport)) continue;
+    final style = effectiveFeatureStyle(data, type, settings);
+    final shape = hitShapeFor(
+      data,
+      type,
+      (p) => toScreen(LatLng(p.latitude, p.longitude)),
+      pointRadius: featurePointDiameter(style) / 2,
+    );
+    if (shape != null) shapes.add(shape);
+  }
+  return hitFeatures(toScreen(tap), shapes, tolerance: tolerance);
+}
+
+bool _bboxIntersects(GeoData data, LatLngBounds viewport) {
+  if (data.points.isEmpty) return false;
+  var minLat = double.infinity, maxLat = -double.infinity;
+  var minLng = double.infinity, maxLng = -double.infinity;
+  for (final p in data.points) {
+    if (p.latitude < minLat) minLat = p.latitude;
+    if (p.latitude > maxLat) maxLat = p.latitude;
+    if (p.longitude < minLng) minLng = p.longitude;
+    if (p.longitude > maxLng) maxLng = p.longitude;
+  }
+  return !(maxLat < viewport.south ||
+      minLat > viewport.north ||
+      maxLng < viewport.west ||
+      minLng > viewport.east);
 }

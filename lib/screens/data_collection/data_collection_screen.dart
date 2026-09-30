@@ -52,6 +52,7 @@ import '../../utils/ui_feedback.dart';
 import '../../widgets/readiness/daily_readiness_check.dart';
 import '../readiness/field_readiness_screen.dart';
 import '../../widgets/collection/gps_status_banners.dart';
+import '../../widgets/map/feature_pick_sheet.dart';
 import '../../widgets/map/project_feature_layers.dart';
 import '../../widgets/style/feature_style_section.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -155,6 +156,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
   // P0+P1: Cached layers — computed once after data load, not on every build
   List<Marker> _cachedMarkers = [];
+
+  /// Marker point → record-nya (identitas objek), untuk tap langsung: hanya
+  /// marker yang tampil sendiri (bukan di dalam cluster) yang bisa dipilih.
+  Map<Marker, GeoData> _markerData = Map.identity();
   List<Polyline> _cachedPolylines = [];
   List<Polygon> _cachedPolygons = [];
 
@@ -975,11 +980,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     final markers = <Marker>[];
     final polylines = <Polyline>[];
     final polygons = <Polygon>[];
+    final markerData = Map<Marker, GeoData>.identity();
 
-    // Ukuran marker info di tengah line/polygon — proporsional dengan pointSize.
-    final markerDiameter = (s.pointSize * 2).clamp(20.0, 48.0);
-    final infoIconSize = (markerDiameter * 0.7).clamp(14.0, 26.0);
-
+    // Feature dipilih dengan tap langsung (_onMapTap → hit-test), jadi tidak
+    // ada ikon info di tengah line/polygon dan marker point tidak menangkap
+    // tap sendiri (point bertumpuk ikut masuk daftar pilihan).
     for (final data in _existingData) {
       // Style record; null → default Settings (tampil seperti sebelumnya).
       final style =
@@ -987,84 +992,28 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       switch (widget.project.geometryType) {
         case GeometryType.point:
           if (data.points.isNotEmpty) {
-            markers.add(featurePointMarker(data, style,
-                onTap: () => _onExistingDataTap(data)));
+            final marker = featurePointMarker(data, style);
+            markers.add(marker);
+            markerData[marker] = data;
           }
           break;
 
         case GeometryType.line:
           if (data.points.isNotEmpty) {
             polylines.add(featurePolyline(data, style));
-            final centerIndex = data.points.length ~/ 2;
-            markers.add(Marker(
-              point: LatLng(
-                data.points[centerIndex].latitude,
-                data.points[centerIndex].longitude,
-              ),
-              width: markerDiameter + 4,
-              height: markerDiameter + 4,
-              child: GestureDetector(
-                onTap: () => _onExistingDataTap(data),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: style.strokeColor, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(Icons.info, color: style.strokeColor,
-                      size: infoIconSize),
-                ),
-              ),
-            ));
           }
           break;
 
         case GeometryType.polygon:
           if (data.points.length >= 3) {
             polygons.add(featurePolygon(data, style));
-            // Hitung centroid sekali saja di sini, bukan di setiap build()
-            double sumLat = 0, sumLng = 0;
-            for (final p in data.points) {
-              sumLat += p.latitude;
-              sumLng += p.longitude;
-            }
-            markers.add(Marker(
-              point: LatLng(sumLat / data.points.length, sumLng / data.points.length),
-              width: markerDiameter + 4,
-              height: markerDiameter + 4,
-              child: GestureDetector(
-                onTap: () => _onExistingDataTap(data),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: style.strokeColor, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(Icons.info, color: style.strokeColor,
-                      size: infoIconSize),
-                ),
-              ),
-            ));
           }
           break;
       }
     }
 
     _cachedMarkers = markers;
+    _markerData = markerData;
     _cachedPolylines = polylines;
     _cachedPolygons = polygons;
 
@@ -2237,7 +2186,43 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         timestamp: DateTime.now(),
       ));
       HapticFeedback.selectionClick();
+      return;
     }
+    // Selain mode gambar (termasuk saat tracking): tap memilih feature.
+    unawaited(_selectFeatureAt(point));
+  }
+
+  /// Tap langsung pada feature: satu kena → detail; beberapa (mis. polygon
+  /// bertumpuk) → daftar pilihan; tidak ada → tidak terjadi apa-apa.
+  Future<void> _selectFeatureAt(LatLng tap) async {
+    final type = widget.project.geometryType;
+    // Point: hanya marker yang tampil sendiri — tap cluster sudah ditangani
+    // cluster itu (zoom-in).
+    final features = type == GeometryType.point
+        ? _getClusteredMarkers()
+            .map((m) => _markerData[m])
+            .whereType<GeoData>()
+            .toList()
+        : _existingData;
+    final camera = _mapController.camera;
+    final settings = _settingsService.settings;
+    final hits = projectFeaturesAtTap(
+      tap: tap,
+      features: features,
+      type: type,
+      settings: settings,
+      toScreen: (latLng) {
+        final pt = camera.latLngToScreenPoint(latLng);
+        return Offset(pt.x, pt.y);
+      },
+      viewport: camera.visibleBounds,
+    );
+    if (hits.isEmpty) return;
+    final picked = hits.length == 1
+        ? hits.single
+        : await showFeaturePickSheet(context,
+            features: hits, project: widget.project, settings: settings);
+    if (picked != null && mounted) _onExistingDataTap(picked);
   }
 
   void _onExistingDataTap(GeoData data) {

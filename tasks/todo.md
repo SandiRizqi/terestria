@@ -25,10 +25,12 @@ Baseline mobile: `flutter test` 641 lulus, `flutter analyze` 0 error dan 29 warn
 ## Fase 3 — Tap langsung
 - [x] T9: hit-test murni (point/line/polygon, toleransi dp, urutan stabil).
 - [x] T10: daftar pilihan saat tap mengenai beberapa feature + helper `recordTitle()` bersama.
-- [ ] T11: wiring `_onMapTap` (alat ukur → mode gambar → select) + hapus ikon info di peta project dan navigasi.
+- [x] T11: wiring `_onMapTap` (alat ukur → mode gambar → select) + hapus ikon info di peta project dan navigasi.
 
 ### Checkpoint C (selesai)
-- [ ] Semua kriteria SPEC §9; test mobile/backend hijau; test DB di CI.
+- [x] Test lokal hijau: `flutter test` 714, `flutter analyze` 0 error / 29 warning (baseline), unittest backend 64, `manage.py check` bersih.
+- [ ] Test DB backend di CI (`mobile.tests_feature_style_db`).
+- [ ] Semua kriteria SPEC §9 terbukti di HP (daftar uji di bawah).
 - [ ] Uji di HP:
   - upgrade v6 → v7;
   - sync ke HP kedua;

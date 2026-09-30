@@ -1410,47 +1410,13 @@ class _NavigationScreenState extends State<NavigationScreen>
         ));
       } else if (geomType == GeometryType.polygon && pts.length >= 3) {
         // ── Polygon ──────────────────────────────────────────────────────
-        final style =
-            effectiveFeatureStyle(geoData, GeometryType.polygon, s);
-        polygons.add(featurePolygon(geoData, style));
-        // Centroid info marker
-        if (pts.length >= 3) {
-          double sumLat = 0, sumLng = 0;
-          for (final p in pts) { sumLat += p.latitude; sumLng += p.longitude; }
-          final centroid = LatLng(sumLat / pts.length, sumLng / pts.length);
-          markers.add(Marker(
-            point:  centroid,
-            width:  22,
-            height: 22,
-            child: Container(
-              decoration: BoxDecoration(
-                color:  Colors.white,
-                shape:  BoxShape.circle,
-                border: Border.all(color: style.strokeColor, width: 2),
-              ),
-              child: Icon(Icons.info, color: style.strokeColor, size: 13),
-            ),
-          ));
-        }
+        // Tanpa ikon info di tengah feature (sama dengan peta project).
+        polygons.add(featurePolygon(geoData,
+            effectiveFeatureStyle(geoData, GeometryType.polygon, s)));
       } else if (pts.length >= 2) {
         // ── Line ─────────────────────────────────────────────────────────
-        final style = effectiveFeatureStyle(geoData, GeometryType.line, s);
-        polylines.add(featurePolyline(geoData, style));
-        // Mid-point info marker
-        final mid = pts[pts.length ~/ 2];
-        markers.add(Marker(
-          point:  mid,
-          width:  20,
-          height: 20,
-          child: Container(
-            decoration: BoxDecoration(
-              color:  Colors.white,
-              shape:  BoxShape.circle,
-              border: Border.all(color: style.strokeColor, width: 2),
-            ),
-            child: Icon(Icons.info, color: style.strokeColor, size: 12),
-          ),
-        ));
+        polylines.add(featurePolyline(geoData,
+            effectiveFeatureStyle(geoData, GeometryType.line, s)));
       }
     }
 
