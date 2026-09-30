@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
 import '../config/api_config.dart';
+import '../models/feature_style.dart';
 import '../models/geo_data_model.dart';
 import '../models/project_model.dart';
 import '../models/sync_conflict.dart';
@@ -142,7 +143,19 @@ class SyncService {
         if (geoData.serverUpdatedAt != null)
           'base_updated_at': geoData.serverUpdatedAt!.toUtc().toIso8601String(),
         if (force) 'force': true,
+        // SELALU dikirim: null = kembali ke default (server menghapus style).
+        // Server tanpa kolom style (versi lama) mengabaikannya.
+        'style': featureStyleToJson(geoData.style),
       };
+
+  /// Versi server yang akan disimpan lokal, dengan aturan style (SPEC §3):
+  /// key `style` tidak ada di JSON server (backend versi lama) → style lokal
+  /// dipertahankan; `null` → dihapus; objek → dipakai.
+  static GeoData applyServerStyle(
+          GeoData server, Map<dynamic, dynamic> rawServerJson, GeoData? local) =>
+      rawServerJson.containsKey('style') || local?.style == null
+          ? server
+          : server.copyWith(style: local!.style);
 
   /// Sync single GeoData to backend (eksklusif, lihat [runExclusive]).
   Future<SyncResult> syncGeoData(GeoData geoData, Project project) =>
@@ -1178,7 +1191,7 @@ class SyncService {
               );
 
               await _storageService.saveGeoData(
-                geoData.copyWith(
+                applyServerStyle(geoData, raw, existingGeoData).copyWith(
                   formData: processedFormData,
                   isSynced: true,
                   serverUpdatedAt: geoData.updatedAt,
@@ -1304,7 +1317,9 @@ class SyncService {
               await _storageService.getProjectById(conflict.projectId);
           final formData = await _photoSyncService.processFormDataForPull(
               server.formData, project);
-          await _storageService.saveGeoData(server.copyWith(
+          final local = await _storageService.getGeoDataById(geoDataId);
+          await _storageService.saveGeoData(
+              applyServerStyle(server, conflict.serverJson, local).copyWith(
             formData: formData,
             isSynced: true,
             syncedAt: DateTime.now(),
