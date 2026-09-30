@@ -33,12 +33,12 @@ void main() {
     });
 
     test('urutan standar: tracking & auth sebelum DB ditutup, berkas dihapus '
-        'sebelum prefs, cache memori terakhir', () {
+        'sebelum prefs, kunci DB dibuka paling akhir', () {
       final names = standardResetStepNames;
       int at(String n) => names.indexOf(n);
       expect(names, containsAll(
           ['tracking', 'location', 'downloads', 'auth', 'accounts', 'databases',
-           'files', 'preferences', 'memory']));
+           'files', 'preferences', 'memory', 'unlock']));
       expect(at('tracking'), lessThan(at('databases')));
       expect(at('location'), lessThan(at('files')));
       expect(at('accounts'), lessThan(at('preferences')));
@@ -47,7 +47,10 @@ void main() {
       expect(at('auth'), lessThan(at('preferences')));
       expect(at('databases'), lessThan(at('files')));
       expect(at('files'), lessThan(at('preferences')));
-      expect(names.last, 'memory');
+      expect(at('memory'), lessThan(at('unlock')));
+      // DB tetap terkunci sampai semua langkah selesai (penulis terlambat
+      // gagal alih-alih membuat geoform.db baru berisi data user lama).
+      expect(names.last, 'unlock');
     });
   });
 

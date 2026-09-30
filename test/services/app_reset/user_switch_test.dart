@@ -7,6 +7,7 @@ import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/app_reset/app_reset_service.dart';
 import 'package:geoform_app/services/auth_service.dart';
 import 'package:geoform_app/services/basemap_service.dart';
+import 'package:geoform_app/services/database_service.dart';
 import 'package:geoform_app/services/layer_service.dart';
 import 'package:geoform_app/services/pinned_values_service.dart';
 import 'package:geoform_app/services/sync_watermark_service.dart';
@@ -142,6 +143,9 @@ void main() {
     expect(temp.listSync(), isEmpty);
     expect(_names(dbs), ['com.google.android.datatransport.events']);
     expect(_names(support), ['PersistedInstallation.json']);
+
+    // DB tak terkunci lagi → user B bisa memakai app.
+    expect(DatabaseService.isLockedForReset, isFalse);
 
     // Setelan perangkat bertahan.
     final prefs = await SharedPreferences.getInstance();

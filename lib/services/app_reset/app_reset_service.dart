@@ -100,11 +100,14 @@ List<String> get standardResetStepNames =>
 ///    prefs, jadi sebelum preferences);
 /// 5. accounts — state user di singleton: topic notifikasi, token FCM
 ///    tercatat, auth token FCM, user Crashlytics, graf routing;
-/// 6. databases — koneksi SQLite ditutup sebelum berkasnya dihapus;
+/// 6. databases — koneksi SQLite ditutup & DB utama DIKUNCI sebelum berkasnya
+///    dihapus (penulis terlambat gagal, tak membuat DB baru berisi data lama);
 /// 7. files — Documents & Temp dikosongkan; di folder yang juga dipakai
 ///    Firebase/plugin (databases, Application Support) hanya milik app;
 /// 8. preferences — semua kunci dihapus kecuali [kResetKeepPrefKeys];
-/// 9. memory — cache gambar (overlay PDF, foto) dikosongkan.
+/// 9. memory — cache gambar (overlay PDF, foto) dikosongkan;
+/// 10. unlock — kunci DB dibuka paling akhir (selalu jalan walau langkah lain
+///     gagal) agar user berikutnya bisa memakai app.
 List<AppResetStep> standardResetSteps() => [
       AppResetStep('tracking', () async {
         TrackingSessionManager.instance.clearAll();
@@ -123,7 +126,7 @@ List<AppResetStep> standardResetSteps() => [
           .timeout(const Duration(seconds: 12))),
       const AppResetStep('accounts', _resetAccountState),
       AppResetStep('databases', () async {
-        await DatabaseService().close();
+        await DatabaseService().lockForReset();
         await TileCacheSqliteService().closeAll();
       }),
       const AppResetStep('files', _wipeFiles),
@@ -134,6 +137,7 @@ List<AppResetStep> standardResetSteps() => [
           ..clear()
           ..clearLiveImages();
       }),
+      AppResetStep('unlock', () async => DatabaseService().unlockAfterReset()),
     ];
 
 /// Tiap bagian dibungkus sendiri-sendiri: Firebase belum siap / offline tak

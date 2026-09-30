@@ -8,6 +8,14 @@ import '../models/notification_model.dart';
 import '../utils/app_logger.dart';
 import 'tracking/session_repository.dart';
 
+/// Akses DB ditolak karena reset logout sedang berjalan.
+class DatabaseResetInProgress implements Exception {
+  const DatabaseResetInProgress();
+  @override
+  String toString() =>
+      'DatabaseResetInProgress: the local database is being cleared (logout)';
+}
+
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
@@ -30,10 +38,37 @@ class DatabaseService {
     await db?.close();
   }
 
+  static bool _lockedForReset = false;
+  static int _generation = 0; // naik tiap kunci → open yang sedang jalan basi
+
+  /// True selama reset logout (DB ditutup & tak boleh dibuka ulang).
+  static bool get isLockedForReset => _lockedForReset;
+
+  /// Tutup koneksi dan KUNCI DB selama reset logout: akses [database]
+  /// melempar [DatabaseResetInProgress] alih-alih membuat `geoform.db` baru.
+  /// Penulis yang terlambat (pull/sync yang melewati batas tunggu logout)
+  /// gagal & tercatat, bukan menulis data user lama ke DB user berikutnya.
+  Future<void> lockForReset() async {
+    _lockedForReset = true;
+    _generation++;
+    await close();
+  }
+
+  /// Buka kunci setelah reset selesai (langkah terakhir reset).
+  void unlockAfterReset() => _lockedForReset = false;
+
   Future<Database> get database async {
+    if (_lockedForReset) throw const DatabaseResetInProgress();
     if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+    final generation = _generation;
+    final db = await _initDatabase();
+    // Dikunci saat open berjalan → handle ini menunjuk berkas yang akan
+    // dihapus; jangan dipakai.
+    if (_lockedForReset || generation != _generation) {
+      await db.close();
+      throw const DatabaseResetInProgress();
+    }
+    return _database ??= db;
   }
 
   Future<Database> _initDatabase() async {

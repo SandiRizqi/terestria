@@ -12,7 +12,7 @@ Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per ta
 
 ## Phase 2 — Logout aman (Important #2, #3)
 - [x] **T3 — `runExclusive` reentrant + semua jalur tulis sync eksklusif** (M) — pull, pullProjects, syncProject, twoWay
-- [ ] **T4 — Kunci DB selama reset logout** (S–M) — penulis terlambat gagal, tak membuat DB baru
+- [x] **T4 — Kunci DB selama reset logout** (S–M) — penulis terlambat gagal, tak membuat DB baru
 - [ ] **T5 — Draft koleksi dihitung saat logout & ikut cadangan ZIP** (M)
 
 ### Checkpoint 2
