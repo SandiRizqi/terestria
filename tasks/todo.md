@@ -4,11 +4,11 @@ Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-review-fixes.md](plan-review-
 Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per task, tanpa push/deploy
 
 ## Phase 1 — Backend
-- [ ] **B1 — Project nonaktif menolak push geodata (403 `project_inactive`)** (S) — upsert + bulk_sync, admin list_editable
-- [ ] **B2 — Deteksi konflik versi saat push (409 `conflict`)** (S–M) — `base_updated_at`, `force`, kontrak push
+- [x] **B1 — Project nonaktif menolak push geodata (403 `project_inactive`)** (S) — upsert + bulk_sync, admin list_editable · gis-backend `79fa50c`
+- [x] **B2 — Deteksi konflik versi saat push (409 `conflict`)** (S–M) — `base_updated_at`, `force`, kontrak push · gis-backend `2cfd135`
 
 ### Checkpoint 1
-- [ ] Test lokal backend hijau; kontrak push terdokumentasi
+- [x] Test lokal backend hijau (28); kontrak push: `docs/sync-push-contract.md`; test DB (`mobile.tests_push_db`) jalan di CI
 
 ## Phase 2 — Mobile fondasi
 - [ ] **M1 — Migrasi DB v6 + model** (M) — serverUpdatedAt, lastSyncError, sync_conflicts
