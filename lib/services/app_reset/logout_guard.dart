@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
+import '../collection_draft_service.dart';
 import '../photo_sync_service.dart';
 import '../storage_service.dart';
 import '../tracking/tracking_session_manager.dart';
@@ -16,19 +17,27 @@ class PendingLogoutData {
   final int photos;
   final int trackingSessions;
 
+  /// Draft koleksi (titik & isian form yang belum disimpan jadi record).
+  final int drafts;
+
   const PendingLogoutData({
     this.projects = 0,
     this.geoData = 0,
     this.photos = 0,
     this.trackingSessions = 0,
+    this.drafts = 0,
   });
 
   bool get isEmpty =>
-      projects == 0 && geoData == 0 && photos == 0 && trackingSessions == 0;
+      projects == 0 &&
+      geoData == 0 &&
+      photos == 0 &&
+      trackingSessions == 0 &&
+      drafts == 0;
 
   @override
   String toString() => 'projects=$projects records=$geoData photos=$photos '
-      'sessions=$trackingSessions';
+      'sessions=$trackingSessions drafts=$drafts';
 }
 
 /// Hitung [PendingLogoutData]. Sumber data bisa disuntik (test); default
@@ -44,6 +53,7 @@ Future<PendingLogoutData> countPendingLogoutData({
   int Function()? liveTrackingSessions,
   Future<int> Function()? unsyncedProjectCount,
   Future<int> Function()? unsyncedGeoDataCount,
+  Future<int> Function()? draftCount,
 }) async {
   final storage = StorageService();
   final projects =
@@ -71,7 +81,10 @@ Future<PendingLogoutData> countPendingLogoutData({
   }
   final sessions = (liveTrackingSessions ??
       () => TrackingSessionManager.instance.activeCount)();
+  final drafts = await (draftCount ??
+      () async => (await CollectionDraftService().listDrafts()).length)();
   return PendingLogoutData(
+    drafts: drafts,
     projects: math.max(projects.length, projectCount),
     geoData: math.max(geoData.length, geoDataCount),
     photos: photos,
@@ -162,6 +175,11 @@ class _PendingLogoutDialogState extends State<_PendingLogoutDialog> {
           Icons.route_outlined,
           _plural(d.trackingSessions, 'active tracking session')
         ),
+      if (d.drafts > 0)
+        (
+          Icons.edit_note_outlined,
+          _plural(d.drafts, 'unsaved collection draft')
+        ),
     ];
     return AlertDialog(
       icon: const Icon(Icons.warning_amber_rounded,
@@ -191,6 +209,12 @@ class _PendingLogoutDialogState extends State<_PendingLogoutDialog> {
               const SizedBox(height: 6),
               Text('Tracking sessions are not synced — save them first from '
                   'the Active Tracking panel.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+            ],
+            if (d.drafts > 0) ...[
+              const SizedBox(height: 6),
+              Text('Drafts are points and form values that were not saved as '
+                  'records yet — open the project to save them.',
                   style: TextStyle(fontSize: 12, color: Colors.grey[700])),
             ],
             const SizedBox(height: 12),

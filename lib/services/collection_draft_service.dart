@@ -102,6 +102,28 @@ class CollectionDraftService {
     }
   }
 
+  /// Semua draft tersimpan (projectId → draft) — dipakai dialog logout &
+  /// cadangan ZIP (logout menghapus draft). Draft kosong/rusak dilewati.
+  Future<Map<String, CollectionDraft>> listDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final out = <String, CollectionDraft>{};
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith(_prefix)) continue;
+      final projectId = key.substring(_prefix.length);
+      try {
+        final raw = prefs.getString(key);
+        if (raw == null) continue;
+        final draft = CollectionDraft.fromJson(
+            jsonDecode(raw) as Map<String, dynamic>);
+        if (!draft.isEmpty) out[projectId] = draft;
+      } catch (e) {
+        logWarn('Unreadable collection draft for $projectId — skipped: $e',
+            tag: 'DRAFT');
+      }
+    }
+    return out;
+  }
+
   Future<void> clear(String projectId) async {
     try {
       final prefs = await SharedPreferences.getInstance();

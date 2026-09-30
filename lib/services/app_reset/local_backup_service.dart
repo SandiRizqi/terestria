@@ -10,6 +10,7 @@ import '../../config/api_config.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
 import '../../utils/app_logger.dart';
+import '../collection_draft_service.dart';
 import '../export/geo_export.dart';
 import '../photo_sync_service.dart';
 import '../storage_service.dart';
@@ -27,6 +28,9 @@ class LocalBackupResult {
   final int trackingSessions;
   final int bytes;
 
+  /// Draft koleksi (titik & isian form yang belum disimpan) yang ikut dicadangkan.
+  final int drafts;
+
   const LocalBackupResult({
     required this.file,
     required this.projects,
@@ -36,30 +40,34 @@ class LocalBackupResult {
     required this.missingPhotos,
     required this.trackingSessions,
     required this.bytes,
+    this.drafts = 0,
   });
 
   @override
   String toString() => 'projects=$projects records=$records '
       '(unsynced=$unsyncedRecords) photos=$photos '
       'missingPhotos=${missingPhotos.length} sessions=$trackingSessions '
-      'bytes=$bytes';
+      'drafts=$drafts bytes=$bytes';
 }
 
 /// Cadangan lokal (ZIP) sebelum logout — logout menghapus SEMUA data di HP.
 ///
 /// Isi: per project `project.json`, `records.json` (format app), `.geojson`
-/// (siap dibuka di QGIS), dan foto yang BELUM ter-upload; plus sesi tracking
-/// yang belum disimpan, `manifest.json`, dan `README.txt`. Foto ditulis
+/// (siap dibuka di QGIS), foto yang BELUM ter-upload, dan draft koleksi yang
+/// belum disimpan (`draft.json`/`.geojson`); plus sesi tracking yang belum
+/// disimpan, `manifest.json`, dan `README.txt`. Foto ditulis
 /// streaming tanpa kompresi (JPEG) sehingga tak dimuat ke RAM.
 class LocalBackupService {
   LocalBackupService({
     Future<List<Project>> Function()? loadProjects,
     Future<List<GeoData>> Function(String projectId)? loadRecords,
     List<TrackingSession> Function()? trackingSessions,
+    Future<Map<String, CollectionDraft>> Function()? loadDrafts,
     Future<Directory> Function()? outputDir,
     DateTime Function()? now,
   })  : _loadProjects = loadProjects ?? StorageService().loadProjects,
         _loadRecords = loadRecords ?? StorageService().loadGeoData,
+        _loadDrafts = loadDrafts ?? CollectionDraftService().listDrafts,
         _trackingSessions = trackingSessions ??
             (() => TrackingSessionManager.instance.activeSessions),
         _outputDir = outputDir ?? getTemporaryDirectory,
@@ -68,6 +76,7 @@ class LocalBackupService {
   final Future<List<Project>> Function() _loadProjects;
   final Future<List<GeoData>> Function(String projectId) _loadRecords;
   final List<TrackingSession> Function() _trackingSessions;
+  final Future<Map<String, CollectionDraft>> Function() _loadDrafts;
   final Future<Directory> Function() _outputDir;
   final DateTime Function() _now;
 
@@ -99,6 +108,16 @@ class LocalBackupService {
     var closed = false;
     try {
       final projects = await _loadProjects();
+      Map<String, CollectionDraft> drafts;
+      try {
+        drafts = Map.of(await _loadDrafts());
+      } catch (e, st) {
+        // Draft tak terbaca tak menggagalkan seluruh cadangan.
+        logError('Backup: could not read collection drafts',
+            error: e, stack: st, tag: _tag);
+        drafts = {};
+      }
+      final draftCount = drafts.length;
       final photoSync = PhotoSyncService();
       var records = 0, unsynced = 0, photos = 0;
       final missing = <String>[];
@@ -152,6 +171,11 @@ class LocalBackupService {
           }
         }
         photos += projectPhotos;
+
+        final draft = drafts.remove(project.id);
+        if (draft != null) {
+          _addDraft(encoder, '$folder/draft', draft, project.geometryType);
+        }
         projectSummaries.add({
           'id': project.id,
           'name': project.name,
@@ -162,7 +186,13 @@ class LocalBackupService {
           'unsyncedRecords': projectUnsynced,
           'photos': projectPhotos,
           'recordsWithoutGeometry': geojson.skippedIds.length,
+          if (draft != null) 'draftPoints': draft.points.length,
         });
+      }
+
+      // Draft milik project yang tak ada lagi di HP.
+      for (final e in drafts.entries) {
+        _addDraft(encoder, 'drafts/${safeName(e.key)}', e.value, null);
       }
 
       // Sesi tracking yang belum disimpan jadi record.
@@ -218,6 +248,7 @@ class LocalBackupService {
           'photos': photos,
           'missingPhotos': missing.length,
           'trackingSessions': sessions.length,
+          'drafts': draftCount,
         },
         if (missing.isNotEmpty) 'missingPhotoPaths': missing,
       };
@@ -238,6 +269,7 @@ class LocalBackupService {
         missingPhotos: missing,
         trackingSessions: sessions.length,
         bytes: await file.length(),
+        drafts: draftCount,
       );
       logInfo('Backup created: $result', tag: _tag);
       if (missing.isNotEmpty) {
@@ -262,6 +294,37 @@ class LocalBackupService {
 
   static void _addText(ZipFileEncoder encoder, String name, String content) =>
       encoder.addArchiveFile(ArchiveFile.string(name, content));
+
+  /// `<base>.json` (format app) + `<base>.geojson` bila titiknya cukup untuk
+  /// geometri [type] (project tak dikenal → hanya JSON).
+  static void _addDraft(ZipFileEncoder encoder, String base,
+      CollectionDraft draft, GeometryType? type) {
+    _addText(
+        encoder,
+        '$base.json',
+        const JsonEncoder.withIndent('  ')
+            .convert(GeoExport.jsonSafe(draft.toJson())));
+    final geometry =
+        type == null ? null : GeoExport.geometryFor(type, draft.points);
+    if (geometry == null) return;
+    final props = GeoExport.jsonSafe(draft.formData);
+    _addText(
+        encoder,
+        '$base.geojson',
+        const JsonEncoder.withIndent('  ').convert({
+          'type': 'FeatureCollection',
+          'features': [
+            {
+              'type': 'Feature',
+              'geometry': geometry,
+              'properties': {
+                if (props is Map) ...props,
+                'draftSavedAt': draft.savedAt.toUtc().toIso8601String(),
+              },
+            }
+          ],
+        }));
+  }
 
   static Future<void> _addPhoto(
       ZipFileEncoder encoder, File file, String name) async {
@@ -291,6 +354,9 @@ Contents
   projects/<name>/records.json  All records of the project (app format)
   projects/<name>/<name>.geojson  Records as GeoJSON (WGS84), opens in QGIS
   projects/<name>/photos/<record id>/  Photos that were not uploaded yet
+  projects/<name>/draft.json/.geojson  Unsaved collection draft (points and
+                                form values not saved as a record yet)
+  drafts/<project id>.json      Drafts of projects no longer on the phone
   tracking_sessions.json/.geojson  Tracking sessions that were not saved yet
 
 Send this file to your administrator so unsynced data can be recovered.

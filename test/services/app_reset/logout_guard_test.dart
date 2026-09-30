@@ -4,6 +4,8 @@ import 'package:geoform_app/models/form_field_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/app_reset/logout_guard.dart';
+import 'package:geoform_app/services/collection_draft_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Project _project(String id) => Project(
       id: id,
@@ -51,6 +53,8 @@ Future<void> _open(WidgetTester tester, PendingLogoutData data,
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   group('countPendingLogoutData', () {
     test('menghitung project, data, foto belum upload, dan sesi tracking',
         () async {
@@ -69,6 +73,23 @@ void main() {
       expect(data.geoData, 3);
       expect(data.photos, 3);
       expect(data.trackingSessions, 2);
+      expect(data.isEmpty, isFalse);
+    });
+
+    test('draft koleksi yang tersimpan ikut dihitung (logout menghapusnya)',
+        () async {
+      await CollectionDraftService().save('a',
+          points: [
+            GeoPoint(latitude: -6.2, longitude: 106.8, timestamp: DateTime(2026))
+          ],
+          formData: const {'Name': 'x'});
+      final data = await countPendingLogoutData(
+        unsyncedProjects: () async => [],
+        unsyncedGeoData: () async => [],
+        allProjects: () async => [],
+        liveTrackingSessions: () => 0,
+      );
+      expect(data.drafts, 1);
       expect(data.isEmpty, isFalse);
     });
 
@@ -127,6 +148,16 @@ void main() {
       await tester.tap(find.text('Delete & log out'));
       await tester.pumpAndSettle();
       expect(result, [LogoutChoice.wipe]);
+    });
+
+    testWidgets('hanya draft yang tertunda → tetap dialog peringatan',
+        (tester) async {
+      final result = <LogoutChoice>[];
+      await _open(tester, const PendingLogoutData(drafts: 2), result);
+
+      expect(find.text('2 unsaved collection drafts'), findsOneWidget);
+      expect(find.text('Sync first'), findsOneWidget);
+      expect(tester.takeException(), isNull); // muat di 360 dp
     });
 
     testWidgets('Sync first → sync; Save backup → backup; Cancel → cancel',

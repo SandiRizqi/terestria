@@ -7,6 +7,7 @@ import 'package:geoform_app/models/form_field_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/app_reset/local_backup_service.dart';
+import 'package:geoform_app/services/collection_draft_service.dart';
 import 'package:geoform_app/services/tracking/tracking_session.dart';
 
 final _t = DateTime.utc(2026, 9, 29, 3);
@@ -129,6 +130,55 @@ void main() {
         archive.findFile('tracking_sessions.geojson')!.content)) as Map;
     expect((sessions['features'] as List).single['geometry']['type'],
         'LineString');
+  });
+
+  test('draft koleksi (titik + isian belum disimpan) ikut cadangan', () async {
+    final project = Project(
+      id: 'project-0001',
+      name: 'Blok A/1',
+      description: '',
+      geometryType: GeometryType.point,
+      formFields: const [],
+      createdAt: _t,
+      updatedAt: _t,
+    );
+    final service = LocalBackupService(
+      loadProjects: () async => [project],
+      loadRecords: (_) async => const [],
+      trackingSessions: () => const [],
+      loadDrafts: () async => {
+        project.id: CollectionDraft(
+            points: [_p(106.8, -6.2)],
+            formData: const {'Name': 'Pohon 7'},
+            savedAt: _t),
+        'deleted-project': CollectionDraft(
+            points: const [], formData: const {'Note': 'x'}, savedAt: _t),
+      },
+      outputDir: () async => Directory('${tmp.path}/out'),
+      now: () => DateTime(2026, 9, 30, 8),
+    );
+
+    final result = await service.create();
+
+    expect(result.drafts, 2);
+    final archive = ZipDecoder().decodeBytes(result.file.readAsBytesSync());
+    final names = archive.files.map((f) => f.name).toSet();
+    expect(
+        names,
+        containsAll([
+          'projects/Blok_A_1/draft.json',
+          'projects/Blok_A_1/draft.geojson',
+          'drafts/deleted-project.json',
+        ]));
+    final draft = jsonDecode(utf8.decode(
+        archive.findFile('projects/Blok_A_1/draft.json')!.content)) as Map;
+    expect(draft['formData'], {'Name': 'Pohon 7'});
+    final geo = jsonDecode(utf8.decode(
+        archive.findFile('projects/Blok_A_1/draft.geojson')!.content)) as Map;
+    expect((geo['features'] as List).single['geometry']['type'], 'Point');
+    final manifest = jsonDecode(
+        utf8.decode(archive.findFile('manifest.json')!.content)) as Map;
+    expect(manifest['totals']['drafts'], 2);
   });
 
   test('gagal membaca → berkas setengah jadi dihapus & error diteruskan',
