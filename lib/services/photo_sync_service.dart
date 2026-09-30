@@ -157,6 +157,45 @@ class PhotoSyncService {
     return pending;
   }
 
+  /// Salin `serverKey`/`serverUrl` hasil upload dari [latest] (versi DB
+  /// terbaru) ke foto yang sama (`localPath`) di [edited] yang belum punya
+  /// key. Layar edit menyimpan dari snapshot saat dibuka; tanpa ini upload
+  /// foto oleh auto-sync selama user mengedit hilang → foto diunggah ulang.
+  /// Nilai lain (termasuk foto yang dihapus user) tetap mengikuti [edited].
+  static Map<String, dynamic> mergeUploadedPhotoKeys(
+    Map<String, dynamic> edited,
+    Map<String, dynamic> latest,
+    Project project,
+  ) {
+    final out = Map<String, dynamic>.of(edited);
+    for (final field in project.formFields) {
+      if (field.type != FieldType.photo) continue;
+      final mine = out[field.label];
+      final theirs = latest[field.label];
+      if (mine is! List || theirs is! List) continue;
+
+      final uploaded = <String, Map>{
+        for (final t in theirs)
+          if (t is Map && t['serverKey'] != null && t['localPath'] != null)
+            t['localPath'].toString(): t,
+      };
+      out[field.label] = [
+        for (final item in mine)
+          if (item is Map &&
+              item['serverKey'] == null &&
+              uploaded.containsKey(item['localPath']?.toString()))
+            {
+              ...item,
+              'serverKey': uploaded[item['localPath'].toString()]!['serverKey'],
+              'serverUrl': uploaded[item['localPath'].toString()]!['serverUrl'],
+            }
+          else
+            item,
+      ];
+    }
+    return out;
+  }
+
   /// Apakah foto ini masih perlu di-upload ke OSS?
   ///
   /// Predikat tunggal untuk seluruh alur push, di-*key* ke `serverKey` (bukan

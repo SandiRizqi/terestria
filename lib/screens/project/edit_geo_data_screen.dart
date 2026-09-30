@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
 import '../../services/geometry_edit.dart';
+import '../../services/photo_sync_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
@@ -89,8 +90,15 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
 
     setState(() => _isSaving = true);
     try {
+      // Foto yang diunggah auto-sync selama user mengedit: pertahankan
+      // serverKey-nya (form ini berangkat dari snapshot saat layar dibuka).
+      final latest = await _storageService.getGeoDataById(widget.geoData.id);
+      final formData = latest == null
+          ? _formData
+          : PhotoSyncService.mergeUploadedPhotoKeys(
+              _formData, latest.formData, widget.project);
       final updatedGeoData = widget.geoData.copyWith(
-        formData: _formData,
+        formData: formData,
         points: _points,
         updatedAt: DateTime.now(),
         isSynced: false, // ada perubahan → perlu diunggah ulang

@@ -22,7 +22,7 @@ Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per ta
 - [x] **T6 — Reset state auto-sync saat logout** (S)
 - [x] **T7 — Hasil share cadangan diperiksa (dismissed → peringatan)** (S)
 - [x] **T8 — Emlid: connect baru mematikan auto-reconnect lama** (S)
-- [ ] **T9 — Edit record mempertahankan `serverKey` foto hasil sync** (S)
+- [x] **T9 — Edit record mempertahankan `serverKey` foto hasil sync** (S)
 - [ ] **T10 — CSV `created_at` UTC + dokumentasi tindak lanjut** (XS)
 
 ### Checkpoint 3
