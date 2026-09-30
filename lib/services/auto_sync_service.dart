@@ -15,7 +15,16 @@ class AutoSyncRun {
   final DateTime at;
   final bool ok;
   final String summary;
-  const AutoSyncRun({required this.at, required this.ok, required this.summary});
+
+  /// Alasan gagal (dikelompokkan) — ditampilkan di beranda.
+  final List<String> reasons;
+
+  const AutoSyncRun({
+    required this.at,
+    required this.ok,
+    required this.summary,
+    this.reasons = const [],
+  });
 }
 
 /// Unggah data tertunda otomatis saat online (Settings → "Auto-sync when
@@ -176,7 +185,12 @@ class AutoSyncService {
             '${result.errors.isEmpty ? '' : ' — ${result.errors.take(3).join('; ')}'}',
             tag: _tag);
       }
-      lastRun.value = AutoSyncRun(at: _now(), ok: ok, summary: summary);
+      lastRun.value = AutoSyncRun(
+        at: _now(),
+        ok: ok,
+        summary: summary,
+        reasons: ok ? const [] : SyncService.groupErrors(result.errors),
+      );
       return true;
     } catch (e, st) {
       _failures++;

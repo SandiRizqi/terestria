@@ -50,6 +50,34 @@ void main() {
     expect(runs, 2);
   });
 
+  test('run gagal menyimpan alasan (dikelompokkan) untuk ditampilkan di beranda',
+      () async {
+    final svc = AutoSyncService(
+      isOnline: () => true,
+      onlineChanges: const Stream<bool>.empty(),
+      syncAll: () async => FullSyncResult(
+        projectsTotal: 0,
+        projectsSuccess: 0,
+        projectsFail: 0,
+        geoDataTotal: 2,
+        geoDataSuccess: 0,
+        geoDataFail: 2,
+        errors: const ['Blok A: inactive', 'Blok A: inactive'],
+      ),
+      isSyncing: ValueNotifier(false),
+      enabled: () => true,
+      pendingCount: () async => 2,
+      authBlocked: () => false,
+      loggedIn: () async => true,
+      now: () => DateTime(2026, 9, 30, 8),
+    );
+
+    await svc.runNow('test');
+
+    expect(svc.lastRun.value!.ok, isFalse);
+    expect(svc.lastRun.value!.reasons, ['Blok A: inactive (2×)']);
+  });
+
   test('backoffFor: 0, 1, 2, 4 … maks 30 menit', () {
     expect(AutoSyncService.backoffFor(0), Duration.zero);
     expect(AutoSyncService.backoffFor(1), const Duration(minutes: 1));

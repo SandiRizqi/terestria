@@ -52,6 +52,9 @@ class GeoDataListItem extends StatelessWidget {
 
     final photoPath = _getPhotoPath();
     final hasPhoto = photoPath != null && photoPath.isNotEmpty;
+    // Alasan push terakhir gagal (mis. project nonaktif) — hanya selama
+    // record belum tersinkron.
+    final syncError = geoData.isSynced ? null : geoData.lastSyncError;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -72,19 +75,33 @@ class GeoDataListItem extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: Image.file(
-                    File(photoPath),
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        color: Colors.grey[200],
-                        child: Icon(
-                          Icons.broken_image,
-                          size: 48,
-                          color: Colors.grey[400],
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.file(
+                        File(photoPath),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[200],
+                            child: Icon(
+                              Icons.broken_image,
+                              size: 48,
+                              color: Colors.grey[400],
+                            ),
+                          );
+                        },
+                      ),
+                      // Tile berfoto sempit: alasan gagal ditaruh di atas foto
+                      // (tak menambah tinggi kartu).
+                      if (syncError != null)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: _SyncErrorStrip(message: syncError),
                         ),
-                      );
-                    },
+                    ],
                   ),
                 ),
               ),
@@ -165,7 +182,29 @@ class GeoDataListItem extends StatelessWidget {
                       ],
                     ),
                     
-                    if (geoData.formData.isNotEmpty && !hasPhoto) ...[
+                    if (syncError != null && !hasPhoto) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.error_outline_rounded,
+                              size: 12, color: Colors.red[700]),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              syncError,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                height: 1.25,
+                                color: Colors.red[800],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (geoData.formData.isNotEmpty && !hasPhoto) ...[
                       const SizedBox(height: 10),
                       Container(
                         height: 1,
@@ -292,9 +331,18 @@ class GeoDataListItem extends StatelessWidget {
 
   Widget _buildSyncStatusChip() {
     final isSynced = geoData.isSynced;
-    final color = isSynced ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
-    final icon = isSynced ? Icons.cloud_done : Icons.cloud_upload;
-    final label = isSynced ? 'Synced' : 'Local';
+    final failed = !isSynced && geoData.lastSyncError != null;
+    final color = isSynced
+        ? const Color(0xFF10B981)
+        : failed
+            ? const Color(0xFFDC2626)
+            : const Color(0xFFF59E0B);
+    final icon = isSynced
+        ? Icons.cloud_done
+        : failed
+            ? Icons.cloud_off
+            : Icons.cloud_upload;
+    final label = isSynced ? 'Synced' : (failed ? 'Failed' : 'Local');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -455,5 +503,34 @@ class GeoDataListItem extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+/// Strip alasan gagal unggah di atas foto (tile berfoto).
+class _SyncErrorStrip extends StatelessWidget {
+  final String message;
+  const _SyncErrorStrip({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.red.shade800.withOpacity(0.88),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, size: 12, color: Colors.white),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 10, height: 1.2, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

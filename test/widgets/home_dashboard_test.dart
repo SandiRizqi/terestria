@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/screens/readiness/field_readiness_screen.dart';
+import 'package:geoform_app/services/auto_sync_service.dart';
 import 'package:geoform_app/services/readiness/field_readiness.dart';
 import 'package:geoform_app/widgets/home/home_menu.dart';
 import 'package:geoform_app/widgets/home/home_status_section.dart';
@@ -107,6 +108,22 @@ void main() {
     await tester.tap(find.text('Ready for the field'));
     expect(readinessOpened, 1);
     expect(tester.takeException(), isNull);
+  });
+
+  test('status auto-sync gagal menyebut alasan pertama', () {
+    final run = AutoSyncRun(
+      at: DateTime(2026, 9, 30, 8, 5),
+      ok: false,
+      summary: 'Data: 0/2 synced',
+      reasons: const ['Blok A: not accepting data (2×)', 'x'],
+    );
+    expect(lastAutoSyncSubtitle(run, '08.05'),
+        'Last auto-sync 08.05 failed: Blok A: not accepting data (2×)');
+    expect(
+        lastAutoSyncSubtitle(
+            AutoSyncRun(at: DateTime(2026), ok: false, summary: 'Server not reachable'),
+            '08.05'),
+        'Last auto-sync 08.05: Server not reachable');
   });
 
   testWidgets('kartu status: optimasi baterai → peringatan; semua tersinkron',

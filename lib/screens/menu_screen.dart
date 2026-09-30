@@ -29,6 +29,7 @@ import 'dart:async';
 import '../utils/app_logger.dart';
 import '../utils/ui_feedback.dart';
 import '../widgets/backup/backup_actions.dart';
+import '../widgets/sync/sync_result_dialog.dart';
 import '../widgets/home/home_menu.dart';
 import '../widgets/home/home_status_section.dart';
 import '../services/auto_sync_service.dart';
@@ -661,24 +662,23 @@ class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   /// dialog logout (jumlah dihitung ulang).
   Future<void> _syncBeforeLogout(BuildContext context) async {
     _showBlockingProgress(context, 'Syncing data…');
-    String message;
-    var ok = false;
+    FullSyncResult? result;
+    String? failure;
     try {
-      final result = await SyncService().syncAllUnsyncedData();
-      ok = !result.hasErrors && !result.abortedDueToConnection &&
-          !result.abortedDueToAuth;
-      message = result.abortedDueToAuth
-          ? 'Your session expired — sign in again, then sync.'
-          : result.abortedDueToConnection
-              ? 'The server could not be reached — nothing was uploaded.'
-              : result.summary;
+      result = await SyncService().syncAllUnsyncedData();
     } catch (e, st) {
       logError('Sync before logout failed', tag: 'AUTH', error: e, stack: st);
-      message = 'Sync failed. ${friendlyErrorMessage(e)}';
+      failure = 'Sync failed. ${friendlyErrorMessage(e)}';
     }
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
-    showInfoFeedback(context, message, success: ok, warning: !ok,
-        duration: const Duration(seconds: 5));
+    if (result != null) {
+      // Gagal sebagian → dialog berisi alasannya, lalu kembali ke dialog
+      // logout dengan jumlah terbaru.
+      await showFullSyncResult(context, result);
+    } else {
+      showInfoFeedback(context, failure!, warning: true,
+          duration: const Duration(seconds: 5));
+    }
   }
 }

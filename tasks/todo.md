@@ -16,10 +16,10 @@ Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per ta
 - [x] **M3 — Konflik: simpan, cegah upload otomatis, resolve** (M)
 
 ### Checkpoint 2
-- [ ] Test hijau; payload & respons cocok kontrak
+- [x] Test hijau; payload (`base_updated_at`, `force`) & respons (`data.updatedAt`, `error_code`, 409 `data`) cocok kontrak — diuji di kedua sisi
 
 ## Phase 3 — Mobile UI
-- [ ] **M4 — Pesan error push terlihat** (M) — dialog hasil sync bersama, status auto-sync, error per record
+- [x] **M4 — Pesan error push terlihat** (M) — dialog hasil sync bersama, status auto-sync, error per record
 - [ ] **M5 — UI konflik + cadangan + dokumentasi** (M)
 
 ### Checkpoint 3

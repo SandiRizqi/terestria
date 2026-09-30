@@ -9,6 +9,7 @@ import '../../services/device_health_service.dart';
 import '../../services/readiness/field_readiness.dart';
 import '../../services/readiness/field_readiness_service.dart';
 import '../../services/sync_service.dart';
+import '../../widgets/sync/sync_result_dialog.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
@@ -155,21 +156,8 @@ class _FieldReadinessScreenState extends State<FieldReadinessScreen>
     try {
       final result = await SyncService().syncAllUnsyncedData();
       if (!mounted) return;
-      final ok = !result.hasErrors &&
-          !result.abortedDueToConnection &&
-          !result.abortedDueToAuth;
-      showInfoFeedback(
-        context,
-        result.abortedDueToAuth
-            ? 'Your session expired — sign in again, then sync.'
-            : result.abortedDueToConnection
-                ? 'The server could not be reached. Try again with a '
-                    'better connection.'
-                : result.summary,
-        success: ok,
-        warning: !ok,
-        duration: const Duration(seconds: 5),
-      );
+      // Gagal sebagian → dialog berisi alasannya (mis. project nonaktif).
+      await showFullSyncResult(context, result, onRetry: _syncNow);
     } catch (e, st) {
       if (mounted) {
         showErrorFeedback(context, 'Sync failed',

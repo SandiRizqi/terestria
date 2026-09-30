@@ -9,6 +9,7 @@ import '../../services/readiness/field_readiness.dart';
 import '../../services/readiness/field_readiness_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/sync_service.dart';
+import '../sync/sync_result_dialog.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
@@ -17,6 +18,13 @@ import '../tracking/active_tracking_panel.dart';
 /// Kartu status di beranda: tracking aktif, kesiapan lapangan, dan antrean
 /// sync (dengan tombol "Sync now"). Data diambil dari [FieldReadinessService]
 /// tanpa uji GPS (cepat).
+/// Subjudul kartu sync saat auto-sync terakhir gagal: sebut alasan pertama
+/// (mis. project nonaktif) — ketuk kartu untuk semua alasan.
+String lastAutoSyncSubtitle(AutoSyncRun run, String time) =>
+    run.reasons.isNotEmpty
+        ? 'Last auto-sync $time failed: ${run.reasons.first}'
+        : 'Last auto-sync $time: ${run.summary}';
+
 class HomeStatusSection extends StatefulWidget {
   final void Function(Project) onOpenProject;
   final VoidCallback onOpenReadiness;
@@ -104,21 +112,8 @@ class HomeStatusSectionState extends State<HomeStatusSection> {
         },
       );
       if (!mounted) return;
-      final ok = !result.hasErrors &&
-          !result.abortedDueToConnection &&
-          !result.abortedDueToAuth;
-      showInfoFeedback(
-        context,
-        result.abortedDueToAuth
-            ? 'Your session expired — sign in again, then sync.'
-            : result.abortedDueToConnection
-                ? 'The server could not be reached. Your data is safe on '
-                    'this phone — try again later.'
-                : result.summary,
-        success: ok,
-        warning: !ok,
-        duration: const Duration(seconds: 5),
-      );
+      // Gagal sebagian → dialog berisi alasannya (mis. project nonaktif).
+      await showFullSyncResult(context, result, onRetry: _syncNow);
     } catch (e, st) {
       if (mounted) {
         showErrorFeedback(context, 'Sync failed',
@@ -271,15 +266,26 @@ class HomeStatusSectionState extends State<HomeStatusSection> {
       subtitle = 'Offline — your data is safe on this phone';
     } else if (lastAuto != null && !lastAuto.ok) {
       final t = TimeOfDay.fromDateTime(lastAuto.at).format(context);
-      subtitle = 'Last auto-sync $t: ${lastAuto.summary}';
+      subtitle = lastAutoSyncSubtitle(lastAuto, t);
     } else if (autoSync) {
       subtitle = 'Auto-sync will upload these when online';
     }
+    final failedAuto =
+        !busy && lastAuto != null && !lastAuto.ok && lastAuto.reasons.isNotEmpty;
     return _card(
       color: AppTheme.primaryBlue,
       icon: Icons.cloud_upload_rounded,
       title: parts.isEmpty ? 'Syncing…' : '${parts.join(' · ')} waiting',
       subtitle: subtitle,
+      // Ketuk → semua alasan auto-sync terakhir gagal.
+      onTap: failedAuto
+          ? () => showSyncProblemsDialog(
+                context,
+                title: 'Last auto-sync did not finish',
+                summary: lastAuto.summary,
+                errors: lastAuto.reasons,
+              )
+          : null,
       trailing: FilledButton(
         onPressed: busy || !_online ? null : _syncNow,
         style: FilledButton.styleFrom(
