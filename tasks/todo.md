@@ -5,10 +5,10 @@ Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per ta
 
 ## Phase 1 — Watermark delta pull (Critical #1)
 - [x] **T1 — Mobile: watermark tertahan sebelum record gagal** (S) — `failedAt − 1 µs`, fake server filter `>`, test pull kedua mengambil ulang
-- [ ] **T2 — Backend: `updated_after` inklusif (`__gte`)** (S) — helper + test mock lokal + kasus batas di test DB (CI)
+- [x] **T2 — Backend: `updated_after` inklusif (`__gte`)** (S) — helper + test mock lokal + kasus batas di test DB (CI) · gis-backend `e06041c` (dev1)
 
 ### Checkpoint 1
-- [ ] Test mobile & backend lokal hijau; catatan deploy backend
+- [x] Test mobile & backend lokal hijau — **deploy backend `e06041c` memperbaiki app yang sudah terpasang** (test DB `ByProjectUpdatedAfterTests.test_batas_inklusif` jalan di CI)
 
 ## Phase 2 — Logout aman (Important #2, #3)
 - [ ] **T3 — `runExclusive` reentrant + semua jalur tulis sync eksklusif** (M) — pull, pullProjects, syncProject, twoWay
