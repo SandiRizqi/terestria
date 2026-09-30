@@ -17,7 +17,7 @@ Baseline mobile: `flutter test` 641 lulus, `flutter analyze` 0 error dan 29 warn
 - [x] T5: pembangun layer bersama (`project_feature_layers.dart`); style tampil di peta project dan navigasi; tanpa style = sama persis dengan sekarang.
 - [x] T6: editor style bersama (`style_editor.dart`), diekstrak dari Layers tanpa perubahan perilaku.
 - [x] T7: bagian "Style" di form "Survey data"; Save menyimpan style; "Save & next" membawa style; draft ikut.
-- [ ] T8: ubah/reset style di layar edit data (record jadi "belum sync").
+- [x] T8: ubah/reset style di layar edit data (record jadi "belum sync").
 
 ### Checkpoint B
 - [ ] Manual di HP: atur style saat koleksi dan saat edit, lihat di peta, sync, pull di HP kedua (backend T1 di dev).

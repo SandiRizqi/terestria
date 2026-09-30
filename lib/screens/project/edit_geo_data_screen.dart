@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../models/feature_style.dart';
 import '../../models/geo_data_model.dart';
+import '../../models/layer_model.dart';
 import '../../models/project_model.dart';
 import '../../services/geometry_edit.dart';
 import '../../services/photo_sync_service.dart';
@@ -12,6 +14,7 @@ import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
 import '../../widgets/dynamic_form.dart';
 import '../../widgets/map/tools/measure_math.dart';
+import '../../widgets/style/feature_style_section.dart';
 import 'geometry_editor_screen.dart';
 
 /// Edit atribut DAN geometri record (koreksi vertex lewat crosshair) — dulu
@@ -21,10 +24,14 @@ class EditGeoDataScreen extends StatefulWidget {
   final GeoData geoData;
   final Project project;
 
+  /// Untuk test; default [StorageService].
+  final StorageService? storageService;
+
   const EditGeoDataScreen({
     Key? key,
     required this.geoData,
     required this.project,
+    this.storageService,
   }) : super(key: key);
 
   @override
@@ -32,11 +39,15 @@ class EditGeoDataScreen extends StatefulWidget {
 }
 
 class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
-  final StorageService _storageService = StorageService();
+  late final StorageService _storageService =
+      widget.storageService ?? StorageService();
   final _formKey = GlobalKey<FormState>();
   final DynamicFormController _formController = DynamicFormController();
   late Map<String, dynamic> _formData;
   late List<GeoPoint> _points;
+
+  /// Style feature (null = ikut default Settings).
+  LayerStyle? _style;
   bool _isSaving = false;
 
   bool get _geometryChanged =>
@@ -47,6 +58,7 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
     super.initState();
     _formData = Map<String, dynamic>.from(widget.geoData.formData);
     _points = List.of(widget.geoData.points);
+    _style = widget.geoData.style;
   }
 
   Future<void> _editGeometry() async {
@@ -102,6 +114,8 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
         points: _points,
         updatedAt: DateTime.now(),
         isSynced: false, // ada perubahan → perlu diunggah ulang
+        style: _style,
+        clearStyle: _style == null,
       );
       await _storageService.saveGeoData(updatedGeoData);
       logInfo(
@@ -317,6 +331,16 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
                           _points.isNotEmpty ? _points.first.latitude : null,
                       longitude:
                           _points.isNotEmpty ? _points.first.longitude : null,
+                    ),
+
+                    const SizedBox(height: 16),
+                    FeatureStyleSection(
+                      geometryType: widget.project.geometryType,
+                      style: _style,
+                      defaultStyle: defaultFeatureStyle(
+                          widget.project.geometryType,
+                          SettingsService().settings),
+                      onChanged: (style) => setState(() => _style = style),
                     ),
 
                     const SizedBox(height: 100), // ruang untuk tombol

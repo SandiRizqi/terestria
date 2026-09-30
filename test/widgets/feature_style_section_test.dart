@@ -83,6 +83,7 @@ void main() {
     await tester.tap(find.text('Style'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Use default'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Use default'));
     expect(changes, [null]);
   });
