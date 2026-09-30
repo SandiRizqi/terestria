@@ -406,6 +406,30 @@ class DatabaseService {
     return count > 0;
   }
 
+  /// Catat versi server record [id] saja (tanpa menyentuh isi/updatedAt) —
+  /// dipakai bila record diedit selama upload: push tetap memajukan versi
+  /// server, jadi versi lokal harus ikut agar push berikutnya tak konflik.
+  Future<void> setGeoDataServerVersion(String id, DateTime? version) async {
+    final db = await database;
+    await db.update(
+      'geo_data',
+      {'serverUpdatedAt': version?.microsecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Alasan push terakhir gagal untuk record [id] (null = kosongkan).
+  Future<void> setGeoDataSyncError(String id, String? message) async {
+    final db = await database;
+    await db.update(
+      'geo_data',
+      {'lastSyncError': message},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   /// Baris SQLite untuk [geoData]. `collectedBy` kosong disimpan sebagai ''
   /// karena kolomnya NOT NULL (skema lama) — data server boleh tanpa kolektor.
   static Map<String, Object?> geoDataToRow(GeoData geoData) => {

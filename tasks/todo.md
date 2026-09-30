@@ -12,7 +12,7 @@ Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per ta
 
 ## Phase 2 — Mobile fondasi
 - [x] **M1 — Migrasi DB v6 + model** (M) — serverUpdatedAt, lastSyncError, sync_conflicts
-- [ ] **M2 — Push membawa versi & melaporkan error server** (M) — error_code, lastSyncError, skip project nonaktif
+- [x] **M2 — Push membawa versi & melaporkan error server** (M) — error_code, lastSyncError, skip project nonaktif
 - [ ] **M3 — Konflik: simpan, cegah upload otomatis, resolve** (M)
 
 ### Checkpoint 2

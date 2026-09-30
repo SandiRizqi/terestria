@@ -100,12 +100,17 @@ class SyncService {
   /// Payload push untuk [geoData]. Semua waktu dikirim UTC eksplisit (akhiran
   /// Z) — dulu waktu lokal tanpa zona, sehingga server tak bisa membedakan
   /// WIB/WITA/WIT. Titik membawa seluruh metadata (termasuk kualitas RTK).
+  ///
+  /// `base_updated_at` = versi server terakhir yang dilihat app (deteksi
+  /// konflik di server, 409); `force` = timpa walau server berubah ("Keep
+  /// mine"). Lihat docs/sync-push-contract.md.
   @visibleForTesting
   static Map<String, dynamic> buildGeoDataPayload(
     GeoData geoData,
     Project project,
     Map<String, dynamic> formData, {
     DateTime? now,
+    bool force = false,
   }) =>
       {
         'id': geoData.id,
@@ -128,13 +133,34 @@ class SyncService {
         'created_at': geoData.createdAt.toUtc().toIso8601String(),
         'updated_at': geoData.updatedAt.toUtc().toIso8601String(),
         'synced_at': (now ?? DateTime.now()).toUtc().toIso8601String(),
+        if (geoData.serverUpdatedAt != null)
+          'base_updated_at': geoData.serverUpdatedAt!.toUtc().toIso8601String(),
+        if (force) 'force': true,
       };
 
   /// Sync single GeoData to backend (eksklusif, lihat [runExclusive]).
   Future<SyncResult> syncGeoData(GeoData geoData, Project project) =>
       runExclusive(() => _syncGeoData(geoData, project));
 
-  Future<SyncResult> _syncGeoData(GeoData geoData, Project project) async {
+  /// Push satu record + catat hasilnya per record (`lastSyncError`: pesan
+  /// gagal, atau kosong bila berhasil) untuk ditampilkan di daftar data.
+  Future<SyncResult> _syncGeoData(GeoData geoData, Project project,
+      {bool force = false}) async {
+    final result = await _pushGeoData(geoData, project, force: force);
+    await _recordSyncError(geoData.id, result.success ? null : result.message);
+    return result;
+  }
+
+  Future<void> _recordSyncError(String id, String? message) async {
+    try {
+      await _storageService.setGeoDataSyncError(id, message);
+    } catch (e) {
+      logWarn('Could not store sync status of record $id: $e', tag: _tag);
+    }
+  }
+
+  Future<SyncResult> _pushGeoData(GeoData geoData, Project project,
+      {bool force = false}) async {
     try {
       // Step 1: Upload photos to OSS and get URLs
       logDebug('Processing photos for geodata ${geoData.id}...', tag: _tag);
@@ -184,7 +210,8 @@ class SyncService {
       }
 
       // Step 2: Prepare data untuk dikirim (dengan OSS URLs)
-      final payload = buildGeoDataPayload(geoData, project, processedFormData);
+      final payload = buildGeoDataPayload(geoData, project, processedFormData,
+          force: force);
 
       // Gunakan ApiService yang sudah include token
       final response = await _apiService.post(
@@ -217,11 +244,19 @@ class SyncService {
           );
         }
 
+        // Versi server baru (updated_at jam server) → base push berikutnya.
+        final data = responseData['data'];
+        final serverVersion = data is Map
+            ? parseDateTime(data['updatedAt'] ?? data['updated_at'])
+            : null;
+
         // Tandai synced HANYA bila record belum diedit selama upload.
         final updatedGeoData = geoData.copyWith(
           formData: processedFormData,
           isSynced: true,
           syncedAt: DateTime.now(),
+          serverUpdatedAt: serverVersion,
+          clearLastSyncError: true,
         );
         final marked = await _storageService.saveGeoDataIfUnchanged(
           updatedGeoData,
@@ -232,6 +267,18 @@ class SyncService {
               'Record ${geoData.id} changed during upload; keeping local '
               'edits unsynced so they are uploaded next time',
               tag: _tag);
+          // Push ini tetap memajukan versi server → catat, agar push editan
+          // berikutnya tak dianggap konflik.
+          if (serverVersion != null) {
+            try {
+              await _storageService.setGeoDataServerVersion(
+                  geoData.id, serverVersion);
+            } catch (e) {
+              // Upload sudah sukses; jangan laporkan gagal karena ini.
+              logWarn('Could not store server version of ${geoData.id}: $e',
+                  tag: _tag);
+            }
+          }
         }
 
         return SyncResult(
@@ -248,6 +295,7 @@ class SyncService {
         return SyncResult(
           success: false,
           message: _serverErrorMessage(response.statusCode, response.body),
+          errorCode: _decodeObject(response.body)?['error_code']?.toString(),
         );
       }
     } on SocketException catch (e, stack) {
@@ -432,11 +480,22 @@ class SyncService {
       );
     }
 
+    String? inactiveMessage; // project menolak data → sisa batch dilewati
     for (var i = 0; i < geoDataList.length; i++) {
       final geoData = geoDataList[i];
+      if (inactiveMessage != null) {
+        failCount++;
+        failedIds.add(geoData.id);
+        errors.add(inactiveMessage);
+        await _recordSyncError(geoData.id, inactiveMessage);
+        continue;
+      }
       onProgress?.call('Uploading record ${i + 1} of ${geoDataList.length}…',
           done: i, total: geoDataList.length);
       final result = await syncGeoData(geoData, project);
+      if (result.errorCode == 'project_inactive') {
+        inactiveMessage = result.message;
+      }
       if (result.success) {
         successCount++;
       } else {
@@ -596,6 +655,8 @@ class SyncService {
       // 2. Sync unsynced geo data
       final unsyncedGeoData = await _storageService.getUnsyncedGeoData();
       final projectCache = <String, Project?>{};
+      // Project yang menolak data (nonaktif) → record berikutnya dilewati.
+      final inactiveProjects = <String, String>{};
 
       for (var i = 0; i < unsyncedGeoData.length; i++) {
         final geoData = unsyncedGeoData[i];
@@ -619,7 +680,17 @@ class SyncService {
           errors.add('Project ${project.name}: not uploaded yet');
           continue;
         }
+        final inactive = inactiveProjects[project.id];
+        if (inactive != null) {
+          geoDataFail++;
+          errors.add('${project.name}: $inactive');
+          await _recordSyncError(geoData.id, inactive);
+          continue;
+        }
         final result = await syncGeoData(geoData, project);
+        if (result.errorCode == 'project_inactive') {
+          inactiveProjects[project.id] = result.message;
+        }
         if (result.success) {
           geoDataSuccess++;
         } else {
@@ -1220,6 +1291,11 @@ class SyncService {
   static String _serverErrorMessage(int status, String body) {
     final data = _decodeObject(body);
     final serverMsg = data?['message'] ?? data?['detail'] ?? data?['error'];
+    // Error yang dikenali (mis. project_inactive) → pesan server apa adanya,
+    // bukan pesan generik per status.
+    if (data?['error_code'] != null && serverMsg != null) {
+      return serverMsg.toString();
+    }
     if (status == 403) {
       return 'You do not have permission for this project on the server.';
     }
@@ -1336,12 +1412,16 @@ class SyncResult {
   /// True bila server menolak sesi (HTTP 401) → user perlu login ulang.
   final bool isAuthError;
 
+  /// Kode error dari server (`project_inactive`, `conflict`, …) bila ada.
+  final String? errorCode;
+
   SyncResult({
     required this.success,
     required this.message,
     this.data,
     this.isConnectionError = false,
     this.isAuthError = false,
+    this.errorCode,
   });
 }
 

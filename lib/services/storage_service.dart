@@ -65,6 +65,14 @@ class StorageService {
         expectedUpdatedAt: expectedUpdatedAt);
   }
 
+  /// Versi server record [id] (lihat DatabaseService.setGeoDataServerVersion).
+  Future<void> setGeoDataServerVersion(String id, DateTime? version) =>
+      _db.setGeoDataServerVersion(id, version);
+
+  /// Alasan push terakhir gagal untuk record [id] (null = kosongkan).
+  Future<void> setGeoDataSyncError(String id, String? message) =>
+      _db.setGeoDataSyncError(id, message);
+
   /// Load all geo data for a specific project
   Future<List<GeoData>> loadGeoData(String projectId) async {
     return await _db.loadGeoData(projectId);
