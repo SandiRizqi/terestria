@@ -60,20 +60,35 @@ class SyncService {
   final ValueNotifier<bool> isSyncing = ValueNotifier<bool>(false);
   Future<void>? _running;
 
-  /// Jalankan [body] setelah sync lain selesai — sync manual & auto-sync tak
-  /// pernah tumpang tindih (dua upload record yang sama bersamaan).
+  /// Kunci Zone berisi token eksekusi eksklusif yang sedang berjalan.
+  static final Object _exclusiveZoneKey = Object();
+  Object? _activeToken;
+
+  /// Jalankan [body] setelah sync lain selesai — upload, pull, dan auto-sync
+  /// tak pernah tumpang tindih, dan logout bisa menunggu semuanya.
+  ///
+  /// Reentrant: dipanggil dari DALAM body eksklusif yang sedang berjalan
+  /// (mis. `syncProjectAndData` → `syncProject`) langsung dijalankan, bukan
+  /// menunggu dirinya sendiri (deadlock). Continuation yang baru berjalan
+  /// SETELAH body-nya selesai membawa token basi → menunggu seperti biasa.
   Future<T> runExclusive<T>(Future<T> Function() body) async {
+    final token = Zone.current[_exclusiveZoneKey];
+    if (token != null && identical(token, _activeToken)) return body();
+
     while (_running != null) {
       try {
         await _running;
       } catch (_) {}
     }
     final done = Completer<void>();
+    final myToken = Object();
     _running = done.future;
+    _activeToken = myToken;
     isSyncing.value = true;
     try {
-      return await body();
+      return await runZoned(body, zoneValues: {_exclusiveZoneKey: myToken});
     } finally {
+      _activeToken = null;
       _running = null;
       isSyncing.value = false;
       done.complete();
@@ -115,8 +130,11 @@ class SyncService {
         'synced_at': (now ?? DateTime.now()).toUtc().toIso8601String(),
       };
 
-  /// Sync single GeoData to backend
-  Future<SyncResult> syncGeoData(GeoData geoData, Project project) async {
+  /// Sync single GeoData to backend (eksklusif, lihat [runExclusive]).
+  Future<SyncResult> syncGeoData(GeoData geoData, Project project) =>
+      runExclusive(() => _syncGeoData(geoData, project));
+
+  Future<SyncResult> _syncGeoData(GeoData geoData, Project project) async {
     try {
       // Step 1: Upload photos to OSS and get URLs
       logDebug('Processing photos for geodata ${geoData.id}...', tag: _tag);
@@ -269,8 +287,11 @@ class SyncService {
     }
   }
 
-  /// Sync Project to backend
-  Future<SyncResult> syncProject(Project project) async {
+  /// Sync Project to backend (eksklusif, lihat [runExclusive]).
+  Future<SyncResult> syncProject(Project project) =>
+      runExclusive(() => _syncProject(project));
+
+  Future<SyncResult> _syncProject(Project project) async {
     try {
       // Prepare project data untuk dikirim
       final Map<String, dynamic> payload = {
@@ -379,8 +400,16 @@ class SyncService {
     }
   }
 
-  /// Sync multiple GeoData
+  /// Sync multiple GeoData (eksklusif, lihat [runExclusive]).
   Future<BatchSyncResult> syncMultipleGeoData(
+    List<GeoData> geoDataList,
+    Project project, {
+    SyncProgressCallback? onProgress,
+  }) =>
+      runExclusive(() =>
+          _syncMultipleGeoData(geoDataList, project, onProgress: onProgress));
+
+  Future<BatchSyncResult> _syncMultipleGeoData(
     List<GeoData> geoDataList,
     Project project, {
     SyncProgressCallback? onProgress,
@@ -645,8 +674,11 @@ class SyncService {
 
   // ==================== DOWNLOAD FROM SERVER ====================
 
-  /// Pull projects from server and save to local database
-  Future<SyncResult> pullProjectsFromServer() async {
+  /// Pull projects from server and save to local database (eksklusif).
+  Future<SyncResult> pullProjectsFromServer() =>
+      runExclusive(_pullProjectsFromServer);
+
+  Future<SyncResult> _pullProjectsFromServer() async {
     try {
       final response = await _apiService.get(ApiConfig.syncProjectEndpoint);
 
@@ -836,7 +868,24 @@ class SyncService {
     throw Exception('Count failed: HTTP ${response.statusCode}');
   }
 
+  /// Pull geodata satu project (eksklusif: tak tumpang tindih dengan upload,
+  /// dan logout menunggunya — pull menulis record server ke DB lokal).
   Future<SyncResult> pullGeoDataFromServer(
+    String projectId, {
+    void Function(String message)? onProgress,
+    bool forceFull = false,
+    DateTime? updatedAfter,
+    Map<String, String>? formDataFilters,
+  }) =>
+      runExclusive(() => _pullGeoDataFromServer(
+            projectId,
+            onProgress: onProgress,
+            forceFull: forceFull,
+            updatedAfter: updatedAfter,
+            formDataFilters: formDataFilters,
+          ));
+
+  Future<SyncResult> _pullGeoDataFromServer(
     String projectId, {
     void Function(String message)? onProgress,
     bool forceFull = false,
@@ -1058,7 +1107,11 @@ class SyncService {
   }
 
   /// Two-way sync: Upload local changes and download server changes
-  Future<TwoWaySyncResult> performTwoWaySync() async {
+  /// (eksklusif; langkah di dalamnya berjalan reentrant).
+  Future<TwoWaySyncResult> performTwoWaySync() =>
+      runExclusive(_performTwoWaySync);
+
+  Future<TwoWaySyncResult> _performTwoWaySync() async {
     try {
       // Step 1: Upload local unsynced data to server
       final uploadResult = await syncAllUnsyncedData();

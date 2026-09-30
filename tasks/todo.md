@@ -11,7 +11,7 @@ Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per ta
 - [x] Test mobile & backend lokal hijau — **deploy backend `e06041c` memperbaiki app yang sudah terpasang** (test DB `ByProjectUpdatedAfterTests.test_batas_inklusif` jalan di CI)
 
 ## Phase 2 — Logout aman (Important #2, #3)
-- [ ] **T3 — `runExclusive` reentrant + semua jalur tulis sync eksklusif** (M) — pull, pullProjects, syncProject, twoWay
+- [x] **T3 — `runExclusive` reentrant + semua jalur tulis sync eksklusif** (M) — pull, pullProjects, syncProject, twoWay
 - [ ] **T4 — Kunci DB selama reset logout** (S–M) — penulis terlambat gagal, tak membuat DB baru
 - [ ] **T5 — Draft koleksi dihitung saat logout & ikut cadangan ZIP** (M)
 
