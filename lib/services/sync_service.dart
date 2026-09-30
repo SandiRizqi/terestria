@@ -1154,7 +1154,7 @@ class SyncService {
                 await _storageService.saveSyncConflict(SyncConflict(
                   geoDataId: geoData.id,
                   projectId: geoData.projectId,
-                  serverJson: Map<String, dynamic>.from(raw as Map),
+                  serverJson: Map<String, dynamic>.from(raw),
                   detectedAt: DateTime.now(),
                 ));
                 await _recordSyncError(geoData.id, conflictMessage);
