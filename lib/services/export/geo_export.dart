@@ -232,7 +232,7 @@ class GeoExport {
         csvEscape(first?.longitude),
         csvEscape(first?.altitude),
         csvEscape(d.points.length),
-        csvEscape(d.createdAt.toIso8601String()),
+        csvEscape(d.createdAt.toUtc().toIso8601String()),
         csvEscape(d.collectedBy ?? ''),
         ...dynamicFields.map((f) {
           final val = d.formData[f.label];

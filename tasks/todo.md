@@ -23,7 +23,7 @@ Mobile: `terestria` @ `main` · Backend: `gis-backend` @ `dev1` · commit per ta
 - [x] **T7 — Hasil share cadangan diperiksa (dismissed → peringatan)** (S)
 - [x] **T8 — Emlid: connect baru mematikan auto-reconnect lama** (S)
 - [x] **T9 — Edit record mempertahankan `serverKey` foto hasil sync** (S)
-- [ ] **T10 — CSV `created_at` UTC + dokumentasi tindak lanjut** (XS)
+- [x] **T10 — CSV `created_at` UTC + dokumentasi tindak lanjut** (XS)
 
 ### Checkpoint 3
 - [ ] Test hijau; analyze 0 error; device: Emlid putus-sambung, share cadangan iOS, foto galeri iPhone JPEG

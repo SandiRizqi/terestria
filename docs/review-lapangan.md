@@ -397,3 +397,30 @@ menyarankan Bahasa Indonesia). Komentar kode tetap berbahasa Indonesia sesuai ko
   dikompilasi (tidak ada toolchain iOS di lingkungan ini).
 - Belum diuji di perangkat. Skenario uji lapangan di bagian D perlu dijalankan di HP (terutama
   kill/restore tracking, Emlid putus-sambung, optimasi baterai per merek, dan sync di sinyal lemah).
+
+---
+
+## F. Tindak lanjut review kode (30 Sep 2026)
+
+Review atas commit `c1002b5..fb40943` (implementasi bagian E) menemukan satu masalah
+kritis dan beberapa perbaikan lanjutan. Rencana: `tasks/plan.md`.
+
+| # | Temuan | Status | Commit |
+|---|---|---|---|
+| 1 | **Critical** — record yang gagal disimpan saat pull tetap terlewat: klien menahan watermark tepat di waktu record gagal, sedangkan backend memfilter `updated_at > nilai` (kontrak mewajibkan `>=`) | ✅ Klien menahan watermark 1 µs sebelum record gagal (benar untuk `>` maupun `>=`); backend kini `>=` — **perlu deploy**, sekaligus memulihkan app yang sudah terpasang | 6b36961 · gis-backend `e06041c` |
+| 2 | Draft koleksi (titik & isian belum disimpan) terhapus saat logout tanpa peringatan dan tanpa cadangan | ✅ Dihitung di dialog logout & ikut cadangan ZIP | 64f0217 |
+| 3 | Pull/sync yang masih berjalan bisa menulis data user lama ke DB baru setelah logout | ✅ Semua jalur tulis sync lewat `runExclusive` (reentrant) + DB dikunci selama reset | 32f61a3, 2c4f636 |
+| 4 | Riwayat auto-sync (backoff, status terakhir) terbawa ke user berikutnya | ✅ | b8e1cdc |
+| 5 | Share sheet cadangan ditutup tanpa menyimpan tetap dilaporkan "siap" | ✅ Peringatan bila `dismissed` (iOS) | 1f67b53 |
+| 6 | Connect Emlid ulang yang gagal meninggalkan reconnect "hantu" | ✅ | 8d9c106 |
+| 7 | Datum tinggi tak seragam: NMEA = MSL, LLH/XYZ = elipsoid | ⏳ Diputuskan **elipsoid** (T11) | — |
+| 8 | Konflik pull "lokal menang": upload lokal menimpa editan rekan di server (server upsert tanpa cek versi) | — Dibiarkan & didokumentasikan; *optimistic concurrency* (409 + UI konflik) butuh spec terpisah | — |
+| 9 | Edit record menghapus `serverKey` foto yang diunggah auto-sync selama mengedit | ✅ | cd36e92 |
+| nit | CSV `created_at` masih waktu lokal | ✅ UTC | T10 |
+
+Catatan:
+- `syncProject` menandai tersinkron dengan `UPDATE`, jadi (berbeda dari dugaan awal review)
+  tidak bisa menulis project ke DB baru. Jalur bocor yang nyata adalah pull (`INSERT`).
+- Backend belum mengurutkan hasil delta `updated_at` menaik (kontrak §1 aturan 4). Tak
+  memengaruhi watermark karena klien memproses semua halaman sebelum memajukannya.
+- Kontak User-Agent tile (`api_config.dart`) masih menunggu email/URL yang benar dari pemilik produk.

@@ -162,6 +162,22 @@ void main() {
       expect(lines[2], startsWith('b,,,,0,'));
     });
 
+    test('created_at ditulis UTC (akhiran Z), seragam dengan GeoJSON', () {
+      final local = DateTime(2026, 9, 29, 10); // waktu lokal HP
+      final record = GeoData(
+        id: 'a',
+        projectId: 'p1',
+        formData: const {},
+        points: [_p(106.8, -6.2)],
+        createdAt: local,
+        updatedAt: local,
+      );
+      final csv = GeoExport.csv(_project(GeometryType.point), [record]);
+      final row = const LineSplitter().convert(csv)[1].split(',');
+      expect(row[5], local.toUtc().toIso8601String());
+      expect(row[5], endsWith('Z'));
+    });
+
     test('angka negatif tidak diberi awalan', () {
       expect(GeoExport.csvEscape('-6.25'), '-6.25');
       expect(GeoExport.csvEscape(-6.25), '-6.25');
