@@ -1,30 +1,38 @@
-# TODO — Konflik Sync (D2), Project Nonaktif, Pesan Error Push (30 Sep 2026)
+# TODO — Style per Feature + Select Feature dengan Tap Langsung (30 Sep 2026)
 
-Plan: [plan.md](plan.md) · Plan sebelumnya: [plan-review-fixes.md](plan-review-fixes.md)
-Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per task, tanpa push/deploy
+Spec: [SPEC.md](../SPEC.md) · Plan: [plan.md](plan.md) · Plan sebelumnya: `plan-sync-conflict.md` (arsip lokal)
+Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per task, tanpa push/deploy.
+Baseline mobile: `flutter test` 641 lulus, `flutter analyze` 0 error dan 29 warning.
 
-## Phase 1 — Backend
-- [x] **B1 — Project nonaktif menolak push geodata (403 `project_inactive`)** (S) — upsert + bulk_sync, admin list_editable · gis-backend `79fa50c`
-- [x] **B2 — Deteksi konflik versi saat push (409 `conflict`)** (S–M) — `base_updated_at`, `force`, kontrak push · gis-backend `2cfd135`
+## Fase 1 — Kontrak & data
+- [ ] T1 (backend): `GeoData.style`, migrasi `0021` (manual), `clean_style`, serializer (tidak valid → dibuang, key tidak ada → dipertahankan, `null` → hapus), `to_mobile_json`. Test mock + test DB di CI.
+- [ ] T2: `feature_style.dart` (hex JSON, clamp, nilai awal dari Settings) + `GeoData.style`.
+- [ ] T3: DB v7 (kolom `style`, migrasi idempoten) + draft menyimpan style.
+- [ ] T4: push selalu mengirim `style`; pull (objek/`null`/tanpa key); "Use server" membawa style; `docs/sync-push-contract.md`.
 
-### Checkpoint 1
-- [x] Test lokal backend hijau (28); kontrak push: `docs/sync-push-contract.md`; test DB (`mobile.tests_push_db`) jalan di CI
+### Checkpoint A
+- [ ] Semua test hijau; belum ada perubahan yang terlihat user.
 
-## Phase 2 — Mobile fondasi
-- [x] **M1 — Migrasi DB v6 + model** (M) — serverUpdatedAt, lastSyncError, sync_conflicts
-- [x] **M2 — Push membawa versi & melaporkan error server** (M) — error_code, lastSyncError, skip project nonaktif
-- [x] **M3 — Konflik: simpan, cegah upload otomatis, resolve** (M)
+## Fase 2 — Lihat & atur style
+- [ ] T5: pembangun layer bersama (`project_feature_layers.dart`); style tampil di peta project dan navigasi; tanpa style = sama persis dengan sekarang.
+- [ ] T6: editor style bersama (`style_editor.dart`), diekstrak dari Layers tanpa perubahan perilaku.
+- [ ] T7: bagian "Style" di form "Survey data"; Save menyimpan style; "Save & next" membawa style; draft ikut.
+- [ ] T8: ubah/reset style di layar edit data (record jadi "belum sync").
 
-### Checkpoint 2
-- [x] Test hijau; payload (`base_updated_at`, `force`) & respons (`data.updatedAt`, `error_code`, 409 `data`) cocok kontrak — diuji di kedua sisi
+### Checkpoint B
+- [ ] Manual di HP: atur style saat koleksi dan saat edit, lihat di peta, sync, pull di HP kedua (backend T1 di dev).
 
-## Phase 3 — Mobile UI
-- [x] **M4 — Pesan error push terlihat** (M) — dialog hasil sync bersama, status auto-sync, error per record
-- [x] **M5 — UI konflik + cadangan + dokumentasi** (M)
+## Fase 3 — Tap langsung
+- [ ] T9: hit-test murni (point/line/polygon, toleransi dp, urutan stabil).
+- [ ] T10: daftar pilihan saat tap mengenai beberapa feature + helper `recordTitle()` bersama.
+- [ ] T11: wiring `_onMapTap` (alat ukur → mode gambar → select) + hapus ikon info di peta project dan navigasi.
 
-### Checkpoint 3
-- [ ] Test hijau; device: project nonaktif, konflik 2 HP, upgrade DB v5→v6
-
-## Open questions (lihat plan.md)
-1. Konflik: Keep mine / Use server *(ya)*  2. Form project nonaktif tetap sync *(ya)*
-3. 403 + `project_inactive` *(ya)*  4. Deploy backend dulu *(ya)*
+### Checkpoint C (selesai)
+- [ ] Semua kriteria SPEC §9; test mobile/backend hijau; test DB di CI.
+- [ ] Uji di HP:
+  - upgrade v6 → v7;
+  - sync ke HP kedua;
+  - app lama tidak menghapus style;
+  - edit dari dashboard tidak menghapus style;
+  - ketepatan tap.
+- [ ] Deploy backend T1 sebelum rilis app.
