@@ -51,6 +51,7 @@ import '../../utils/ui_feedback.dart';
 import '../../widgets/readiness/daily_readiness_check.dart';
 import '../readiness/field_readiness_screen.dart';
 import '../../widgets/collection/gps_status_banners.dart';
+import '../../widgets/map/project_feature_layers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 
@@ -969,52 +970,25 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     final polylines = <Polyline>[];
     final polygons = <Polygon>[];
 
-    // Ukuran marker existing data — sedikit lebih kecil dari active collection
-    // agar bisa dibedakan secara visual, tapi tetap proporsional dengan pointSize.
+    // Ukuran marker info di tengah line/polygon — proporsional dengan pointSize.
     final markerDiameter = (s.pointSize * 2).clamp(20.0, 48.0);
-    // Ukuran icon info (untuk label tengah line/polygon)
     final infoIconSize = (markerDiameter * 0.7).clamp(14.0, 26.0);
 
     for (final data in _existingData) {
+      // Style record; null → default Settings (tampil seperti sebelumnya).
+      final style =
+          effectiveFeatureStyle(data, widget.project.geometryType, s);
       switch (widget.project.geometryType) {
         case GeometryType.point:
           if (data.points.isNotEmpty) {
-            markers.add(Marker(
-              point: LatLng(data.points.first.latitude, data.points.first.longitude),
-              width: markerDiameter + 4,
-              height: markerDiameter + 4,
-              child: GestureDetector(
-                onTap: () => _onExistingDataTap(data),
-                child: Container(
-                  width: markerDiameter,
-                  height: markerDiameter,
-                  decoration: BoxDecoration(
-                    color: s.pointColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(Icons.location_on, color: Colors.white,
-                      size: infoIconSize),
-                ),
-              ),
-            ));
+            markers.add(featurePointMarker(data, style,
+                onTap: () => _onExistingDataTap(data)));
           }
           break;
 
         case GeometryType.line:
           if (data.points.isNotEmpty) {
-            polylines.add(Polyline(
-              points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-              color: s.lineColor.withOpacity(0.8),
-              strokeWidth: s.lineWidth,
-            ));
+            polylines.add(featurePolyline(data, style));
             final centerIndex = data.points.length ~/ 2;
             markers.add(Marker(
               point: LatLng(
@@ -1029,7 +1003,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: s.lineColor, width: 2),
+                    border: Border.all(color: style.strokeColor, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
@@ -1038,7 +1012,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                       ),
                     ],
                   ),
-                  child: Icon(Icons.info, color: s.lineColor,
+                  child: Icon(Icons.info, color: style.strokeColor,
                       size: infoIconSize),
                 ),
               ),
@@ -1048,13 +1022,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
 
         case GeometryType.polygon:
           if (data.points.length >= 3) {
-            polygons.add(Polygon(
-              points: data.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-              color: s.polygonColor.withOpacity(s.polygonOpacity),
-              borderColor: s.polygonColor.withOpacity(0.85),
-              borderStrokeWidth: s.lineWidth,
-              isFilled: true,
-            ));
+            polygons.add(featurePolygon(data, style));
             // Hitung centroid sekali saja di sini, bukan di setiap build()
             double sumLat = 0, sumLng = 0;
             for (final p in data.points) {
@@ -1071,7 +1039,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: s.polygonColor, width: 2),
+                    border: Border.all(color: style.strokeColor, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
@@ -1080,7 +1048,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                       ),
                     ],
                   ),
-                  child: Icon(Icons.info, color: s.polygonColor,
+                  child: Icon(Icons.info, color: style.strokeColor,
                       size: infoIconSize),
                 ),
               ),

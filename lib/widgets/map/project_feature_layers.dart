@@ -1,0 +1,83 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../../models/feature_style.dart';
+import '../../models/geo_data_model.dart';
+import '../../models/layer_model.dart';
+import '../../models/project_model.dart';
+import '../../models/settings/app_settings.dart';
+
+/// Gambar feature project di peta (peta project & layar navigasi) dengan style
+/// masing-masing: style record bila ada, selain itu default dari Settings —
+/// feature tanpa style tampil sama persis dengan render sebelum fitur style.
+
+/// Style yang dipakai menggambar [data].
+LayerStyle effectiveFeatureStyle(
+        GeoData data, GeometryType type, AppSettings settings) =>
+    data.style ?? defaultFeatureStyle(type, settings);
+
+/// Diameter marker point dari `pointSize` (×2, dijepit 20–48 px agar tetap
+/// mudah dilihat & diketuk) — sama dengan render sebelumnya.
+double featurePointDiameter(LayerStyle style) =>
+    (style.pointSize * 2).clamp(20.0, 48.0).toDouble();
+
+List<LatLng> featureLatLngs(GeoData data) =>
+    [for (final p in data.points) LatLng(p.latitude, p.longitude)];
+
+/// Line: warna garis dengan opacity style (sama dengan layer line impor).
+Polyline featurePolyline(GeoData data, LayerStyle style) => Polyline(
+      points: featureLatLngs(data),
+      color: style.strokeColor.withValues(alpha: style.fillOpacity),
+      strokeWidth: style.strokeWidth,
+    );
+
+/// Polygon: isi warna isi + opacity; garis tepi ber-alpha 0.85 seperti render
+/// sebelumnya.
+Polygon featurePolygon(GeoData data, LayerStyle style) => Polygon(
+      points: featureLatLngs(data),
+      color: style.fillColor.withValues(alpha: style.fillOpacity),
+      borderColor: style.strokeColor.withValues(alpha: 0.85),
+      borderStrokeWidth: style.strokeWidth,
+    );
+
+/// Marker point: lingkaran warna style + ikon lokasi. Ukuran ikon =
+/// diameter × [iconScale], dijepit [minIconSize]–[maxIconSize]. [onTap] null →
+/// marker tidak menangkap tap sendiri.
+Marker featurePointMarker(
+  GeoData data,
+  LayerStyle style, {
+  double iconScale = 0.7,
+  double minIconSize = 14,
+  double maxIconSize = 26,
+  VoidCallback? onTap,
+}) {
+  final diameter = featurePointDiameter(style);
+  final first = data.points.first;
+  Widget child = Container(
+    width: diameter,
+    height: diameter,
+    decoration: BoxDecoration(
+      color: style.fillColor.withValues(alpha: style.fillOpacity),
+      shape: BoxShape.circle,
+      border: Border.all(color: Colors.white, width: 1.5),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.3),
+          blurRadius: 4,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Icon(Icons.location_on,
+        color: Colors.white,
+        size: (diameter * iconScale).clamp(minIconSize, maxIconSize).toDouble()),
+  );
+  if (onTap != null) child = GestureDetector(onTap: onTap, child: child);
+  return Marker(
+    point: LatLng(first.latitude, first.longitude),
+    width: diameter + 4,
+    height: diameter + 4,
+    child: child,
+  );
+}

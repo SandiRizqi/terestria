@@ -26,6 +26,7 @@ import '../../widgets/map/map_controls_column.dart';
 import '../../widgets/map/map_tool_button.dart';
 import '../../widgets/map/road_network_layer.dart';
 import '../../widgets/map/basemap_layers.dart';
+import '../../widgets/map/project_feature_layers.dart';
 import '../../services/basemap/pdf_overlay_controller.dart';
 import '../../theme/app_theme.dart';
 import '../basemap/basemap_management_screen.dart';
@@ -1399,40 +1400,19 @@ class _NavigationScreenState extends State<NavigationScreen>
 
       if (geomType == GeometryType.point || pts.length == 1) {
         // ── Point marker ─────────────────────────────────────────────────
-        final markerDiameter = (s.pointSize * 2).clamp(20.0, 48.0);
-        final iconSize       = markerDiameter * 0.5;
-        markers.add(Marker(
-          point:  pts.first,
-          width:  markerDiameter + 4,
-          height: markerDiameter + 4,
-          child: Container(
-            width:  markerDiameter,
-            height: markerDiameter,
-            decoration: BoxDecoration(
-              color: s.pointColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color:     Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 4,
-                  offset:    const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Icon(Icons.location_on,
-                color: Colors.white, size: iconSize),
-          ),
+        // Style record, atau default Settings (tampil seperti sebelumnya).
+        markers.add(featurePointMarker(
+          geoData,
+          effectiveFeatureStyle(geoData, GeometryType.point, s),
+          iconScale: 0.5,
+          minIconSize: 0,
+          maxIconSize: double.infinity,
         ));
       } else if (geomType == GeometryType.polygon && pts.length >= 3) {
         // ── Polygon ──────────────────────────────────────────────────────
-        polygons.add(Polygon(
-          points:            pts,
-          color:             s.polygonColor.withValues(alpha: s.polygonOpacity),
-          borderColor:       s.polygonColor.withValues(alpha: 0.85),
-          borderStrokeWidth: s.lineWidth,
-          isFilled:          true,
-        ));
+        final style =
+            effectiveFeatureStyle(geoData, GeometryType.polygon, s);
+        polygons.add(featurePolygon(geoData, style));
         // Centroid info marker
         if (pts.length >= 3) {
           double sumLat = 0, sumLng = 0;
@@ -1446,19 +1426,16 @@ class _NavigationScreenState extends State<NavigationScreen>
               decoration: BoxDecoration(
                 color:  Colors.white,
                 shape:  BoxShape.circle,
-                border: Border.all(color: s.polygonColor, width: 2),
+                border: Border.all(color: style.strokeColor, width: 2),
               ),
-              child: Icon(Icons.info, color: s.polygonColor, size: 13),
+              child: Icon(Icons.info, color: style.strokeColor, size: 13),
             ),
           ));
         }
       } else if (pts.length >= 2) {
         // ── Line ─────────────────────────────────────────────────────────
-        polylines.add(Polyline(
-          points:      pts,
-          color:       s.lineColor.withValues(alpha: 0.8),
-          strokeWidth: s.lineWidth,
-        ));
+        final style = effectiveFeatureStyle(geoData, GeometryType.line, s);
+        polylines.add(featurePolyline(geoData, style));
         // Mid-point info marker
         final mid = pts[pts.length ~/ 2];
         markers.add(Marker(
@@ -1469,9 +1446,9 @@ class _NavigationScreenState extends State<NavigationScreen>
             decoration: BoxDecoration(
               color:  Colors.white,
               shape:  BoxShape.circle,
-              border: Border.all(color: s.lineColor, width: 2),
+              border: Border.all(color: style.strokeColor, width: 2),
             ),
-            child: Icon(Icons.info, color: s.lineColor, size: 12),
+            child: Icon(Icons.info, color: style.strokeColor, size: 12),
           ),
         ));
       }

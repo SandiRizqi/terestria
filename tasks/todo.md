@@ -11,10 +11,10 @@ Baseline mobile: `flutter test` 641 lulus, `flutter analyze` 0 error dan 29 warn
 - [x] T4: push selalu mengirim `style`; pull (objek/`null`/tanpa key); "Use server" membawa style; `docs/sync-push-contract.md`.
 
 ### Checkpoint A
-- [ ] Semua test hijau; belum ada perubahan yang terlihat user.
+- [x] Semua test hijau (672); `analyze` sesuai baseline; belum ada perubahan yang terlihat user.
 
 ## Fase 2 — Lihat & atur style
-- [ ] T5: pembangun layer bersama (`project_feature_layers.dart`); style tampil di peta project dan navigasi; tanpa style = sama persis dengan sekarang.
+- [x] T5: pembangun layer bersama (`project_feature_layers.dart`); style tampil di peta project dan navigasi; tanpa style = sama persis dengan sekarang.
 - [ ] T6: editor style bersama (`style_editor.dart`), diekstrak dari Layers tanpa perubahan perilaku.
 - [ ] T7: bagian "Style" di form "Survey data"; Save menyimpan style; "Save & next" membawa style; draft ikut.
 - [ ] T8: ubah/reset style di layar edit data (record jadi "belum sync").
