@@ -1003,7 +1003,11 @@ class SyncService {
               );
 
               await _storageService.saveGeoData(
-                geoData.copyWith(formData: processedFormData, isSynced: true),
+                geoData.copyWith(
+                  formData: processedFormData,
+                  isSynced: true,
+                  serverUpdatedAt: geoData.updatedAt,
+                ),
               );
               savedCount++;
             } else if (!existingGeoData.isSynced) {
@@ -1028,7 +1032,11 @@ class SyncService {
               );
 
               await _storageService.saveGeoData(
-                geoData.copyWith(formData: processedFormData, isSynced: true),
+                geoData.copyWith(
+                  formData: processedFormData,
+                  isSynced: true,
+                  serverUpdatedAt: geoData.updatedAt,
+                ),
               );
               updatedCount++;
             }

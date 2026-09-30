@@ -252,6 +252,19 @@ void main() {
       expect(g.points.single.altitude, 0.0);
     });
 
+    test('pull menyimpan versi server (mikrodetik) sebagai serverUpdatedAt',
+        () async {
+      final storage = _FakeStorage();
+      final api = _FakeApi([
+        _page([_rec('g1', '2026-06-21T10:00:00.123456Z')])
+      ]);
+
+      await sync(api, storage).pullGeoDataFromServer('p1');
+
+      expect(storage.saved.single.serverUpdatedAt!.toUtc().toIso8601String(),
+          '2026-06-21T10:00:00.123456Z');
+    });
+
     test('edit lokal yang belum sync TIDAK ditimpa versi server', () async {
       final storage = _FakeStorage()
         ..existing['g1'] = _geo('g1',

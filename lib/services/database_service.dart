@@ -22,7 +22,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 5;
+  static const int _databaseVersion = 6;
 
   /// Versi skema DB (dicantumkan di info log diagnostik).
   static const int schemaVersion = _databaseVersion;
@@ -112,6 +112,8 @@ class DatabaseService {
         isSynced INTEGER DEFAULT 0,
         syncedAt INTEGER,
         collectedBy TEXT NOT NULL,
+        serverUpdatedAt INTEGER,
+        lastSyncError TEXT,
         FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
       )
     ''');
@@ -156,6 +158,35 @@ class DatabaseService {
 
     // Tracking sessions (multi-project concurrent tracking)
     await _createTrackingTables(db);
+
+    await _createSyncConflictsTable(db);
+  }
+
+  /// Versi server dari record yang KONFLIK (server menolak push dengan 409,
+  /// atau pull menemukan editan server & lokal). Disimpan sampai user memilih
+  /// "Keep mine" / "Use server version". Idempoten.
+  Future<void> _createSyncConflictsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
+        geoDataId TEXT PRIMARY KEY,
+        projectId TEXT NOT NULL,
+        serverJson TEXT NOT NULL,
+        detectedAt INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  /// Kolom [required] yang belum ada menurut `PRAGMA table_info` (tak peka
+  /// kapital) — agar `ALTER TABLE ADD COLUMN` idempoten saat upgrade.
+  static List<String> missingColumns(
+      List<Map<String, Object?>> tableInfo, Iterable<String> required) {
+    final existing = {
+      for (final row in tableInfo) row['name'].toString().toLowerCase(),
+    };
+    return [
+      for (final c in required)
+        if (!existing.contains(c.toLowerCase())) c,
+    ];
   }
 
   /// Tabel persistensi sesi tracking (recovery setelah crash/kill). Idempoten
@@ -229,6 +260,18 @@ class DatabaseService {
         await db.execute(
             "ALTER TABLE tracking_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'phone'");
       }
+    }
+
+    if (oldVersion < 6) {
+      // Versi server per record (deteksi konflik) + alasan gagal push, dan
+      // tabel konflik. Hanya MENAMBAH kolom/tabel — data lama utuh.
+      final info = await db.rawQuery('PRAGMA table_info(geo_data)');
+      const types = {'serverUpdatedAt': 'INTEGER', 'lastSyncError': 'TEXT'};
+      for (final column in missingColumns(info, types.keys)) {
+        await db.execute(
+            'ALTER TABLE geo_data ADD COLUMN $column ${types[column]}');
+      }
+      await _createSyncConflictsTable(db);
     }
   }
 
@@ -375,6 +418,10 @@ class DatabaseService {
         'isSynced': geoData.isSynced ? 1 : 0,
         'syncedAt': geoData.syncedAt?.millisecondsSinceEpoch,
         'collectedBy': geoData.collectedBy ?? '',
+        // MIKROdetik: server membandingkan versi dengan presisi mikrodetik;
+        // milidetik akan membuat setiap push dianggap konflik.
+        'serverUpdatedAt': geoData.serverUpdatedAt?.microsecondsSinceEpoch,
+        'lastSyncError': geoData.lastSyncError,
       };
 
   Future<List<GeoData>> loadGeoData(String projectId) async {
@@ -386,7 +433,7 @@ class DatabaseService {
       orderBy: 'createdAt DESC',
     );
 
-    return _mapRows(maps, _geoDataFromMap, 'geo data');
+    return _mapRows(maps, geoDataFromRow, 'geo data');
   }
 
   Future<GeoData?> getGeoDataById(String id) async {
@@ -399,7 +446,7 @@ class DatabaseService {
     );
 
     if (maps.isEmpty) return null;
-    return _geoDataFromMap(maps.first);
+    return geoDataFromRow(maps.first);
   }
 
   Future<void> deleteGeoData(String geoDataId) async {
@@ -443,7 +490,7 @@ class DatabaseService {
       orderBy: 'createdAt DESC',
     );
 
-    return _mapRows(maps, _geoDataFromMap, 'geo data');
+    return _mapRows(maps, geoDataFromRow, 'geo data');
   }
 
   Future<List<GeoData>> getSyncedGeoData({String? projectId}) async {
@@ -464,7 +511,7 @@ class DatabaseService {
       orderBy: 'createdAt DESC',
     );
 
-    return _mapRows(maps, _geoDataFromMap, 'geo data');
+    return _mapRows(maps, geoDataFromRow, 'geo data');
   }
 
   Future<int> getGeoDataCount(String projectId) async {
@@ -577,7 +624,8 @@ class DatabaseService {
     );
   }
 
-  GeoData _geoDataFromMap(Map<String, dynamic> map) {
+  /// Baris `geo_data` → [GeoData] (kebalikan [geoDataToRow]).
+  static GeoData geoDataFromRow(Map<String, dynamic> map) {
     final formData = jsonDecode(map['formData']) as Map<String, dynamic>;
     final pointsList = jsonDecode(map['points']) as List;
     final collectedBy = map['collectedBy'] as String?;
@@ -597,6 +645,11 @@ class DatabaseService {
           : null,
       collectedBy:
           (collectedBy == null || collectedBy.isEmpty) ? null : collectedBy,
+      serverUpdatedAt: map['serverUpdatedAt'] is int
+          ? DateTime.fromMicrosecondsSinceEpoch(map['serverUpdatedAt'] as int,
+              isUtc: true)
+          : null,
+      lastSyncError: map['lastSyncError'] as String?,
     );
   }
 

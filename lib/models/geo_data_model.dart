@@ -131,6 +131,16 @@ class GeoData {
   final DateTime? syncedAt;
   final String? collectedBy; // username yang mengumpulkan data
 
+  /// Versi SERVER (`updated_at` jam server) yang terakhir dilihat app untuk
+  /// record ini — dari pull atau respons push. Dikirim sebagai
+  /// `base_updated_at` agar server bisa mendeteksi konflik (409). Null =
+  /// belum pernah ada di server / data lama.
+  final DateTime? serverUpdatedAt;
+
+  /// Alasan push terakhir gagal (ditampilkan di daftar data); null bila tak
+  /// ada / sudah berhasil.
+  final String? lastSyncError;
+
   GeoData({
     required this.id,
     required this.projectId,
@@ -141,6 +151,8 @@ class GeoData {
     this.isSynced = false,
     this.syncedAt,
     this.collectedBy,
+    this.serverUpdatedAt,
+    this.lastSyncError,
   });
 
   Map<String, dynamic> toJson() {
@@ -154,6 +166,9 @@ class GeoData {
       'isSynced': isSynced,
       'syncedAt': syncedAt?.toUtc().toIso8601String(),
       'collectedBy': collectedBy, // Save as camelCase for local storage consistency
+      if (serverUpdatedAt != null)
+        'serverUpdatedAt': serverUpdatedAt!.toUtc().toIso8601String(),
+      if (lastSyncError != null) 'lastSyncError': lastSyncError,
     };
   }
 
@@ -185,6 +200,9 @@ class GeoData {
       isSynced: parseBool(json['isSynced'] ?? json['is_synced']),
       syncedAt: parseDateTime(json['syncedAt'] ?? json['synced_at']),
       collectedBy: parseString(json['collectedBy'] ?? json['collected_by']),
+      // Hanya dari JSON lokal (backup/draft); pull mengisinya dari updatedAt.
+      serverUpdatedAt: parseDateTime(json['serverUpdatedAt']),
+      lastSyncError: parseString(json['lastSyncError']),
     );
   }
 
@@ -199,6 +217,9 @@ class GeoData {
     bool? isSynced,
     DateTime? syncedAt,
     String? collectedBy,
+    DateTime? serverUpdatedAt,
+    String? lastSyncError,
+    bool clearLastSyncError = false,
   }) {
     return GeoData(
       id: id ?? this.id,
@@ -210,6 +231,9 @@ class GeoData {
       isSynced: isSynced ?? this.isSynced,
       syncedAt: syncedAt ?? this.syncedAt,
       collectedBy: collectedBy ?? this.collectedBy,
+      serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
+      lastSyncError:
+          clearLastSyncError ? null : (lastSyncError ?? this.lastSyncError),
     );
   }
 }

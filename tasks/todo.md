@@ -11,7 +11,7 @@ Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per ta
 - [x] Test lokal backend hijau (28); kontrak push: `docs/sync-push-contract.md`; test DB (`mobile.tests_push_db`) jalan di CI
 
 ## Phase 2 — Mobile fondasi
-- [ ] **M1 — Migrasi DB v6 + model** (M) — serverUpdatedAt, lastSyncError, sync_conflicts
+- [x] **M1 — Migrasi DB v6 + model** (M) — serverUpdatedAt, lastSyncError, sync_conflicts
 - [ ] **M2 — Push membawa versi & melaporkan error server** (M) — error_code, lastSyncError, skip project nonaktif
 - [ ] **M3 — Konflik: simpan, cegah upload otomatis, resolve** (M)
 
