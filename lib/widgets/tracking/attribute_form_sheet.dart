@@ -175,6 +175,7 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
                         DynamicForm(
                           formFields: widget.project.formFields,
                           projectId: widget.project.id,
+                          applyDefaults: true,
                           controller: _formController,
                           onSaved: (data) => _formData = data,
                           onChanged: () {

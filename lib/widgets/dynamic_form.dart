@@ -37,6 +37,10 @@ class DynamicForm extends StatefulWidget {
   /// Untuk menggulir ke field bermasalah dari luar form.
   final DynamicFormController? controller;
 
+  /// Record baru: isi `defaultValue` field yang belum punya isian (belum ada
+  /// di [initialData]). Nilai pin tetap menang. Layar edit: false.
+  final bool applyDefaults;
+
   const DynamicForm({
     Key? key,
     required this.formFields,
@@ -49,6 +53,7 @@ class DynamicForm extends StatefulWidget {
     this.longitude,
     this.locationProvider,
     this.controller,
+    this.applyDefaults = false,
   }) : super(key: key);
 
   @override
@@ -80,9 +85,31 @@ class _DynamicFormState extends State<DynamicForm>
     _formData = widget.initialData != null
         ? Map<String, dynamic>.from(widget.initialData!)
         : {};
+    if (widget.applyDefaults) _applyDefaults();
     widget.controller?._state = this;
     _loadPinnedValues();
     _loadCaseModes();
+  }
+
+  /// Default hanya untuk field yang belum ada di data (bukan yang sengaja
+  /// dikosongkan user); `now` = saat form dibuka. Pin menimpa sesudahnya.
+  void _applyDefaults() {
+    final now = DateTime.now();
+    var applied = false;
+    for (final field in widget.formFields) {
+      if (_formData.containsKey(field.label)) continue;
+      final value = resolveDefaultValue(field, now);
+      if (value == null) continue;
+      _formData[field.label] = value;
+      applied = true;
+    }
+    if (!applied) return;
+    // Laporkan ke induk setelah frame pertama (indikator field wajib dsb.).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onSaved(_formData);
+      widget.onChanged?.call();
+    });
   }
 
   @override
@@ -1447,12 +1474,14 @@ class RequiredFieldsProgress extends StatelessWidget {
               Icon(complete ? Icons.check_circle : Icons.pending_actions,
                   size: 18, color: color),
               const SizedBox(width: 6),
-              Text(
-                complete
-                    ? 'All required fields completed'
-                    : '$done of $total required fields completed',
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600, color: color),
+              Flexible(
+                child: Text(
+                  complete
+                      ? 'All required fields completed'
+                      : '$done of $total required fields completed',
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600, color: color),
+                ),
               ),
             ],
           ),

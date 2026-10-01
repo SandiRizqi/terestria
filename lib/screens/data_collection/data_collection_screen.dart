@@ -2910,6 +2910,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                               // Isian dipertahankan saat form ditutup & dibuka
                               // lagi (dulu kosong kembali).
                               initialData: _formData,
+                              // Selalu record baru (edit lewat layar sendiri);
+                              // "Save & next" mengosongkan _formData → default
+                              // diterapkan lagi.
+                              applyDefaults: true,
                               controller: _formController,
                               onSaved: (data) => _formData = data,
                               // Pass watermark info to PhotoFieldWidget

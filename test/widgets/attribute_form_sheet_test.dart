@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geoform_app/models/form_field_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/storage_service.dart';
@@ -36,7 +37,7 @@ class _Storage implements StorageService {
       super.noSuchMethod(invocation);
 }
 
-Future<_Storage> _openSheet(WidgetTester tester) async {
+Future<_Storage> _openSheet(WidgetTester tester, {Project? project}) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -50,7 +51,7 @@ Future<_Storage> _openSheet(WidgetTester tester) async {
               context: context,
               isScrollControlled: true,
               builder: (_) => AttributeFormSheet(
-                project: _project,
+                project: project ?? _project,
                 points: _points,
                 username: 'surveyor',
                 storageService: storage,
@@ -91,6 +92,31 @@ void main() {
     expect(storage.saved, hasLength(1));
     expect(storage.saved.single.style?.fillOpacity, 0.8);
     expect(storage.saved.single.collectedBy, 'surveyor');
+  });
+
+  testWidgets('nilai default field ikut tersimpan (record baru)',
+      (tester) async {
+    final project = Project(
+      id: 'pB',
+      name: 'Blok B',
+      description: '',
+      geometryType: GeometryType.polygon,
+      formFields: [
+        FormFieldModel(
+            id: 'k',
+            label: 'Kondisi',
+            type: FieldType.rating,
+            required: true,
+            defaultValue: '3'),
+      ],
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+    final storage = await _openSheet(tester, project: project);
+    expect(find.text('3 / 5'), findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(storage.saved.single.formData['Kondisi'], 3);
   });
 
   testWidgets('tanpa mengubah style → tersimpan dengan style null (default)',

@@ -175,6 +175,124 @@ String? fieldValueIssue(FormFieldModel field, Object? value) {
   }
 }
 
+/// Token `defaultValue` tanggal/jam/tanggal-jam: waktu saat form dibuka.
+const String defaultNowToken = 'now';
+
+bool _isNowToken(FormFieldModel field, String raw) =>
+    raw.toLowerCase() == defaultNowToken &&
+    (field.type == FieldType.date ||
+        field.type == FieldType.time ||
+        field.type == FieldType.datetime);
+
+final _dateValue =
+    RegExp(r'^(\d{4})-(\d{2})-(\d{2})(?:T00:00(?::00(?:\.0{1,6})?)?)?$');
+
+/// Nilai tersimpan field tanggal: `YYYY-MM-DDT00:00:00.000` (lokal); null
+/// bila bukan tanggal yang ada.
+String? _dateDefault(String raw) {
+  final m = _dateValue.firstMatch(raw);
+  if (m == null) return null;
+  final y = int.parse(m.group(1)!), mo = int.parse(m.group(2)!);
+  final d = int.parse(m.group(3)!);
+  if (mo < 1 || mo > 12 || d < 1 || d > DateTime(y, mo + 1, 0).day) return null;
+  return DateTime(y, mo, d).toIso8601String();
+}
+
+/// `defaultValue` dalam bentuk nilai tersimpan, tanpa cek opsi/batas; null
+/// bila formatnya tidak cocok dengan tipe.
+Object? _parseDefault(FormFieldModel field, String raw, DateTime now) {
+  final isNow = _isNowToken(field, raw);
+  switch (field.type) {
+    case FieldType.text:
+    case FieldType.textarea:
+      return field.defaultValue;
+    case FieldType.number:
+    case FieldType.decimal:
+      final n = parseLocaleNumber(raw);
+      if (n == null) return null;
+      return n == n.roundToDouble() ? n.toInt() : n;
+    case FieldType.date:
+      return isNow
+          ? DateTime(now.year, now.month, now.day).toIso8601String()
+          : _dateDefault(raw);
+    case FieldType.time:
+      if (isNow) return formatTimeValue(now.hour, now.minute);
+      final t = parseTimeValue(raw);
+      return t == null ? null : formatTimeValue(t.hour, t.minute);
+    case FieldType.datetime:
+      if (isNow) return formatDateTimeValue(now);
+      final dt = parseDateTimeValue(raw);
+      return dt == null ? null : formatDateTimeValue(dt);
+    case FieldType.dropdown:
+      return raw;
+    case FieldType.multiselect:
+      final parts = multiselectParts(raw);
+      return parts.isEmpty ? null : joinMultiselect(parts, field.options);
+    case FieldType.checkbox:
+      final v = raw.toLowerCase();
+      return v == 'true' ? true : (v == 'false' ? false : null);
+    case FieldType.rating:
+      return ratingValue(raw);
+    case FieldType.photo:
+      return null;
+  }
+}
+
+const _defaultFormatIssue = {
+  FieldType.number: 'is not a valid number',
+  FieldType.decimal: 'is not a valid number',
+  FieldType.date: 'is not a valid date',
+  FieldType.time: 'is not a valid time',
+  FieldType.datetime: 'is not a valid date and time',
+  FieldType.multiselect: 'has no options',
+  FieldType.checkbox: 'must be true or false',
+  FieldType.rating: 'must be 1–5',
+  FieldType.photo: 'is not supported for photos',
+};
+
+/// Masalah `defaultValue` sebuah field (mis. "is not one of the options"),
+/// atau null bila kosong/valid. Untuk builder.
+String? defaultValueIssue(FormFieldModel field) {
+  final raw = field.defaultValue?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  final value = _parseDefault(field, raw, DateTime.now());
+  if (value == null) return _defaultFormatIssue[field.type];
+  switch (field.type) {
+    case FieldType.number:
+    case FieldType.decimal:
+      return _rangeIssue(field, (value as num).toDouble());
+    case FieldType.rating:
+      final r = value as int;
+      return r < 1 || r > 5 ? 'must be 1–5' : null;
+    case FieldType.dropdown:
+      return (field.options ?? const []).contains(value)
+          ? null
+          : 'is not one of the options';
+    case FieldType.multiselect:
+      return fieldValueIssue(field, value);
+    default:
+      return null;
+  }
+}
+
+/// Nilai default untuk record baru (SPEC §3.4): `now` diganti [now]; null
+/// bila tidak ada atau tidak valid.
+Object? resolveDefaultValue(FormFieldModel field, DateTime now) {
+  final raw = field.defaultValue?.trim() ?? '';
+  if (raw.isEmpty || defaultValueIssue(field) != null) return null;
+  return _parseDefault(field, raw, now);
+}
+
+/// Bentuk simpan `defaultValue` dari builder: format §3.1 (angka bertitik,
+/// tanggal ISO, dst.), `now` tetap token; null bila kosong/tidak valid.
+String? normalizeDefaultValue(FormFieldModel field) {
+  final raw = field.defaultValue?.trim() ?? '';
+  if (raw.isEmpty || defaultValueIssue(field) != null) return null;
+  if (_isNowToken(field, raw)) return defaultNowToken;
+  final value = _parseDefault(field, raw, DateTime.now());
+  return value is double ? formatNumber(value) : value.toString();
+}
+
 /// Teks tampilan nilai: Yes/No, `4 / 5`, `35.5 cm`, `2026-10-01 07:15`, dst.
 /// Nilai yang tidak sesuai format tipenya ditampilkan apa adanya.
 String displayFieldValue(FormFieldModel field, Object? value) {

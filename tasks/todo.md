@@ -12,7 +12,7 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 - [x] T5: input pilihan ganda `"A; B"` (`MultiChoiceInput`; nilai lama di luar daftar tetap tampil & ditandai) + editor opsi bersama dropdown: minimal 1, unik (huruf besar/kecil diabaikan; dropdown dengan opsi ganda dulu bisa crash), tanpa `;` untuk pilihan ganda. Opsi kini disimpan tanpa spasi di tepi.
 - [x] T6: input waktu (`HH:mm`, pemilih 24 jam) & tanggal-waktu (`YYYY-MM-DDTHH:mm:00.000`; pilih tanggal lalu jam) dengan "Now" dan hapus; nilai lama tak valid tampil apa adanya dan ditandai validasi. Semua tipe kini punya input, jadi penanda `pickable` dihapus.
 - [x] T7: builder — isian Min/Max/Unit untuk angka/desimal (boleh salah satu, menolak min > maks, satuan ≤ 10 huruf, dibuang bila tipe diganti); form — satuan sebagai akhiran yang selalu terlihat, nilai di luar batas ditandai inline ("Value must be between 0 and 200 cm") dan simpan diblokir lewat `formFieldIssues`.
-- [ ] T8: nilai default (record baru saja; draft → pin → default; `now`).
+- [x] T8: nilai default — `resolveDefaultValue`/`defaultValueIssue`/`normalizeDefaultValue` (murni); `DynamicForm(applyDefaults)` hanya mengisi field yang belum ada di data (draft & isian yang sengaja dikosongkan tidak ditimpa, pin tetap menang), dipakai form koleksi (juga setelah "Save & next") dan sheet Tracking Aktif, tidak di layar edit; builder: `DefaultValueEditor` per tipe (teks/angka/tanggal/jam dengan "saat form dibuka", dropdown/centang/skala lewat daftar, pilihan ganda lewat centang) divalidasi terhadap opsi & batas, dibuang bila tipe diganti. Perbaikan kecil: teks progres field wajib tidak meluber.
 - [ ] T9: tipe baru di filter, ekspor, detail, lembar konflik, judul record.
 
 ### Checkpoint A

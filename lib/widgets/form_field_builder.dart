@@ -4,7 +4,13 @@ import '../models/field_type_info.dart';
 import '../models/form_field_model.dart';
 import '../theme/app_theme.dart';
 import '../utils/field_values.dart'
-    show formatNumber, multiselectSeparator, parseLocaleNumber;
+    show
+        defaultValueIssue,
+        formatNumber,
+        multiselectSeparator,
+        normalizeDefaultValue,
+        parseLocaleNumber;
+import 'form_inputs/default_value_editor.dart';
 
 class FormFieldBuilderDialog extends StatefulWidget {
   final FormFieldModel? field;
@@ -27,12 +33,15 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
   final _minController = TextEditingController();
   final _maxController = TextEditingController();
   final _unitController = TextEditingController();
-  final _uuid = const Uuid();
+  late final String _id = widget.field?.id ?? const Uuid().v4();
 
   FieldType _selectedType = FieldType.text;
   bool _isRequired = false;
   int _minPhotos = 0;
   int _maxPhotos = 1;
+
+  /// Nilai default mentah dari [DefaultValueEditor]; dinormalkan saat simpan.
+  String? _defaultValue;
 
   @override
   void initState() {
@@ -50,6 +59,7 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
       if (min != null) _minController.text = formatNumber(min);
       if (max != null) _maxController.text = formatNumber(max);
       _unitController.text = widget.field!.unit ?? '';
+      _defaultValue = widget.field!.defaultValue;
     } else {
       // Untuk field baru, jika type photo maka set label default
       if (_selectedType == FieldType.photo) {
@@ -114,23 +124,20 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
     return null;
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
-
-    final options = _hasOptions ? _options : null;
+  /// Field dari isian dialog saat ini, dengan [defaultValue] yang diberikan.
+  FormFieldModel _buildField(String? defaultValue) {
     final original = widget.field;
     final sameType = original != null && original.type == _selectedType;
     final unit = _unitController.text.trim();
-    final field = FormFieldModel(
-      id: original?.id ?? _uuid.v4(),
+    return FormFieldModel(
+      id: _id,
       label: _labelController.text,
       type: _selectedType,
       required: _isRequired,
-      options: options,
+      options: _hasOptions ? _options : null,
       minPhotos: _selectedType == FieldType.photo ? _minPhotos : null,
       maxPhotos: _selectedType == FieldType.photo ? _maxPhotos : null,
-      // Pengaturan yang belum punya isian di dialog ini tetap dipertahankan.
-      defaultValue: sameType ? original.defaultValue : null,
+      defaultValue: defaultValue,
       min: _isNumeric ? _limit(_minController) : null,
       max: _isNumeric ? _limit(_maxController) : null,
       unit: _isNumeric && unit.isNotEmpty ? unit : null,
@@ -138,8 +145,14 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
       // kecuali user memilih tipe lain.
       unknownTypeName: sameType ? original.unknownTypeName : null,
     );
+  }
 
-    Navigator.pop(context, field);
+  void _save() {
+    if (!_formKey.currentState!.validate()) return;
+    final defaultValue = _selectedType == FieldType.photo
+        ? null
+        : normalizeDefaultValue(_buildField(_defaultValue));
+    Navigator.pop(context, _buildField(defaultValue));
   }
 
   @override
@@ -227,6 +240,7 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                 }).toList(),
                 onChanged: (value) {
                   setState(() {
+                    if (value != _selectedType) _defaultValue = null;
                     _selectedType = value!;
                     // Auto set label ke "Photo" jika photo type dipilih
                     if (_selectedType == FieldType.photo) {
@@ -259,6 +273,8 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                   ),
                   maxLines: 5,
                   validator: (_) => _optionsIssue(),
+                  // Pilihan default mengikuti daftar opsi.
+                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: AppTheme.spacingMedium),
               ],
@@ -414,6 +430,22 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                   ),
                 ),
                 const SizedBox(height: AppTheme.spacingMedium),
+              ],
+
+              if (_selectedType != FieldType.photo) ...[
+                DefaultValueEditor(
+                  // Tipe diganti → isian default mulai kosong lagi.
+                  key: ValueKey(_selectedType),
+                  type: _selectedType,
+                  options: {..._options}.toList(),
+                  initialValue: _defaultValue,
+                  onChanged: (value) => _defaultValue = value,
+                  validator: (value) {
+                    final issue = defaultValueIssue(_buildField(value));
+                    return issue == null ? null : 'Default $issue';
+                  },
+                ),
+                const SizedBox(height: AppTheme.spacingSmall),
               ],
 
               // Required checkbox

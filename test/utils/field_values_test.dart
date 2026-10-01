@@ -138,4 +138,100 @@ void main() {
       expect(displayFieldValue(_field(FieldType.rating), 'bagus'), 'bagus');
     });
   });
+
+  group('nilai default (SPEC §3.4)', () {
+    FormFieldModel withDefault(FieldType type, String? value,
+            {List<String>? options, double? min, double? max, String? unit}) =>
+        FormFieldModel(
+            id: 'f',
+            label: 'F',
+            type: type,
+            options: options,
+            min: min,
+            max: max,
+            unit: unit,
+            defaultValue: value);
+    final now = DateTime(2026, 10, 1, 7, 5, 42);
+
+    test('nilai siap pakai per tipe', () {
+      final cases = <(FormFieldModel, Object?)>[
+        (withDefault(FieldType.text, 'Blok A'), 'Blok A'),
+        (withDefault(FieldType.text, 'now'), 'now'),
+        (withDefault(FieldType.textarea, 'baris 1\nbaris 2'), 'baris 1\nbaris 2'),
+        (withDefault(FieldType.number, '35'), 35),
+        (withDefault(FieldType.decimal, '2,5'), 2.5),
+        (withDefault(FieldType.date, '2026-09-30'), '2026-09-30T00:00:00.000'),
+        (withDefault(FieldType.date, 'now'), '2026-10-01T00:00:00.000'),
+        (withDefault(FieldType.time, '06:30'), '06:30'),
+        (withDefault(FieldType.time, 'now'), '07:05'),
+        (withDefault(FieldType.datetime, '2026-09-30 06:30'),
+            '2026-09-30T06:30:00.000'),
+        (withDefault(FieldType.datetime, 'NOW'), '2026-10-01T07:05:00.000'),
+        (withDefault(FieldType.dropdown, 'Tikus', options: _opts), 'Tikus'),
+        (withDefault(FieldType.multiselect, 'Tikus; Ulat api', options: _opts),
+            'Ulat api; Tikus'),
+        (withDefault(FieldType.checkbox, 'true'), true),
+        (withDefault(FieldType.checkbox, 'false'), false),
+        (withDefault(FieldType.rating, '4'), 4),
+      ];
+      for (final (field, expected) in cases) {
+        expect(resolveDefaultValue(field, now), expected,
+            reason: '${field.type.name} "${field.defaultValue}"');
+      }
+    });
+
+    test('tanpa default, kosong, atau tidak valid → tidak diterapkan', () {
+      final cases = [
+        withDefault(FieldType.text, null),
+        withDefault(FieldType.text, ''),
+        withDefault(FieldType.number, '250', max: 200),
+        withDefault(FieldType.number, 'banyak'),
+        withDefault(FieldType.time, '25:00'),
+        withDefault(FieldType.date, 'besok'),
+        withDefault(FieldType.dropdown, 'Babi', options: _opts),
+        withDefault(FieldType.multiselect, 'Tikus; Babi', options: _opts),
+        withDefault(FieldType.checkbox, 'ya'),
+        withDefault(FieldType.rating, '7'),
+        withDefault(FieldType.photo, 'x'),
+      ];
+      for (final field in cases) {
+        expect(resolveDefaultValue(field, now), isNull,
+            reason: '${field.type.name} "${field.defaultValue}"');
+      }
+    });
+
+    test('pesan masalah default untuk builder', () {
+      expect(defaultValueIssue(withDefault(FieldType.decimal, '250',
+              min: 0, max: 200, unit: 'cm')),
+          'must be between 0 and 200 cm');
+      expect(defaultValueIssue(withDefault(FieldType.number, 'x')),
+          'is not a valid number');
+      expect(defaultValueIssue(withDefault(FieldType.dropdown, 'Babi',
+              options: _opts)),
+          'is not one of the options');
+      expect(defaultValueIssue(withDefault(FieldType.multiselect, 'Babi',
+              options: _opts)),
+          'has an option that is not in the list: Babi');
+      expect(defaultValueIssue(withDefault(FieldType.time, '7.15')),
+          'is not a valid time');
+      expect(defaultValueIssue(withDefault(FieldType.rating, '0')),
+          'must be 1–5');
+      expect(defaultValueIssue(withDefault(FieldType.time, 'now')), isNull);
+      expect(defaultValueIssue(withDefault(FieldType.text, '')), isNull);
+    });
+
+    test('bentuk simpan default dari builder: format §3.1, `now` tetap', () {
+      expect(normalizeDefaultValue(withDefault(FieldType.decimal, '2,50')), '2.5');
+      expect(normalizeDefaultValue(withDefault(FieldType.number, '35.0')), '35');
+      expect(normalizeDefaultValue(withDefault(FieldType.date, '2026-09-30')),
+          '2026-09-30T00:00:00.000');
+      expect(normalizeDefaultValue(withDefault(FieldType.datetime, 'Now')), 'now');
+      expect(normalizeDefaultValue(withDefault(FieldType.time, '6:30')), isNull);
+      expect(normalizeDefaultValue(withDefault(FieldType.time, '06:30')), '06:30');
+      expect(normalizeDefaultValue(withDefault(FieldType.checkbox, 'TRUE')), 'true');
+      expect(normalizeDefaultValue(withDefault(FieldType.text, ' apa adanya ')),
+          ' apa adanya ');
+      expect(normalizeDefaultValue(withDefault(FieldType.text, '   ')), isNull);
+    });
+  });
 }
