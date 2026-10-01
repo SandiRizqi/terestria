@@ -98,7 +98,8 @@ String formatDateTimeValue(DateTime value) =>
     DateTime(value.year, value.month, value.day, value.hour, value.minute)
         .toIso8601String();
 
-String _fmtNumber(double n) =>
+/// Angka tanpa `.0` bila bulat: `200`, `35.5`.
+String formatNumber(double n) =>
     n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
 bool _isBlank(Object? v) =>
@@ -113,11 +114,11 @@ String? _rangeIssue(FormFieldModel field, double n) {
   final low = field.min, high = field.max;
   if (low != null && high != null) {
     return n < low || n > high
-        ? 'must be between ${_fmtNumber(low)} and ${_fmtNumber(high)}$suffix'
+        ? 'must be between ${formatNumber(low)} and ${formatNumber(high)}$suffix'
         : null;
   }
-  if (low != null && n < low) return 'must be at least ${_fmtNumber(low)}$suffix';
-  if (high != null && n > high) return 'must be at most ${_fmtNumber(high)}$suffix';
+  if (low != null && n < low) return 'must be at least ${formatNumber(low)}$suffix';
+  if (high != null && n > high) return 'must be at most ${formatNumber(high)}$suffix';
   return null;
 }
 
@@ -189,7 +190,7 @@ String displayFieldValue(FormFieldModel field, Object? value) {
       final n = numberValue(value);
       if (n == null) return value.toString();
       final unit = (field.unit ?? '').trim();
-      return unit.isEmpty ? _fmtNumber(n) : '${_fmtNumber(n)} $unit';
+      return unit.isEmpty ? formatNumber(n) : '${formatNumber(n)} $unit';
     case FieldType.datetime:
       final dt = parseDateTimeValue(value);
       return dt == null

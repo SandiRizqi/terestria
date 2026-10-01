@@ -451,6 +451,23 @@ class _DynamicFormState extends State<DynamicForm>
   String _issueText(String issue) =>
       issue == 'is required' ? 'This field is required' : 'Value $issue';
 
+  /// Satuan angka untuk akhiran input; null bila tidak diatur.
+  String? _unitOf(FormFieldModel field) {
+    final unit = field.unit?.trim() ?? '';
+    return unit.isEmpty ? null : unit;
+  }
+
+  /// Validasi isian angka: wajib, [invalid] bila bukan angka, lalu min/maks.
+  String? _numberError(FormFieldModel field, String? value, String invalid) {
+    if (value == null || value.isEmpty) {
+      return field.required ? 'This field is required' : null;
+    }
+    final n = parseLocaleNumber(value);
+    if (n == null) return invalid;
+    final issue = fieldValueIssue(field, n);
+    return issue == null ? null : _issueText(issue);
+  }
+
   /// Tombol pin untuk input tipe baru (sama dengan field teks).
   Widget _pinButton(String fieldLabel) {
     final pinned = _isPinned(fieldLabel);
@@ -634,6 +651,10 @@ class _DynamicFormState extends State<DynamicForm>
       readOnly: pinned,
       decoration: InputDecoration(
         labelText: field.label + (field.required ? ' *' : ''),
+        // Label tetap di atas agar satuan terlihat juga saat isian kosong.
+        suffixText: _unitOf(field),
+        floatingLabelBehavior:
+            _unitOf(field) == null ? null : FloatingLabelBehavior.always,
         border: pinned
             ? OutlineInputBorder(
                 borderSide:
@@ -674,17 +695,8 @@ class _DynamicFormState extends State<DynamicForm>
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'^-?\d*[.,]?\d{0,2}')),
       ],
-      validator: (value) {
-        if (field.required && (value == null || value.isEmpty)) {
-          return 'This field is required';
-        }
-        if (value != null && value.isNotEmpty) {
-          if (parseLocaleNumber(value) == null) {
-            return 'Please enter a valid number';
-          }
-        }
-        return null;
-      },
+      validator: (value) =>
+          _numberError(field, value, 'Please enter a valid number'),
       onChanged: (value) {
         _formData[field.label] = value.isNotEmpty
             ? parseLocaleNumber(value) ?? value
@@ -722,6 +734,10 @@ class _DynamicFormState extends State<DynamicForm>
       readOnly: pinned,
       decoration: InputDecoration(
         labelText: field.label + (field.required ? ' *' : ''),
+        // Label tetap di atas agar satuan terlihat juga saat isian kosong.
+        suffixText: _unitOf(field),
+        floatingLabelBehavior:
+            _unitOf(field) == null ? null : FloatingLabelBehavior.always,
         border: pinned
             ? OutlineInputBorder(
                 borderSide: BorderSide(color: Colors.amber.shade300, width: 1.5),
@@ -756,17 +772,8 @@ class _DynamicFormState extends State<DynamicForm>
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'^-?\d*[.,]?\d*')),
       ],
-      validator: (value) {
-        if (field.required && (value == null || value.isEmpty)) {
-          return 'This field is required';
-        }
-        if (value != null && value.isNotEmpty) {
-          if (parseLocaleNumber(value) == null) {
-            return 'Please enter a valid decimal number';
-          }
-        }
-        return null;
-      },
+      validator: (value) =>
+          _numberError(field, value, 'Please enter a valid decimal number'),
       onChanged: (String value) {
         _formData[field.label] = value.isNotEmpty
             ? parseLocaleNumber(value) ?? value

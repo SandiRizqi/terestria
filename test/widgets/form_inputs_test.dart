@@ -170,6 +170,38 @@ void main() {
     });
   });
 
+  group('angka: batas & satuan', () {
+    FormFieldModel tinggi(FieldType type) => FormFieldModel(
+        id: 't', label: 'Tinggi', type: type, min: 0, max: 200, unit: 'cm');
+
+    testWidgets('satuan tampil sebagai akhiran, juga saat masih kosong',
+        (tester) async {
+      await _pump(tester, [tinggi(FieldType.decimal)]);
+      expect(find.text('cm'), findsOneWidget);
+      final fades = tester.widgetList<AnimatedOpacity>(find.ancestor(
+          of: find.text('cm'), matching: find.byType(AnimatedOpacity)));
+      expect(fades.every((w) => w.opacity == 1), isTrue);
+    });
+
+    for (final type in [FieldType.number, FieldType.decimal]) {
+      testWidgets('${type.name}: di luar batas ditolak; di dalam batas lolos',
+          (tester) async {
+        final field = tinggi(type);
+        final h = await _pump(tester, [field]);
+        await tester.enterText(find.byType(TextField), '250');
+        expect(h.formKey.currentState!.validate(), isFalse);
+        await tester.pump();
+        expect(find.text('Value must be between 0 and 200 cm'), findsOneWidget);
+        expect(formFieldIssues([field], h.saved()), isNotEmpty);
+
+        await tester.enterText(find.byType(TextField), '35,5');
+        expect(h.formKey.currentState!.validate(), isTrue);
+        expect(h.saved()['Tinggi'], 35.5);
+        expect(formFieldIssues([field], h.saved()), isEmpty);
+      });
+    }
+  });
+
   group('skala 1–5', () {
     testWidgets('ketuk bintang → tersimpan angka; ketuk lagi → kosong',
         (tester) async {

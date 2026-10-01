@@ -3,7 +3,8 @@ import 'package:uuid/uuid.dart';
 import '../models/field_type_info.dart';
 import '../models/form_field_model.dart';
 import '../theme/app_theme.dart';
-import '../utils/field_values.dart' show multiselectSeparator;
+import '../utils/field_values.dart'
+    show formatNumber, multiselectSeparator, parseLocaleNumber;
 
 class FormFieldBuilderDialog extends StatefulWidget {
   final FormFieldModel? field;
@@ -23,6 +24,9 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
   final _formKey = GlobalKey<FormState>();
   final _labelController = TextEditingController();
   final _optionsController = TextEditingController();
+  final _minController = TextEditingController();
+  final _maxController = TextEditingController();
+  final _unitController = TextEditingController();
   final _uuid = const Uuid();
 
   FieldType _selectedType = FieldType.text;
@@ -42,6 +46,10 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
       if (widget.field!.options != null) {
         _optionsController.text = widget.field!.options!.join('\n');
       }
+      final min = widget.field!.min, max = widget.field!.max;
+      if (min != null) _minController.text = formatNumber(min);
+      if (max != null) _maxController.text = formatNumber(max);
+      _unitController.text = widget.field!.unit ?? '';
     } else {
       // Untuk field baru, jika type photo maka set label default
       if (_selectedType == FieldType.photo) {
@@ -54,7 +62,24 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
   void dispose() {
     _labelController.dispose();
     _optionsController.dispose();
+    _minController.dispose();
+    _maxController.dispose();
+    _unitController.dispose();
     super.dispose();
+  }
+
+  bool get _isNumeric =>
+      _selectedType == FieldType.number || _selectedType == FieldType.decimal;
+
+  /// Batas dari isian min/maks; kosong = tanpa batas.
+  double? _limit(TextEditingController controller) =>
+      parseLocaleNumber(controller.text);
+
+  String? _limitIssue(String? value) {
+    final text = value?.trim() ?? '';
+    return text.isEmpty || parseLocaleNumber(text) != null
+        ? null
+        : 'Not a number';
   }
 
   bool get _hasOptions =>
@@ -95,8 +120,7 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
     final options = _hasOptions ? _options : null;
     final original = widget.field;
     final sameType = original != null && original.type == _selectedType;
-    final isNumeric =
-        _selectedType == FieldType.number || _selectedType == FieldType.decimal;
+    final unit = _unitController.text.trim();
     final field = FormFieldModel(
       id: original?.id ?? _uuid.v4(),
       label: _labelController.text,
@@ -107,9 +131,9 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
       maxPhotos: _selectedType == FieldType.photo ? _maxPhotos : null,
       // Pengaturan yang belum punya isian di dialog ini tetap dipertahankan.
       defaultValue: sameType ? original.defaultValue : null,
-      min: isNumeric ? original?.min : null,
-      max: isNumeric ? original?.max : null,
-      unit: isNumeric ? original?.unit : null,
+      min: _isNumeric ? _limit(_minController) : null,
+      max: _isNumeric ? _limit(_maxController) : null,
+      unit: _isNumeric && unit.isNotEmpty ? unit : null,
       // Tipe yang tak dikenal app ini tetap dikirim dengan nama aslinya,
       // kecuali user memilih tipe lain.
       unknownTypeName: sameType ? original.unknownTypeName : null,
@@ -235,6 +259,63 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                   ),
                   maxLines: 5,
                   validator: (_) => _optionsIssue(),
+                ),
+                const SizedBox(height: AppTheme.spacingMedium),
+              ],
+
+              // Batas & satuan: angka/desimal
+              if (_isNumeric) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _minController,
+                        decoration: const InputDecoration(
+                          labelText: 'Min',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            signed: true, decimal: true),
+                        validator: _limitIssue,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _maxController,
+                        decoration: const InputDecoration(
+                          labelText: 'Max',
+                          border: OutlineInputBorder(),
+                          errorMaxLines: 3,
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            signed: true, decimal: true),
+                        validator: (value) {
+                          final issue = _limitIssue(value);
+                          if (issue != null) return issue;
+                          final min = _limit(_minController);
+                          final max = _limit(_maxController);
+                          return min != null && max != null && min > max
+                              ? 'Must not be less than Min'
+                              : null;
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacingMedium),
+                TextFormField(
+                  controller: _unitController,
+                  maxLength: 10,
+                  decoration: const InputDecoration(
+                    labelText: 'Unit',
+                    hintText: 'e.g. cm',
+                    helperText: 'Display only — values stay plain numbers',
+                    helperMaxLines: 2,
+                    border: OutlineInputBorder(),
+                    counterText: '',
+                  ),
                 ),
                 const SizedBox(height: AppTheme.spacingMedium),
               ],

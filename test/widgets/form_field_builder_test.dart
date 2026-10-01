@@ -100,6 +100,64 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('angka: min/maks/satuan tersimpan; min > maks ditolak',
+      (tester) async {
+    final result = await _openDialog(tester);
+    await _pickType(tester, 'Decimal');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Field Label'), 'Tinggi');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Min'), '200');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Max'), '0');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Unit'), ' cm ');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result(), isNull);
+    expect(find.text('Must not be less than Min'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'Min'), '0');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Max'), '200,5');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result()?.min, 0);
+    expect(result()?.max, 200.5);
+    expect(result()?.unit, 'cm');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('angka: batas boleh salah satu; isian kosong = tanpa batas',
+      (tester) async {
+    final result = await _openDialog(tester);
+    await _pickType(tester, 'Number');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Field Label'), 'Jumlah');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Min'), '1');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result()?.min, 1);
+    expect(result()?.max, isNull);
+    expect(result()?.unit, isNull);
+  });
+
+  testWidgets('batas lama tampil saat edit; pindah ke teks → batas dibuang',
+      (tester) async {
+    final result = await _openDialog(tester,
+        field: FormFieldModel(
+            id: 'x',
+            label: 'Tinggi',
+            type: FieldType.number,
+            min: 0,
+            max: 10.5,
+            unit: 'm'));
+    expect(find.widgetWithText(TextFormField, '10.5'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, '0'), findsOneWidget);
+    await _pickType(tester, 'Text');
+    expect(find.widgetWithText(TextFormField, 'Min'), findsNothing);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result()?.type, FieldType.text);
+    expect(result()?.min, isNull);
+    expect(result()?.max, isNull);
+    expect(result()?.unit, isNull);
+  });
+
   testWidgets('teks panjang bisa dipilih', (tester) async {
     final result = await _openDialog(tester);
     await _pickType(tester, 'Long text');
