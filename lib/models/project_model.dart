@@ -104,6 +104,17 @@ class Project {
     );
   }
 
+  /// Project dari respons server: disimpan sebagai SUDAH sinkron. Server tidak
+  /// mengirim `isSynced`, jadi dengan [Project.fromJson] saja setiap project
+  /// hasil tarik dianggap belum sync dan di-push balik oleh semua HP —
+  /// termasuk HP collector — dan bisa menimpa form yang lebih baru di server.
+  factory Project.fromServerJson(Map<String, dynamic> json, {DateTime? now}) =>
+      Project.fromJson({
+        ...json,
+        'isSynced': true,
+        'syncedAt': (now ?? DateTime.now()).toUtc().toIso8601String(),
+      });
+
   Project copyWith({
     String? name,
     String? description,

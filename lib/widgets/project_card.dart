@@ -3,6 +3,7 @@ import 'package:geoform_app/theme/app_theme.dart';
 import '../models/project_model.dart';
 import '../services/auth_service.dart';
 import '../services/tracking/tracking_session_manager.dart';
+import '../utils/project_permissions.dart';
 import 'project/manage_collectors_dialog.dart';
 
 class ProjectCard extends StatefulWidget {
@@ -181,25 +182,14 @@ class _ProjectCardState extends State<ProjectCard>
     );
   }
 
-  bool _canEditProject() {
-    //print(widget.project.createdBy);
-    if (_currentUsername == null) return false;
-    if (widget.project.createdBy == null) return true; // Old data without creator
-
-    // Normalize untuk perbandingan
-    final normalizedProjectCreator = widget.project.createdBy!.trim().toLowerCase();
-    final normalizedCurrentUser = _currentUsername!.trim().toLowerCase();
-
-    return normalizedProjectCreator == normalizedCurrentUser;
-  }
+  /// Hanya pembuat yang boleh mengedit project (server mengabaikan perubahan
+  /// dari user lain). Project lama tanpa pembuat tidak bisa diedit di app.
+  bool _canEditProject() =>
+      isProjectCreator(widget.project, _currentUsername);
 
   /// Hanya created_by yang boleh manage collectors
-  bool _canManageCollectors() {
-    if (_currentUsername == null) return false;
-    if (widget.project.createdBy == null) return false;
-    return widget.project.createdBy!.trim().toLowerCase() ==
-        _currentUsername!.trim().toLowerCase();
-  }
+  bool _canManageCollectors() =>
+      isProjectCreator(widget.project, _currentUsername);
 
   Future<void> _openManageCollectors() async {
     if (_currentUsername == null) return;

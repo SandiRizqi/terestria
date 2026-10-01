@@ -154,7 +154,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         if (projectData is List) {
           for (var projectJson in projectData) {
             try {
-              final serverProject = Project.fromJson(projectJson);
+              // Tersimpan sebagai sudah sync: tanpa perubahan lokal, project
+              // tidak di-push balik ke server.
+              final serverProject = Project.fromServerJson(projectJson);
               serverProjectIds.add(serverProject.id);
               final existingProject = existingProjectMap[serverProject.id];
 
