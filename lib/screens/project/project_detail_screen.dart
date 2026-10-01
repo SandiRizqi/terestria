@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import '../../models/project_model.dart';
 import '../../models/geo_data_model.dart';
+import '../../models/field_type_info.dart';
 import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/connectivity_service.dart';
@@ -222,6 +223,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             case FieldType.text:
             case FieldType.number:
             case FieldType.decimal:
+            case FieldType.textarea:
+            case FieldType.multiselect:
+            case FieldType.time:
+            case FieldType.datetime:
+            case FieldType.rating:
               // Contains (case-insensitive)
               if (!rawValue.toString().toLowerCase().contains(
                     filterValue.toString().toLowerCase())) {
@@ -1950,7 +1956,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 children: [
                                   const SizedBox(height: 18),
                                   _buildFilterSectionLabel(
-                                    icon: _getFieldIcon(field.type),
+                                    icon: _getFieldIcon(field),
                                     label: field.label,
                                   ),
                                   const SizedBox(height: 10),
@@ -2470,7 +2476,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                     child: Row(
                                       children: [
                                         Icon(
-                                          _getFieldIcon(field.type),
+                                          _getFieldIcon(field),
                                           size: 18,
                                           color: Colors.orange[700],
                                         ),
@@ -2489,7 +2495,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                _getFieldTypeName(field.type),
+                                                _getFieldTypeName(field),
                                                 style: TextStyle(
                                                   fontSize: 12,
                                                   color: Colors.grey[600],
@@ -2755,42 +2761,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
   
-  IconData _getFieldIcon(FieldType type) {
-    switch (type) {
-      case FieldType.text:
-        return Icons.text_fields;
-      case FieldType.number:
-        return Icons.pin_outlined;
-      case FieldType.date:
-        return Icons.calendar_today;
-      case FieldType.checkbox:
-        return Icons.check_box_outlined;
-      case FieldType.dropdown:
-        return Icons.arrow_drop_down_circle_outlined;
-      case FieldType.photo:
-        return Icons.photo_camera_outlined;
-      default:
-        return Icons.help_outline;
-    }
-  }
-  
-  String _getFieldTypeName(FieldType type) {
-    switch (type) {
-      case FieldType.text:
-        return 'Text Input';
-      case FieldType.number:
-        return 'Number Input';
-      case FieldType.date:
-        return 'Date Picker';
-      case FieldType.checkbox:
-        return 'Checkbox';
-      case FieldType.dropdown:
-        return 'Dropdown';
-      case FieldType.photo:
-        return 'Photo Upload';
-      default:
-        return type.toString().split('.').last;
-    }
+  IconData _getFieldIcon(FormFieldModel field) =>
+      field.isUnknownType ? Icons.help_outline : fieldTypeInfo(field.type).icon;
+
+  String _getFieldTypeName(FormFieldModel field) {
+    return fieldTypeDisplayName(field);
   }
 
   void _showDataDetail(GeoData data) {

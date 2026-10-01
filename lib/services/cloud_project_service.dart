@@ -52,11 +52,12 @@ class CloudProjectService {
                     formFields: project.formFields.map((field) {
                       return FormFieldData(
                         label: field.label,
-                        type: field.type.toString().split('.').last,
+                        type: field.typeName,
                         required: field.required,
                         options: field.options,
                         minPhotos: field.minPhotos,
                         maxPhotos: field.maxPhotos,
+                        model: field,
                       );
                     }).toList(),
                   );

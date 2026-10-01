@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import '../models/field_type_info.dart';
 import '../models/form_field_model.dart';
 import '../theme/app_theme.dart';
 
@@ -73,14 +74,26 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
       }
     }
 
+    final original = widget.field;
+    final sameType = original != null && original.type == _selectedType;
+    final isNumeric =
+        _selectedType == FieldType.number || _selectedType == FieldType.decimal;
     final field = FormFieldModel(
-      id: widget.field?.id ?? _uuid.v4(),
+      id: original?.id ?? _uuid.v4(),
       label: _labelController.text,
       type: _selectedType,
       required: _isRequired,
       options: options,
       minPhotos: _selectedType == FieldType.photo ? _minPhotos : null,
       maxPhotos: _selectedType == FieldType.photo ? _maxPhotos : null,
+      // Pengaturan yang belum punya isian di dialog ini tetap dipertahankan.
+      defaultValue: sameType ? original.defaultValue : null,
+      min: isNumeric ? original?.min : null,
+      max: isNumeric ? original?.max : null,
+      unit: isNumeric ? original?.unit : null,
+      // Tipe yang tak dikenal app ini tetap dikirim dengan nama aslinya,
+      // kecuali user memilih tipe lain.
+      unknownTypeName: sameType ? original.unknownTypeName : null,
     );
 
     Navigator.pop(context, field);
@@ -125,24 +138,26 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                   labelText: 'Field Type',
                   border: OutlineInputBorder(),
                 ),
-                items: FieldType.values.map((type) {
-                  String displayName;
+                // Tipe yang bisa dipilih + tipe field yang sedang diedit
+                // (mis. tipe baru dari server yang inputnya belum ada).
+                items: [
+                  for (final info in fieldTypeInfos)
+                    if (info.pickable || info.type == widget.field?.type)
+                      info.type,
+                ].map((type) {
+                  final displayName = fieldTypeInfo(type).label;
                   bool isDisabled = false;
-                  
+
                   if (type == FieldType.photo) {
-                    displayName = 'Photo';
                     // Disable photo option jika sudah ada photo field dan ini bukan edit field photo
                     if (widget.existingFields != null) {
-                      final hasPhotoField = widget.existingFields!.any((f) => 
+                      final hasPhotoField = widget.existingFields!.any((f) =>
                         f.type == FieldType.photo && f.id != widget.field?.id
                       );
                       isDisabled = hasPhotoField;
                     }
-                  } else {
-                    displayName = type.toString().split('.').last;
-                    displayName = displayName[0].toUpperCase() + displayName.substring(1);
                   }
-                  
+
                   return DropdownMenuItem(
                     value: type,
                     enabled: !isDisabled,
@@ -176,6 +191,16 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                   });
                 },
               ),
+              if (widget.field?.isUnknownType == true &&
+                  _selectedType == widget.field!.type) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'This field uses the type "${widget.field!.unknownTypeName}", '
+                  'which this app version does not support. It is shown as text '
+                  'and kept as is unless you pick another type.',
+                  style: TextStyle(fontSize: 12, color: Colors.orange[800]),
+                ),
+              ],
               const SizedBox(height: AppTheme.spacingMedium),
 
               // Options (only for dropdown)

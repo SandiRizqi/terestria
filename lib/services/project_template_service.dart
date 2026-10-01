@@ -14,19 +14,12 @@ class ProjectTemplateService {
       'name': project.name,
       'description': project.description,
       'geometryType': project.geometryType.toString().split('.').last,
-      'formFields': project.formFields.map((field) {
-        return {
-          'label': field.label,
-          'type': field.type.toString().split('.').last,
-          'required': field.required,
-          if (field.options != null && field.options!.isNotEmpty)
-            'options': field.options,
-          if (field.minPhotos != null)
-            'minPhotos': field.minPhotos,
-          if (field.maxPhotos != null)
-            'maxPhotos': field.maxPhotos,
-        };
-      }).toList(),
+      // Definisi field lengkap (tipe asli, default, min/maks/satuan) tanpa
+      // id — project hasil impor mendapat id field baru.
+      'formFields': [
+        for (final field in project.formFields)
+          {...field.toSyncJson()}..remove('id'),
+      ],
     };
   }
 
@@ -55,45 +48,15 @@ class ProjectTemplateService {
     List<FormFieldModel> formFields = [];
     if (templateData['formFields'] != null) {
       final fieldsData = templateData['formFields'] as List;
-      formFields = fieldsData.map((fieldData) {
-        // Parse field type
-        FieldType fieldType;
-        final fieldTypeStr = fieldData['type'] as String;
-        switch (fieldTypeStr.toLowerCase()) {
-          case 'text':
-            fieldType = FieldType.text;
-            break;
-          case 'number':
-            fieldType = FieldType.number;
-            break;
-          case 'date':
-            fieldType = FieldType.date;
-            break;
-          case 'checkbox':
-            fieldType = FieldType.checkbox;
-            break;
-          case 'dropdown':
-            fieldType = FieldType.dropdown;
-            break;
-          case 'photo':
-            fieldType = FieldType.photo;
-            break;
-          default:
-            fieldType = FieldType.text;
-        }
-
-        return FormFieldModel(
-          id: uuid.v4(), // Generate new ID for each field
-          label: fieldData['label'] as String,
-          type: fieldType,
-          required: fieldData['required'] as bool? ?? false,
-          options: fieldData['options'] != null
-              ? List<String>.from(fieldData['options'])
-              : null,
-          minPhotos: fieldData['minPhotos'] as int?,
-          maxPhotos: fieldData['maxPhotos'] as int?,
-        );
-      }).toList();
+      // Dibaca lewat FormFieldModel.fromJson (semua tipe, default,
+      // min/maks/satuan); id field baru untuk project baru.
+      formFields = [
+        for (final fieldData in fieldsData)
+          FormFieldModel.fromJson({
+            ...Map<String, dynamic>.from(fieldData as Map),
+            'id': uuid.v4(),
+          }),
+      ];
     }
 
     // Create new project with template data

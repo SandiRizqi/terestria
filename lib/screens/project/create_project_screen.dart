@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/project_model.dart';
+import '../../models/field_type_info.dart';
 import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/sync_service.dart';
@@ -707,28 +708,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   }
 
   Widget _buildFormFieldCard(FormFieldModel field, int index) {
-    IconData icon;
-    switch (field.type) {
-      case FieldType.text:
-        icon = Icons.text_fields;
-        break;
-      case FieldType.number:
-      case FieldType.decimal:
-        icon = Icons.numbers;
-        break;
-      case FieldType.date:
-        icon = Icons.calendar_today;
-        break;
-      case FieldType.dropdown:
-        icon = Icons.arrow_drop_down_circle;
-        break;
-      case FieldType.checkbox:
-        icon = Icons.check_box;
-        break;
-      case FieldType.photo:
-        icon = Icons.photo_camera;
-        break;
-    }
+    final icon = field.isUnknownType
+        ? Icons.help_outline
+        : fieldTypeInfo(field.type).icon;
 
     return Container(
       key: ValueKey(field.id),
@@ -757,7 +739,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         ),
         title: Text(field.label, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
-          '${field.type.toString().split('.').last}${field.required ? ' • Required' : ''}',
+          '${fieldTypeDisplayName(field)}${field.required ? ' • Required' : ''}',
           style: TextStyle(color: Colors.grey[600], fontSize: 13),
         ),
         trailing: widget.project != null

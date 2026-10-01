@@ -1,3 +1,5 @@
+import 'form_field_model.dart';
+
 /// Model untuk project dari cloud/server
 class CloudProject {
   final String id;
@@ -54,6 +56,10 @@ class FormFieldData {
   final int? minPhotos;
   final int? maxPhotos;
 
+  /// Definisi field lengkap dari server (id, default, min/maks, tipe tak
+  /// dikenal) — dipakai saat project disimpan ke HP.
+  final FormFieldModel? model;
+
   FormFieldData({
     required this.label,
     required this.type,
@@ -61,6 +67,7 @@ class FormFieldData {
     this.options,
     this.minPhotos,
     this.maxPhotos,
+    this.model,
   });
 
   factory FormFieldData.fromJson(Map<String, dynamic> json) {
@@ -71,8 +78,23 @@ class FormFieldData {
       options: (json['options'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
       minPhotos: json['min_photos'] as int? ?? json['minPhotos'] as int?,
       maxPhotos: json['max_photos'] as int? ?? json['maxPhotos'] as int?,
+      model: FormFieldModel.fromJson(json),
     );
   }
+
+  /// Field untuk project di HP: model asli bila ada; selain itu dibangun dari
+  /// data ringkas (nama tipe lewat [fieldTypeFromName], jadi `decimal` dan
+  /// tipe lain tidak berubah menjadi teks).
+  FormFieldModel toFormFieldModel() =>
+      model ??
+      FormFieldModel.fromJson({
+        'label': label,
+        'type': type,
+        'required': required,
+        'options': options,
+        'minPhotos': minPhotos,
+        'maxPhotos': maxPhotos,
+      });
 }
 
 /// Response wrapper untuk API

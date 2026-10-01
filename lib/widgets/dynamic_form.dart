@@ -286,6 +286,13 @@ class _DynamicFormState extends State<DynamicForm>
         return _buildCheckboxField(field);
       case FieldType.photo:
         return _buildPhotoField(field);
+      // Tipe yang input khususnya belum ada: sementara seperti teks.
+      case FieldType.textarea:
+      case FieldType.multiselect:
+      case FieldType.time:
+      case FieldType.datetime:
+      case FieldType.rating:
+        return _buildTextField(field);
     }
   }
 
@@ -1325,6 +1332,11 @@ List<FieldIssue> formFieldIssues(
       case FieldType.text:
       case FieldType.date:
       case FieldType.dropdown:
+      case FieldType.textarea:
+      case FieldType.multiselect:
+      case FieldType.time:
+      case FieldType.datetime:
+      case FieldType.rating:
         if (field.required && _isBlank(value)) {
           issues.add(FieldIssue(field, 'is required'));
         }

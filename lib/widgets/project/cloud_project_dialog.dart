@@ -225,19 +225,8 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
     }
   }
 
-  List<field_model.FormFieldModel> _convertFormFields(List<FormFieldData> cloudFields) {
-    return cloudFields.map((field) {
-      return field_model.FormFieldModel(
-        id: field.label.toLowerCase().replaceAll(' ', '_'),
-        label: field.label,
-        type: _parseFieldType(field.type),
-        required: field.required,
-        options: field.options,
-        minPhotos: field.minPhotos,
-        maxPhotos: field.maxPhotos,
-      );
-    }).toList();
-  }
+  List<field_model.FormFieldModel> _convertFormFields(List<FormFieldData> cloudFields) =>
+      [for (final field in cloudFields) field.toFormFieldModel()];
 
   Widget _buildCollectorsRow(List<String> collectors, bool isGrayed) {
     const maxVisible = 2;
@@ -301,25 +290,6 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
         ),
       ],
     );
-  }
-
-  field_model.FieldType _parseFieldType(String type) {
-    switch (type.toLowerCase()) {
-      case 'text':
-        return field_model.FieldType.text;
-      case 'number':
-        return field_model.FieldType.number;
-      case 'date':
-        return field_model.FieldType.date;
-      case 'dropdown':
-        return field_model.FieldType.dropdown;
-      case 'checkbox':
-        return field_model.FieldType.checkbox;
-      case 'photo':
-        return field_model.FieldType.photo;
-      default:
-        return field_model.FieldType.text;
-    }
   }
 
   IconData _getGeometryIconData(String type) {

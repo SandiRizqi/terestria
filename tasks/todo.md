@@ -6,7 +6,7 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 
 ## Fase 1 — Tipe field: server & HP
 - [x] T1 (gis-backend `06742d2`): validasi `time`, `datetime`, `multiselect`, `rating`, `decimal`, min/maks. Test lokal +7 (`tests_field_types`, tabel kasus bersama).
-- [ ] T2: model field (5 tipe baru, min/max/unit, nama tipe asli dipertahankan), daftar tipe tunggal, perbaikan `decimal` (cloud/template), payload sync.
+- [x] T2: model field (5 tipe baru, min/max/unit, nama tipe asli dipertahankan), daftar tipe tunggal (`field_type_info.dart`), perbaikan `decimal` (cloud/template), payload sync (`toSyncJson`). Builder kini juga mempertahankan `defaultValue` saat field diedit.
 - [ ] T3: `field_values.dart` + `formFieldIssues` dengan aturan yang sama dengan server.
 - [ ] T4: input teks panjang & skala 1–5 (+ builder).
 - [ ] T5: input pilihan ganda `"A; B"` (+ editor opsi tanpa `;`).
