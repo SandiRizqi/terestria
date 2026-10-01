@@ -18,10 +18,10 @@ Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend 
 - [x] T5: hit-test dua tingkat — yang kena langsung didahulukan (marker, setengah tebal garis + 4 dp, di dalam polygon); toleransi 24 dp hanya bila tidak ada yang kena langsung. Grid 3×3 blok 84 dp: 0% tap di blok tengah memunculkan daftar (dulu 82%).
 - [x] T6: culling tampilan line/polygon pakai aturan bbox yang sama dengan hit-test (`featureBounds` + `boundsIntersect`; bbox dihitung saat data dimuat).
 - [x] T7: hapus kode mati `MarkerLayer` line/polygon di `_buildExistingDataLayers` (tanpa perubahan perilaku; 731 test, analyze baseline).
-- [ ] T8 (opsional): bagian Style di sheet stop & save "Tracking Aktif".
+- [x] T8 (opsional, default dikerjakan): bagian Style di sheet stop & save "Tracking Aktif"; `buildGeoData(style:)`.
 
 ### Checkpoint B
-- [ ] `flutter test` hijau; `flutter analyze` sesuai baseline.
+- [x] `flutter test` hijau (735); `flutter analyze` 0 error / 29 warning (baseline).
 - [ ] (User, di HP) blok bersebelahan, polygon bertumpuk, slider ukuran point + pratinjau, zoom di dalam blok besar, Style di Tracking Aktif.
 
 ## Fase 3 — Web dashboard

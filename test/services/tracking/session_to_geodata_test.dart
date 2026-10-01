@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geoform_app/models/layer_model.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/services/tracking/session_to_geodata.dart';
@@ -54,6 +56,25 @@ void main() {
       expect(gd.collectedBy, 'user1');
       expect(gd.createdAt, now);
       expect(gd.updatedAt, now);
+      expect(gd.style, isNull); // tanpa style → ikut default
+    });
+
+    test('membawa style feature yang dipilih di form', () {
+      const style = LayerStyle(
+        fillColor: Color(0xFF9C27B0),
+        fillOpacity: 0.6,
+        strokeColor: Color(0xFF311B92),
+        strokeWidth: 5,
+        pointSize: 12,
+      );
+      final gd = buildGeoData(
+        id: 'g2',
+        project: _proj('a', GeometryType.line),
+        points: [_pt(0), _pt(1)],
+        formData: const {},
+        style: style,
+      );
+      expect(gd.style, style);
     });
   });
 }

@@ -1,4 +1,5 @@
 import '../../models/geo_data_model.dart';
+import '../../models/layer_model.dart';
 import '../../models/project_model.dart';
 
 /// Hasil validasi geometri sebuah sesi terhadap tipe project.
@@ -30,7 +31,8 @@ GeometryValidation validateGeometry(GeometryType type, int pointCount) {
 
 /// Bangun [GeoData] dari sesi tracking sebuah project. Murni (id & waktu
 /// disuntik dari pemanggil) agar mudah diuji. Validasi geometri lewat
-/// [validateGeometry] dilakukan pemanggil sebelum menyimpan.
+/// [validateGeometry] dilakukan pemanggil sebelum menyimpan. [style] null =
+/// ikut default Settings.
 GeoData buildGeoData({
   required String id,
   required Project project,
@@ -38,6 +40,7 @@ GeoData buildGeoData({
   required Map<String, dynamic> formData,
   String? collectedBy,
   DateTime? now,
+  LayerStyle? style,
 }) {
   final ts = now ?? DateTime.now();
   return GeoData(
@@ -48,5 +51,6 @@ GeoData buildGeoData({
     createdAt: ts,
     updatedAt: ts,
     collectedBy: collectedBy,
+    style: style,
   );
 }

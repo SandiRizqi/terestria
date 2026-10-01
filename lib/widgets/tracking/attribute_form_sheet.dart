@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/feature_style.dart';
 import '../../models/geo_data_model.dart';
+import '../../models/layer_model.dart';
 import '../../models/project_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/settings_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/tracking/session_to_geodata.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
 import '../dynamic_form.dart';
+import '../style/feature_style_section.dart';
 
 /// Tampilkan form atribut sebagai bottom sheet modal untuk menyimpan satu sesi
 /// tracking ([points]) sebuah [project]. Mengembalikan `true` bila tersimpan.
@@ -48,11 +52,15 @@ class AttributeFormSheet extends StatefulWidget {
   final List<GeoPoint> points;
   final String? username;
 
+  /// Untuk test; default [StorageService].
+  final StorageService? storageService;
+
   const AttributeFormSheet({
     super.key,
     required this.project,
     required this.points,
     this.username,
+    this.storageService,
   });
 
   @override
@@ -61,9 +69,14 @@ class AttributeFormSheet extends StatefulWidget {
 
 class _AttributeFormSheetState extends State<AttributeFormSheet> {
   final _formKey = GlobalKey<FormState>();
-  final StorageService _storage = StorageService();
+  late final StorageService _storage =
+      widget.storageService ?? StorageService();
   final DynamicFormController _formController = DynamicFormController();
   Map<String, dynamic> _formData = {};
+
+  /// Style feature (null = ikut default Settings), sama dengan form
+  /// "Survey data".
+  LayerStyle? _style;
   bool _saving = false;
 
   Future<void> _save() async {
@@ -96,6 +109,7 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
         points: widget.points,
         formData: _formData,
         collectedBy: collector,
+        style: _style,
       );
       await _storage.saveGeoData(geoData);
       logInfo(
@@ -169,6 +183,15 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
                           username: widget.username,
                           latitude: last?.latitude,
                           longitude: last?.longitude,
+                        ),
+                        const SizedBox(height: 16),
+                        FeatureStyleSection(
+                          geometryType: widget.project.geometryType,
+                          style: _style,
+                          defaultStyle: defaultFeatureStyle(
+                              widget.project.geometryType,
+                              SettingsService().settings),
+                          onChanged: (style) => setState(() => _style = style),
                         ),
                       ],
                     ),
