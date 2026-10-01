@@ -16,7 +16,7 @@ Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend 
 ## Fase 2 — Mobile
 - [x] T4: editor ukuran point — rentang per pemakai (`StyleLimits`: Layers 4–20, feature 10–24 / 14 langkah), pratinjau = diameter marker di peta (`StylePreview.pointDiameter`).
 - [x] T5: hit-test dua tingkat — yang kena langsung didahulukan (marker, setengah tebal garis + 4 dp, di dalam polygon); toleransi 24 dp hanya bila tidak ada yang kena langsung. Grid 3×3 blok 84 dp: 0% tap di blok tengah memunculkan daftar (dulu 82%).
-- [ ] T6: culling tampilan line/polygon pakai aturan bbox yang sama dengan hit-test (bbox dihitung saat data dimuat).
+- [x] T6: culling tampilan line/polygon pakai aturan bbox yang sama dengan hit-test (`featureBounds` + `boundsIntersect`; bbox dihitung saat data dimuat).
 - [ ] T7: hapus kode mati `MarkerLayer` line/polygon di `_buildExistingDataLayers`.
 - [ ] T8 (opsional): bagian Style di sheet stop & save "Tracking Aktif".
 

@@ -106,7 +106,10 @@ List<GeoData> projectFeaturesAtTap({
 }) {
   final shapes = <HitShape<GeoData>>[];
   for (final data in features) {
-    if (viewport != null && !_bboxIntersects(data, viewport)) continue;
+    if (viewport != null) {
+      final bounds = featureBounds(data);
+      if (bounds == null || !boundsIntersect(bounds, viewport)) continue;
+    }
     final style = effectiveFeatureStyle(data, type, settings);
     final shape = hitShapeFor(
       data,
@@ -120,18 +123,16 @@ List<GeoData> projectFeaturesAtTap({
   return hitFeatures(toScreen(tap), shapes, tolerance: tolerance);
 }
 
-bool _bboxIntersects(GeoData data, LatLngBounds viewport) {
-  if (data.points.isEmpty) return false;
-  var minLat = double.infinity, maxLat = -double.infinity;
-  var minLng = double.infinity, maxLng = -double.infinity;
-  for (final p in data.points) {
-    if (p.latitude < minLat) minLat = p.latitude;
-    if (p.latitude > maxLat) maxLat = p.latitude;
-    if (p.longitude < minLng) minLng = p.longitude;
-    if (p.longitude > maxLng) maxLng = p.longitude;
-  }
-  return !(maxLat < viewport.south ||
-      minLat > viewport.north ||
-      maxLng < viewport.west ||
-      minLng > viewport.east);
-}
+/// Kotak batas titik-titik [data]; null bila tanpa titik.
+LatLngBounds? featureBounds(GeoData data) =>
+    data.points.isEmpty ? null : LatLngBounds.fromPoints(featureLatLngs(data));
+
+/// Kotak batas feature bersinggungan dengan [viewport]? Aturan yang sama
+/// dipakai culling tampilan dan hit-test, jadi yang tergambar = yang bisa
+/// diketuk — termasuk polygon besar atau line panjang yang semua titiknya di
+/// luar layar.
+bool boundsIntersect(LatLngBounds bounds, LatLngBounds viewport) =>
+    !(bounds.north < viewport.south ||
+        bounds.south > viewport.north ||
+        bounds.east < viewport.west ||
+        bounds.west > viewport.east);

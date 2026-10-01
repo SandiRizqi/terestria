@@ -163,6 +163,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   List<Polyline> _cachedPolylines = [];
   List<Polygon> _cachedPolygons = [];
 
+  /// Kotak batas tiap polyline/polygon cache (indeks sama), dihitung sekali
+  /// per muat data untuk culling tampilan.
+  List<LatLngBounds> _cachedPolylineBounds = [];
+  List<LatLngBounds> _cachedPolygonBounds = [];
+
   // P2: Viewport-culled subset of cached layers
   List<Marker> _visibleMarkers = [];
   List<Polyline> _visiblePolylines = [];
@@ -980,6 +985,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     final markers = <Marker>[];
     final polylines = <Polyline>[];
     final polygons = <Polygon>[];
+    final polylineBounds = <LatLngBounds>[];
+    final polygonBounds = <LatLngBounds>[];
     final markerData = Map<Marker, GeoData>.identity();
 
     // Feature dipilih dengan tap langsung (_onMapTap → hit-test), jadi tidak
@@ -1001,12 +1008,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         case GeometryType.line:
           if (data.points.isNotEmpty) {
             polylines.add(featurePolyline(data, style));
+            polylineBounds.add(featureBounds(data)!);
           }
           break;
 
         case GeometryType.polygon:
           if (data.points.length >= 3) {
             polygons.add(featurePolygon(data, style));
+            polygonBounds.add(featureBounds(data)!);
           }
           break;
       }
@@ -1016,6 +1025,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _markerData = markerData;
     _cachedPolylines = polylines;
     _cachedPolygons = polygons;
+    _cachedPolylineBounds = polylineBounds;
+    _cachedPolygonBounds = polygonBounds;
 
     // Inisialisasi visible = semua cached, lalu cull setelah map siap
     _visibleMarkers = markers;
@@ -1045,12 +1056,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         _visibleMarkers = _cachedMarkers
             .where((m) => expanded.contains(m.point))
             .toList();
-        _visiblePolylines = _cachedPolylines
-            .where((p) => p.points.any((pt) => expanded.contains(pt)))
-            .toList();
-        _visiblePolygons = _cachedPolygons
-            .where((p) => p.points.any((pt) => expanded.contains(pt)))
-            .toList();
+        // Line/polygon: aturan kotak batas yang sama dengan hit-test, jadi
+        // polygon besar / line panjang yang semua titiknya di luar layar
+        // tetap tergambar, dan yang tergambar = yang bisa diketuk.
+        _visiblePolylines = [
+          for (var i = 0; i < _cachedPolylines.length; i++)
+            if (boundsIntersect(_cachedPolylineBounds[i], expanded))
+              _cachedPolylines[i],
+        ];
+        _visiblePolygons = [
+          for (var i = 0; i < _cachedPolygons.length; i++)
+            if (boundsIntersect(_cachedPolygonBounds[i], expanded))
+              _cachedPolygons[i],
+        ];
       });
     } catch (_) {
       // Camera belum siap — pertahankan visible saat ini

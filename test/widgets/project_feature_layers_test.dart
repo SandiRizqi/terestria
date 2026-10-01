@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/layer_model.dart';
 import 'package:geoform_app/models/project_model.dart';
@@ -49,6 +51,50 @@ Future<BoxDecoration> _markerDecoration(WidgetTester tester, Widget child) async
 }
 
 void main() {
+  group('kotak batas feature ↔ area peta (culling tampilan = hit-test)', () {
+    // Area peta sekitar (0, 0), selebar ±0,01°.
+    final viewport =
+        LatLngBounds(const LatLng(-0.01, -0.01), const LatLng(0.01, 0.01));
+    GeoData shape(List<(double, double)> latLngs) => GeoData(
+          id: 's',
+          projectId: 'p',
+          formData: const {},
+          points: [
+            for (final (lat, lng) in latLngs)
+              GeoPoint(latitude: lat, longitude: lng, timestamp: DateTime.utc(2026)),
+          ],
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+
+    test('kotak batas dari titik-titik feature; tanpa titik → null', () {
+      final b = featureBounds(shape([(1, 2), (-3, 5), (0, -1)]))!;
+      expect((b.south, b.west, b.north, b.east), (-3.0, -1.0, 1.0, 5.0));
+      expect(featureBounds(shape([])), isNull);
+    });
+
+    test('polygon besar yang menutupi seluruh area (semua titik sudut di '
+        'luar) tetap bersinggungan', () {
+      final big = shape([(-1, -1), (-1, 1), (1, 1), (1, -1)]);
+      expect(big.points.any((p) => viewport.contains(LatLng(p.latitude, p.longitude))),
+          isFalse);
+      expect(boundsIntersect(featureBounds(big)!, viewport), isTrue);
+    });
+
+    test('line panjang yang melintasi area dengan kedua ujung jauh tetap '
+        'bersinggungan', () {
+      expect(boundsIntersect(featureBounds(shape([(0, -1), (0, 1)]))!, viewport),
+          isTrue);
+    });
+
+    test('feature yang sepenuhnya di luar area tidak bersinggungan', () {
+      expect(boundsIntersect(featureBounds(shape([(1, 1), (1.1, 1.1)]))!, viewport),
+          isFalse);
+      expect(boundsIntersect(featureBounds(shape([(0, 0.02), (0.005, 0.03)]))!, viewport),
+          isFalse);
+    });
+  });
+
   group('tanpa style — sama dengan render lama', () {
     test('line: warna line α 0.8, tebal line', () {
       final style = effectiveFeatureStyle(_geo(), GeometryType.line, _settings);
