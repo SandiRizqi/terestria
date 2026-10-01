@@ -134,6 +134,9 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
               // Field Type
               DropdownButtonFormField<FieldType>(
                 value: _selectedType,
+                // Lebar mengikuti kolom (bukan item terlebar): nama tipe
+                // yang panjang tidak meluber di layar 360 dp.
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Field Type',
                   border: OutlineInputBorder(),
@@ -163,10 +166,13 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                     enabled: !isDisabled,
                     child: Row(
                       children: [
-                        Text(
-                          displayName,
-                          style: TextStyle(
-                            color: isDisabled ? Colors.grey : null,
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isDisabled ? Colors.grey : null,
+                            ),
                           ),
                         ),
                         if (isDisabled) ...[

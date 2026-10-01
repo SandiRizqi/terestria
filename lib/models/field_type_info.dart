@@ -26,8 +26,7 @@ class FieldTypeInfo {
 const List<FieldTypeInfo> fieldTypeInfos = [
   FieldTypeInfo(FieldType.text, 'Text', Icons.text_fields, 'Short text, one line'),
   FieldTypeInfo(FieldType.textarea, 'Long text', Icons.notes,
-      'Notes over several lines',
-      pickable: false),
+      'Notes over several lines'),
   FieldTypeInfo(FieldType.number, 'Number', Icons.numbers, 'Whole number'),
   FieldTypeInfo(FieldType.decimal, 'Decimal', Icons.straighten,
       'Number with decimals'),
@@ -44,8 +43,7 @@ const List<FieldTypeInfo> fieldTypeInfos = [
       pickable: false),
   FieldTypeInfo(FieldType.checkbox, 'Checkbox', Icons.check_box, 'Yes or no'),
   FieldTypeInfo(FieldType.rating, 'Rating (1–5)', Icons.star_outline,
-      'A score from 1 to 5',
-      pickable: false),
+      'A score from 1 to 5'),
   FieldTypeInfo(FieldType.photo, 'Photo', Icons.photo_camera, 'Camera photos'),
 ];
 

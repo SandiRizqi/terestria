@@ -4,6 +4,7 @@ import '../models/form_field_model.dart';
 import '../models/geo_data_model.dart';
 import '../services/pinned_values_service.dart';
 import '../utils/field_values.dart';
+import 'form_inputs/rating_input.dart';
 import 'photo_field_widget.dart';
 
 // Dulu didefinisikan di sini; dipakai luas lewat file ini.
@@ -290,20 +291,29 @@ class _DynamicFormState extends State<DynamicForm>
         return _buildCheckboxField(field);
       case FieldType.photo:
         return _buildPhotoField(field);
-      // Tipe yang input khususnya belum ada: sementara seperti teks.
       case FieldType.textarea:
+        return _buildTextField(field, multiline: true);
+      case FieldType.rating:
+        return _buildValueField(
+          field,
+          (value, onChanged) => RatingInput(
+            value: ratingValue(value),
+            onChanged: onChanged,
+          ),
+        );
+      // Tipe yang input khususnya belum ada: sementara seperti teks.
       case FieldType.multiselect:
       case FieldType.time:
       case FieldType.datetime:
-      case FieldType.rating:
         return _buildTextField(field);
     }
   }
 
   // ════════════════════════════════════════════════════════
-  // TEXT FIELD – dengan toggle case + pin
+  // TEXT FIELD – dengan toggle case + pin. [multiline] = teks panjang:
+  // beberapa baris, tanpa tombol QR & toggle huruf.
   // ════════════════════════════════════════════════════════
-  Widget _buildTextField(FormFieldModel field) {
+  Widget _buildTextField(FormFieldModel field, {bool multiline = false}) {
     if (!_textControllers.containsKey(field.label)) {
       // Prioritas: pinnedValue → initialData → kosong
       final pinVal = _pinnedValues[field.label]?.toString();
@@ -324,8 +334,12 @@ class _DynamicFormState extends State<DynamicForm>
         TextFormField(
           controller: _textControllers[field.label],
           readOnly: pinned,
+          minLines: multiline ? 3 : null,
+          maxLines: multiline ? null : 1,
+          keyboardType: multiline ? TextInputType.multiline : null,
           decoration: InputDecoration(
             labelText: field.label + (field.required ? ' *' : ''),
+            alignLabelWithHint: multiline,
             border: pinned
                 ? OutlineInputBorder(
                     borderSide: BorderSide(
@@ -364,7 +378,7 @@ class _DynamicFormState extends State<DynamicForm>
                     ),
                   ),
                 // QR Scan button (disabled kalau pinned)
-                if (!pinned)
+                if (!pinned && !multiline)
                   IconButton(
                     icon: const Icon(Icons.qr_code_scanner),
                     tooltip: 'Scan QR Code',
@@ -408,11 +422,98 @@ class _DynamicFormState extends State<DynamicForm>
         ),
 
         // ── Toggle Case Row ──
-        if (!pinned) ...[
+        if (!pinned && !multiline) ...[
           const SizedBox(height: 6),
           _buildCaseToggle(field.label, mode),
         ],
       ],
+    );
+  }
+
+  /// Pesan validasi inline dari [fieldValueIssue].
+  String _issueText(String issue) =>
+      issue == 'is required' ? 'This field is required' : 'Value $issue';
+
+  /// Tombol pin untuk input tipe baru (sama dengan field teks).
+  Widget _pinButton(String fieldLabel) {
+    final pinned = _isPinned(fieldLabel);
+    return IconButton(
+      tooltip: pinned ? 'Unpin value' : 'Pin value',
+      visualDensity: VisualDensity.compact,
+      onPressed: () => _togglePin(fieldLabel),
+      icon: Icon(
+        pinned ? Icons.push_pin : Icons.push_pin_outlined,
+        size: 20,
+        color: pinned ? Colors.amber.shade700 : Colors.grey.shade400,
+      ),
+    );
+  }
+
+  /// Field generik untuk input tipe baru: label + pin, input dari [input]
+  /// (null onChanged = baca-saja karena di-pin), validasi bersama server
+  /// lewat [fieldValueIssue].
+  Widget _buildValueField(
+    FormFieldModel field,
+    Widget Function(Object? value, ValueChanged<Object?>? onChanged) input,
+  ) {
+    final pinned = _isPinned(field.label);
+    return FormField<Object?>(
+      initialValue: _pinnedValues[field.label] ?? _formData[field.label],
+      validator: (value) {
+        final issue = fieldValueIssue(field, value);
+        return issue == null ? null : _issueText(issue);
+      },
+      onSaved: (value) {
+        _formData[field.label] = value;
+        widget.onSaved(_formData);
+      },
+      builder: (state) => Container(
+        padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+        decoration: BoxDecoration(
+          color: pinned ? Colors.amber.shade50 : null,
+          border: Border.all(
+            color: state.hasError
+                ? Theme.of(context).colorScheme.error
+                : (pinned ? Colors.amber.shade300 : Colors.grey.shade400),
+            width: pinned ? 1.5 : 1,
+          ),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(field.label + (field.required ? ' *' : ''),
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade700)),
+                ),
+                if (widget.projectId != null) _pinButton(field.label),
+              ],
+            ),
+            input(
+              state.value,
+              pinned
+                  ? null
+                  : (value) {
+                      state.didChange(value);
+                      _formData[field.label] = value;
+                      widget.onSaved(_formData);
+                      widget.onChanged?.call();
+                    },
+            ),
+            if (state.hasError)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(state.errorText!,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.error)),
+              ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -22,11 +22,13 @@ void main() {
       () {
     expect(pickableFieldTypes.toSet(), {
       FieldType.text,
+      FieldType.textarea,
       FieldType.number,
       FieldType.decimal,
       FieldType.date,
       FieldType.dropdown,
       FieldType.checkbox,
+      FieldType.rating,
       FieldType.photo,
     });
   });
