@@ -10,16 +10,7 @@ class FieldTypeInfo {
   final IconData icon;
   final String description;
 
-  /// Bisa dipilih di pembuat form (input-nya sudah ada di form HP).
-  final bool pickable;
-
-  const FieldTypeInfo(
-    this.type,
-    this.label,
-    this.icon,
-    this.description, {
-    this.pickable = true,
-  });
+  const FieldTypeInfo(this.type, this.label, this.icon, this.description);
 }
 
 /// Urutan = urutan tampil di pembuat form.
@@ -31,11 +22,9 @@ const List<FieldTypeInfo> fieldTypeInfos = [
   FieldTypeInfo(FieldType.decimal, 'Decimal', Icons.straighten,
       'Number with decimals'),
   FieldTypeInfo(FieldType.date, 'Date', Icons.calendar_today, 'A date'),
-  FieldTypeInfo(FieldType.time, 'Time', Icons.schedule, 'Time of day (24 h)',
-      pickable: false),
+  FieldTypeInfo(FieldType.time, 'Time', Icons.schedule, 'Time of day (24 h)'),
   FieldTypeInfo(FieldType.datetime, 'Date & time', Icons.event,
-      'A date with a time',
-      pickable: false),
+      'A date with a time'),
   FieldTypeInfo(FieldType.dropdown, 'Dropdown', Icons.arrow_drop_down_circle,
       'One choice from a list'),
   FieldTypeInfo(FieldType.multiselect, 'Multiple choice', Icons.checklist,
@@ -48,10 +37,6 @@ const List<FieldTypeInfo> fieldTypeInfos = [
 
 FieldTypeInfo fieldTypeInfo(FieldType type) =>
     fieldTypeInfos.firstWhere((info) => info.type == type);
-
-/// Tipe yang ditawarkan pembuat form, sesuai urutan tampil.
-List<FieldType> get pickableFieldTypes =>
-    [for (final info in fieldTypeInfos) if (info.pickable) info.type];
 
 /// Nama tipe untuk ditampilkan; tipe tak dikenal menyebut nama aslinya.
 String fieldTypeDisplayName(FormFieldModel field) => field.isUnknownType

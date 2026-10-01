@@ -18,22 +18,6 @@ void main() {
     }
   });
 
-  test('tipe yang bisa dipilih di pembuat form: tipe yang inputnya sudah ada',
-      () {
-    expect(pickableFieldTypes.toSet(), {
-      FieldType.text,
-      FieldType.textarea,
-      FieldType.number,
-      FieldType.decimal,
-      FieldType.date,
-      FieldType.dropdown,
-      FieldType.multiselect,
-      FieldType.checkbox,
-      FieldType.rating,
-      FieldType.photo,
-    });
-  });
-
   test('nama tampilan field bertipe tak dikenal menyebut nama aslinya', () {
     final known = FormFieldModel(id: 'a', label: 'A', type: FieldType.decimal);
     final unknown = FormFieldModel.fromJson(

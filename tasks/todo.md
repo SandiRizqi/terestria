@@ -10,7 +10,7 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 - [x] T3: `field_values.dart` (parse/format/validasi/tampilan per tipe) + `formFieldIssues` memakai `fieldValueIssue` — tabel kasus sama dengan server.
 - [x] T4: input teks panjang (banyak baris, tanpa QR/toggle huruf) & skala 1–5 (`RatingInput`, ketuk lagi = kosong) + builder; dropdown tipe di builder `isExpanded` (label panjang tidak meluber di 360 dp).
 - [x] T5: input pilihan ganda `"A; B"` (`MultiChoiceInput`; nilai lama di luar daftar tetap tampil & ditandai) + editor opsi bersama dropdown: minimal 1, unik (huruf besar/kecil diabaikan; dropdown dengan opsi ganda dulu bisa crash), tanpa `;` untuk pilihan ganda. Opsi kini disimpan tanpa spasi di tepi.
-- [ ] T6: input waktu & tanggal-waktu.
+- [x] T6: input waktu (`HH:mm`, pemilih 24 jam) & tanggal-waktu (`YYYY-MM-DDTHH:mm:00.000`; pilih tanggal lalu jam) dengan "Now" dan hapus; nilai lama tak valid tampil apa adanya dan ditandai validasi. Semua tipe kini punya input, jadi penanda `pickable` dihapus.
 - [ ] T7: min/maks + satuan (builder + form).
 - [ ] T8: nilai default (record baru saja; draft → pin → default; `now`).
 - [ ] T9: tipe baru di filter, ekspor, detail, lembar konflik, judul record.

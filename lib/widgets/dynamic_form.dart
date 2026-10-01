@@ -4,6 +4,7 @@ import '../models/form_field_model.dart';
 import '../models/geo_data_model.dart';
 import '../services/pinned_values_service.dart';
 import '../utils/field_values.dart';
+import 'form_inputs/date_time_inputs.dart';
 import 'form_inputs/multi_choice_input.dart';
 import 'form_inputs/rating_input.dart';
 import 'photo_field_widget.dart';
@@ -311,10 +312,17 @@ class _DynamicFormState extends State<DynamicForm>
             onChanged: onChanged,
           ),
         );
-      // Tipe yang input khususnya belum ada: sementara seperti teks.
       case FieldType.time:
+        return _buildValueField(
+          field,
+          (value, onChanged) => TimeInput(value: value, onChanged: onChanged),
+        );
       case FieldType.datetime:
-        return _buildTextField(field);
+        return _buildValueField(
+          field,
+          (value, onChanged) =>
+              DateTimeInput(value: value, onChanged: onChanged),
+        );
     }
   }
 

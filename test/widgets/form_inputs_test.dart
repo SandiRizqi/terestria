@@ -107,6 +107,69 @@ void main() {
     });
   });
 
+  group('waktu & tanggal-waktu', () {
+    testWidgets('"Now" mengisi format tersimpan; hapus → kosong',
+        (tester) async {
+      final h = await _pump(tester, [
+        _f('Jam', FieldType.time),
+        _f('Mulai', FieldType.datetime),
+      ]);
+      expect(find.text('Not set'), findsNWidgets(2));
+      await tester.tap(find.widgetWithText(TextButton, 'Now').first);
+      await tester.pump();
+      await tester.tap(find.widgetWithText(TextButton, 'Now').last);
+      await tester.pump();
+      expect(h.saved()['Jam'], matches(RegExp(r'^\d{2}:\d{2}$')));
+      expect(h.saved()['Mulai'],
+          matches(RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000$')));
+
+      await tester.tap(find.byTooltip('Clear').first);
+      await tester.pump();
+      expect(h.saved()['Jam'], '');
+      expect(find.text('Not set'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('pemilih jam 24 jam; OK menyimpan HH:mm', (tester) async {
+      final h = await _pump(tester, [_f('Jam', FieldType.time)],
+          initial: {'Jam': '19:05'});
+      await tester.tap(find.text('19:05'));
+      await tester.pumpAndSettle();
+      expect(find.text('PM'), findsNothing);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(h.saved()['Jam'], '19:05');
+    });
+
+    testWidgets('tanggal-waktu tampil terformat; pilih tanggal lalu jam',
+        (tester) async {
+      final h = await _pump(tester, [_f('Mulai', FieldType.datetime)],
+          initial: {'Mulai': '2026-10-01T07:15:00.000'});
+      await tester.tap(find.text('2026-10-01 07:15'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK')); // tanggal
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK')); // jam
+      await tester.pumpAndSettle();
+      expect(h.saved()['Mulai'], '2026-10-01T07:15:00.000');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('nilai tak valid dari app lama tampil & ditolak',
+        (tester) async {
+      final h = await _pump(tester, [
+        _f('Jam', FieldType.time),
+        _f('Mulai', FieldType.datetime),
+      ], initial: {'Jam': '7.15', 'Mulai': '2026-10-01'});
+      expect(find.text('7.15'), findsOneWidget);
+      expect(find.text('2026-10-01'), findsOneWidget);
+      expect(h.formKey.currentState!.validate(), isFalse);
+      await tester.pump();
+      expect(find.text('Value is not a valid time'), findsOneWidget);
+      expect(find.text('Value is not a valid date and time'), findsOneWidget);
+    });
+  });
+
   group('skala 1–5', () {
     testWidgets('ketuk bintang → tersimpan angka; ketuk lagi → kosong',
         (tester) async {

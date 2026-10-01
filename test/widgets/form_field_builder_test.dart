@@ -4,7 +4,7 @@ import 'package:geoform_app/models/form_field_model.dart';
 import 'package:geoform_app/widgets/form_field_builder.dart';
 
 /// Pembuat field di HP: tipe yang ditawarkan mengikuti daftar tipe
-/// (`field_type_info.dart`) — hanya tipe yang inputnya sudah ada.
+/// (`field_type_info.dart`).
 
 Future<FormFieldModel? Function()> _openDialog(WidgetTester tester,
     {FormFieldModel? field}) async {
@@ -81,6 +81,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(result()?.type, FieldType.multiselect);
     expect(result()?.options, ['Ulat api', 'Tikus']);
+  });
+
+  testWidgets('waktu & tanggal-waktu bisa dipilih', (tester) async {
+    final result = await _openDialog(tester);
+    await _pickType(tester, 'Time');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Field Label'), 'Jam');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result()?.type, FieldType.time);
+
+    final result2 = await _openDialog(tester);
+    await _pickType(tester, 'Date & time');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Field Label'), 'Mulai');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result2()?.type, FieldType.datetime);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('teks panjang bisa dipilih', (tester) async {

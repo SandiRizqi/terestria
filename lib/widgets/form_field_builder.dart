@@ -160,13 +160,8 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
                   labelText: 'Field Type',
                   border: OutlineInputBorder(),
                 ),
-                // Tipe yang bisa dipilih + tipe field yang sedang diedit
-                // (mis. tipe baru dari server yang inputnya belum ada).
-                items: [
-                  for (final info in fieldTypeInfos)
-                    if (info.pickable || info.type == widget.field?.type)
-                      info.type,
-                ].map((type) {
+                items: [for (final info in fieldTypeInfos) info.type]
+                    .map((type) {
                   final displayName = fieldTypeInfo(type).label;
                   bool isDisabled = false;
 
