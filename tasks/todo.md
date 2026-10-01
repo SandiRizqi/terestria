@@ -1,40 +1,45 @@
-# TODO — Style per Feature + Select Feature dengan Tap Langsung (30 Sep 2026)
+# TODO — Perbaikan hasil review + pilihan warna peta di web (1 Okt 2026)
 
-Spec: [SPEC.md](../SPEC.md) · Plan: [plan.md](plan.md) · Plan sebelumnya: `plan-sync-conflict.md` (arsip lokal)
-Backend: `gis-backend` @ `dev1` · Mobile: `terestria` @ `main` · commit per task, tanpa push/deploy.
-Baseline mobile: `flutter test` 641 lulus, `flutter analyze` 0 error dan 29 warning.
+Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Plan sebelumnya: `plan-feature-style.md` (arsip lokal)
+Repo: `gis-backend` @ `dev1` (T1–T3) · `terestria` @ `main` (T2, T4–T8) · `gis-dashboard` @ `dev1` (T9). Commit per task, tanpa push/deploy.
+Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend unittest lokal 64 · dashboard `npm test` 19, `tsc` 1 error lama.
 
-## Fase 1 — Kontrak & data
-- [x] T1 (backend, gis-backend `d54d508`): `GeoData.style`, migrasi `0021` (manual), `clean_style`, serializer (tidak valid → dibuang, key tidak ada → dipertahankan, `null` → hapus), `to_mobile_json`. Test mock + test DB di CI.
-- [x] T2: `feature_style.dart` (hex JSON, clamp, nilai awal dari Settings) + `GeoData.style`.
-- [x] T3: DB v7 (kolom `style`, migrasi idempoten) + draft menyimpan style.
-- [x] T4: push selalu mengirim `style`; pull (objek/`null`/tanpa key); "Use server" membawa style; `docs/sync-push-contract.md`.
+## Fase 1 — Backend (sebelum deploy `d54d508`)
+- [ ] T1 (kritis): verifikasi hanya di-reset bila isian form non-foto atau koordinat titik berubah; foto dan style tidak dicek; `updated_at` tetap naik.
+- [ ] T2: kontrak style — `pointSize` 10–24, key asing diabaikan (backend `clean_style` + mobile `feature_style.dart` + `docs/sync-push-contract.md`).
+- [ ] T3: tile MVT membawa 5 properti style (migrasi `0022`) + segmen versi `s2` di key cache tile.
 
 ### Checkpoint A
-- [x] Semua test hijau (672); `analyze` sesuai baseline; belum ada perubahan yang terlihat user.
+- [ ] Test lokal backend hijau, `manage.py check` bersih, migrasi konsisten (cek offline); test mobile T2 hijau.
+- [ ] (User) CI: `tests_feature_style_db`, `tests_photo_download_db`, `tests_verification`, `tests_tile_style_db`.
 
-## Fase 2 — Lihat & atur style
-- [x] T5: pembangun layer bersama (`project_feature_layers.dart`); style tampil di peta project dan navigasi; tanpa style = sama persis dengan sekarang.
-- [x] T6: editor style bersama (`style_editor.dart`), diekstrak dari Layers tanpa perubahan perilaku.
-- [x] T7: bagian "Style" di form "Survey data"; Save menyimpan style; "Save & next" membawa style; draft ikut.
-- [x] T8: ubah/reset style di layar edit data (record jadi "belum sync").
+## Fase 2 — Mobile
+- [ ] T4: editor ukuran point — rentang per pemakai (Layers 4–20, feature 10–24), pratinjau = diameter marker di peta.
+- [ ] T5: hit-test dua tingkat — yang kena langsung didahulukan; toleransi 24 dp hanya bila tidak ada yang kena langsung.
+- [ ] T6: culling tampilan line/polygon pakai aturan bbox yang sama dengan hit-test (bbox dihitung saat data dimuat).
+- [ ] T7: hapus kode mati `MarkerLayer` line/polygon di `_buildExistingDataLayers`.
+- [ ] T8 (opsional): bagian Style di sheet stop & save "Tracking Aktif".
 
 ### Checkpoint B
-- [ ] Manual di HP: atur style saat koleksi dan saat edit, lihat di peta, sync, pull di HP kedua (backend T1 di dev).
+- [ ] `flutter test` hijau; `flutter analyze` sesuai baseline.
+- [ ] (User, di HP) blok bersebelahan, polygon bertumpuk, slider ukuran point + pratinjau, zoom di dalam blok besar, Style di Tracking Aktif.
 
-## Fase 3 — Tap langsung
-- [x] T9: hit-test murni (point/line/polygon, toleransi dp, urutan stabil).
-- [x] T10: daftar pilihan saat tap mengenai beberapa feature + helper `recordTitle()` bersama.
-- [x] T11: wiring `_onMapTap` (alat ukur → mode gambar → select) + hapus ikon info di peta project dan navigasi.
+## Fase 3 — Web dashboard
+- [ ] T9: pilihan "Warna peta" (Status verifikasi / Style feature) + legenda mode aktif + diingat per browser; `sv=2` di URL tile.
 
-### Checkpoint C (selesai)
-- [x] Test lokal hijau: `flutter test` 714, `flutter analyze` 0 error / 29 warning (baseline), unittest backend 64, `manage.py check` bersih.
-- [ ] Test DB backend di CI (`mobile.tests_feature_style_db`).
-- [ ] Semua kriteria SPEC §9 terbukti di HP (daftar uji di bawah).
-- [ ] Uji di HP:
-  - upgrade v6 → v7;
+### Checkpoint C
+- [ ] Test lokal ketiga repo hijau; baseline analyze/tsc/lint tidak memburuk.
+- [ ] (User) Uji manual T9 di browser setelah backend T3 ter-deploy di dev.
+- [ ] (User) Deploy berurutan: backend (`d54d508` + T1–T3) → dashboard (T9) → rilis app.
+
+## Dibawa dari build sebelumnya (style per feature + tap langsung)
+- [ ] (User, di HP)
+  - atur style saat koleksi dan saat edit, lalu lihat di peta project dan layar navigasi;
   - sync ke HP kedua;
-  - app lama tidak menghapus style;
+  - upgrade DB v6 → v7 tanpa kehilangan data;
+  - app versi lama tidak menghapus style;
   - edit dari dashboard tidak menghapus style;
-  - ketepatan tap.
-- [ ] Deploy backend T1 sebelum rilis app.
+  - ketepatan tap pada line tipis dan polygon kecil;
+  - cluster di zoom rendah tetap zoom-in;
+  - mode gambar dan alat ukur tetap menambah titik.
+- Item build dashboard sebelumnya (download foto, polygon verifikasi) tetap di `gis-dashboard/tasks/todo.md`.

@@ -1,350 +1,301 @@
-# Rencana: Style per Feature + Select Feature dengan Tap Langsung
+# Rencana: Perbaikan hasil review + pilihan warna peta di web
 
-Status: **DRAFT — menunggu persetujuan** · Tanggal: 2026-09-30
-Spec: [SPEC.md](../SPEC.md) (disetujui 2026-09-30)
-Plan sebelumnya: `tasks/plan-sync-conflict.md` (arsip lokal; versi git ada di riwayat `tasks/plan.md`).
+Status: **disetujui user (2026-10-01)**; pertanyaan terbuka memakai default · Tanggal: 2026-10-01
+Spec: [SPEC.md](../SPEC.md) (disetujui 2026-09-30). Bagian yang berubah tercantum di "Perubahan SPEC" dan diterapkan di commit persiapan setelah plan ini disetujui.
+Plan sebelumnya: `tasks/plan-feature-style.md` (arsip lokal; versi git ada di riwayat `tasks/plan.md`). Item manual yang belum selesai dari plan itu dibawa ke `tasks/todo.md`.
 
-Repo: **gis-backend** @ `dev1` (T1) dan **terestria** @ `main` (T2–T11). Satu commit per task, tanpa push/deploy.
+Satu commit per task per repo, tanpa push/deploy. Status semua task dicatat di `tasks/todo.md` (terestria).
+
+| Repo | Branch | Task |
+|---|---|---|
+| gis-backend | `dev1` | T1, T2 (validasi), T3 |
+| terestria | `main` | T2 (model), T4–T8 |
+| gis-dashboard | `dev1` | T9 |
 
 ## Ringkasan
 
-Dua fitur untuk peta project di aplikasi mobile:
+1. **Perbaikan hasil review** build style per feature + tap langsung (terestria `d44caea..b0a854b`, backend `d54d508`): 1 kritis, 3 penting, 2 saran, dan kode mati.
+2. **Fitur baru di web dashboard:** user memilih warna peta data survei, yaitu **Status verifikasi** (seperti sekarang) atau **Style feature** dari aplikasi mobile. Legenda selalu menyebut mode yang aktif, jadi jelas warna di peta berasal dari status atau dari style.
 
-1. **Style per feature.** Warna, ukuran/tebal, opacity, dan garis tepi seperti editor Layers. Diatur di bagian bawah form "Survey data" dan di layar edit, lalu ikut sync ke server.
-2. **Select dengan tap langsung** pada point, line, atau polygon, menggantikan ikon info di tengah feature. Tap yang mengenai beberapa feature memunculkan daftar pilihan.
-
-Urutan kerja: kontrak dan lapisan data dulu (backend, lalu model, DB, dan sync di mobile), kemudian tampilan dan editor style, terakhir tap langsung. Dengan urutan ini aplikasi tetap bisa dipakai di setiap titik: ikon info baru dihapus bersamaan dengan aktifnya tap langsung.
+Urutan kerja: backend dulu, karena kontrak style ikut berubah dan semuanya harus masuk sebelum `d54d508` di-deploy. Lalu mobile, terakhir dashboard (butuh tile dari T3).
 
 ## Keputusan arsitektur
 
-1. **`LayerStyle` dipakai ulang sebagai tipe style feature.** Properti yang disetujui sama persis (`fillColor`, `fillOpacity`, `strokeColor`, `strokeWidth`, `pointSize`), jadi editor Layers bisa dipakai bersama. Konversi ke JSON server, nilai awal dari Settings, dan clamp rentang ditaruh di `lib/models/feature_style.dart`. `LayerStyle.toJson` yang lama (warna sebagai int) tetap dipakai layer impor; format feature memakai hex `#RRGGBB`.
-2. **`style == null` berarti ikut default Settings saat render.** Nilai awal editor meniru render default yang sekarang (`data_collection_screen.dart:978-1090`):
-
-   | Geometri | Nilai awal |
-   |---|---|
-   | Point | `pointColor`, opacity 1.0, `pointSize` |
-   | Line | `lineColor`, opacity 0.8, `lineWidth` |
-   | Polygon | isi `polygonColor` dengan `polygonOpacity`, garis tepi `polygonColor`, tebal `lineWidth` |
-
-   Feature tanpa style tampil sama persis seperti sekarang.
-3. **Satu pembangun layer bersama untuk peta project dan layar navigasi** (`project_feature_layers.dart`). Kode render yang sekarang terduplikasi di `_buildMarkerCache` dan `_buildProjectDataLayers` digabung. Caching, culling, dan clustering tetap di screen.
-4. **Hit-test ditulis sebagai fungsi murni di ruang layar (piksel).**
-   - Tidak memakai `hitNotifier` flutter_map, supaya bisa diuji tanpa widget dan point bertumpuk ikut terdeteksi (marker hanya menangkap tap paling atas).
-   - Toleransi diukur dalam dp, jadi konsisten di semua zoom. Nilai awal 24 dp, disetel lagi setelah uji di HP.
-   - Point tidak lagi punya `GestureDetector` sendiri; tap diteruskan ke `onTap` peta.
-   - Cluster tetap zoom-in saat diketuk.
-5. **Aturan sync mengikuti SPEC §3.**
-   - **Backend:** key `style` tidak ada → nilai lama dipertahankan. Ini berlaku untuk app versi lama maupun edit dari dashboard.
-   - **Backend:** `null` → style dihapus.
-   - **Backend:** style tidak valid → key dibuang, jadi diperlakukan seperti tidak ada. Record tetap diterima.
-   - **Mobile, saat pull:** key tidak ada (backend lama) → style lokal dipertahankan.
-6. **Migrasi backend `0021` ditulis manual** (satu `AddField`), karena `makemigrations` di lokal butuh koneksi DB yang diblokir. Kecocokannya dicek di CI dan di build Docker, yang menjalankan `makemigrations`; hasilnya harus kosong.
-7. **Logika baru ditaruh di file terpisah.** `data_collection_screen.dart` (±4.350 baris) hanya mendapat perubahan wiring.
+1. **Verifikasi hanya di-reset kalau isi record berubah** (`GeoDataSerializer.update`).
+   - Yang dibandingkan dengan nilai tersimpan: **isian form non-foto** (persis sama) dan **koordinat titik** (urutan latitude/longitude, dibandingkan sebagai angka).
+   - **Foto tidak dibandingkan** (keputusan user 2026-10-01). Menambah, mengganti, atau menghapus foto tidak me-reset verifikasi. Field foto dikenali dari tipe field project (`photo`), dengan cadangan dari bentuk nilainya (daftar objek ber-`serverKey`/`localPath`) dan key lama `*_oss_urls`/`*_oss_keys`.
+   - Kalau yang berubah hanya style (atau data dikirim ulang tanpa perubahan), status verifikasi, `verified_by`/`verified_at`, error validasi, dan `schema_snapshot` tidak berubah. `updated_at` tetap naik supaya HP lain menarik perubahannya.
+   - Create tidak berubah (selalu divalidasi).
+   - Ini mengubah aturan backend di luar `style` (SPEC "Ask first"); diminta user lewat perbaikan ini.
+2. **Kontrak style direvisi selagi belum ada yang ter-deploy.**
+   - `pointSize` **10–24** (sebelumnya 4–20). Rentang ini persis memetakan diameter marker 20–48 dp di HP, jadi setiap langkah slider terlihat. Semua nilai Settings (8–24) muat; 8–9 memang sudah tampil 20 dp, sama dengan 10.
+   - Key asing **diabaikan** (5 key inti tetap wajib), supaya app versi baru bisa menambah properti tanpa style-nya dibuang oleh backend versi ini.
+   - Mobile men-clamp saat membaca, jadi style uji coba yang terlanjur tersimpan dengan nilai < 10 tetap terbaca.
+3. **Editor style menerima batas dari pemanggil.** Layers tetap 4–20 dengan pratinjau lamanya. Style feature memakai 10–24, dan pratinjau point = diameter marker di peta.
+4. **Hit-test dua tingkat.**
+   - Tingkat 1, "kena langsung": tap di dalam lingkaran marker, di atas garis (setengah tebal garis + 4 dp), atau di dalam polygon.
+   - Tingkat 2, hanya bila tingkat 1 kosong: dalam toleransi 24 dp.
+   - Urutan di dalam tingkat tetap: point terdekat → line terdekat → polygon terkecil. Daftar pilihan tetap muncul untuk feature yang benar-benar bertumpuk.
+5. **Yang tergambar = yang bisa diketuk.** Culling tampilan line/polygon memakai aturan bbox yang sama dengan hit-test. Bbox dihitung sekali setiap data dimuat.
+6. **Warna peta web dipilih user.**
+   - Pilihan `Status verifikasi` | `Style feature`. Default Status (perilaku sekarang), diingat per browser lewat localStorage (aman bila tidak tersedia).
+   - Tile (MVT) membawa 5 properti datar: `style_fill_color`, `style_fill_opacity`, `style_stroke_color`, `style_stroke_width`, `style_point_size`. Properti ini tidak ada bila feature tanpa style. Mode GeoJSON (cadangan) mengisi properti yang sama dari `data.style`.
+   - Feature tanpa style memakai **default pabrik aplikasi**: point `#2196F3`; line `#4CAF50` α 0.8 tebal 3; polygon isi `#FF9800` α 0.3, tepi `#FF9800` tebal 3. Settings tiap HP bisa berbeda dan tidak dikirim ke server, jadi web tidak bisa meniru Settings masing-masing HP.
+   - Ukuran point di mode Style = `pointSize × ⅔` px (default 12 → 8 px, sama dengan sekarang). Tepi polygon α 0.85 seperti di HP.
+   - Filter verifikasi dan sorotan merah feature terpilih tetap berlaku di kedua mode.
+   - Logika warna (expression MapLibre, default, isi legenda) ditaruh di modul murni `mapColorMode.ts` yang dites. Pilihan + legenda di komponen baru, sehingga `ProjectMapView.tsx` (±1.900 baris) hanya mendapat wiring.
+7. **Tile lama tanpa style tidak tersaji setelah deploy.**
+   - Key cache OSS mendapat segmen versi: `tiles/project_{id}/s2/…`. Segmen ini masih di bawah prefix invalidasi yang sama, jadi tile lama ikut terhapus saat invalidasi berikutnya.
+   - URL tile di dashboard mendapat `sv=2` untuk melewati cache browser (1 jam).
 
 ## Grafik dependensi
 
 ```
-Fase 1 — kontrak & data
-  T1 BE style (model, migrasi, validasi, serializer, to_mobile_json)
-  T2 FeatureStyle + GeoData.style ──► T3 DB v7 + draft ──► T4 sync push/pull + kontrak
-                                                               │  (T1 wajib ter-deploy sebelum uji sync di HP)
-Fase 2 — lihat & atur style                                    ▼
-  T5 pembangun layer bersama (render style) ◄── T2
-  T6 editor style bersama (dari Layers) ──► T7 bagian Style di form "Survey data" (◄ T3) ──► T8 layar edit
-Fase 3 — tap langsung
-  T9 hit-test murni ──► T10 daftar pilihan (FeaturePickSheet) ──► T11 wiring tap + hapus ikon info (◄ T5)
+Fase 1 — backend (sebelum deploy d54d508)
+  T1 verifikasi tetap bila isi tidak berubah
+  T2 kontrak style: pointSize 10–24, key asing diabaikan (backend + model mobile)
+  T3 tile MVT membawa style + versi cache tile
+Fase 2 — mobile
+  T4 editor ukuran point = ukuran di peta ◄── T2
+  T5 hit-test dua tingkat
+  T6 culling tampilan = aturan hit-test ──► T7 hapus kode mati layer ikon (file sama)
+  T8 Style di sheet "Tracking Aktif" (opsional, lihat pertanyaan terbuka)
+Fase 3 — web dashboard
+  T9 pilihan warna peta + legenda ◄── T3 (mode vector tile)
 ```
 
-- T1 bisa dikerjakan paralel dengan T2–T3.
-- T6 dan T9 tidak saling bergantung dengan task lain di fasenya.
+- T1, T2, dan T3 saling bebas. T5, T6, dan T8 juga saling bebas.
 
 ## Tasks
 
-### Fase 1 — Kontrak & data
+### Fase 1 — Backend (semua sebelum `d54d508` di-deploy)
 
-#### T1 — Backend: kolom `style` + aturan sync (gis-backend)
-**Deskripsi.** `GeoData.style = JSONField(null=True, blank=True)` beserta migrasi `0021_geodata_style` (ditulis manual). Validasi dilakukan oleh `clean_style()` di `validation.py`:
-- hanya 5 key;
-- warna `#RRGGBB`;
-- rentang `fillOpacity` 0.05–1, `strokeWidth` 0.5–10, `pointSize` 4–20.
-
-Serializer:
-- menerima `style`;
-- menghapus key `style` bila tidak valid, sehingga dianggap tidak dikirim;
-- `null` berarti menghapus style;
-- key tidak ada berarti tidak disentuh.
-
-`to_mobile_json` menyertakan `style`.
+#### T1 — Verifikasi tidak di-reset bila isi record tidak berubah (gis-backend) — kritis
+**Deskripsi.** Fungsi murni `ingest_content_changed(form_fields, old_form_data, new_form_data, old_points, new_points)` di `validation.py`, mengikuti aturan di Keputusan 1. `GeoDataSerializer.update` hanya memanggil `_apply_ingest_verification` bila fungsi itu mengembalikan `True`. `updated_at` selalu naik.
 
 **Kriteria penerimaan**
-- [ ] Style valid tersimpan. `to_mobile_json` mengembalikan `style` (`null` bila tidak ada).
-- [ ] Update tanpa key `style` mempertahankan style lama, baik lewat push mobile maupun `partial_update` dari dashboard. Update dengan `null` menghapusnya.
-- [ ] Style tidak valid tidak menggagalkan record, baik lewat `create` maupun `bulk_sync`. Style lama tetap, atau `null` untuk record baru.
+- [ ] Record verified, lalu update style saja → `verification_status`, `verified_by`, `verified_at`, `validation_errors`, dan `schema_snapshot` tidak berubah. `style` dan `updated_at` berubah.
+- [ ] Data dikirim ulang persis sama → verifikasi tetap.
+- [ ] Hanya foto yang berubah (ditambah, diganti, dihapus, atau beda `serverUrl`/`localPath`) → verifikasi tetap.
+- [ ] Verifikasi di-reset seperti sekarang bila salah satu terjadi:
+  - nilai field non-foto berubah;
+  - field non-foto ditambah atau dihapus;
+  - koordinat titik berubah, bertambah, atau berkurang.
+- [ ] Create tidak berubah. Test lama `test_update_mereset_verifikasi` tetap lulus.
 
 **Verifikasi**
-- [ ] `"$PY" -m unittest mobile.tests_feature_style` (mock, lokal): `clean_style` valid/tidak valid dan penyaringan `to_internal_value`.
-- [ ] Regresi `mobile.tests_push_rules mobile.tests_pull_filter mobile.tests_photo_download`, lalu `manage.py check`.
-- [ ] `mobile/tests_feature_style_db.py` (CI): create/update/partial update/null/tidak valid dengan DB nyata.
+- [ ] Lokal: `"$PY" -m unittest mobile.tests_verification_keep` (baru, murni), semua test lokal lain, dan `"$PY" manage.py check`.
+- [ ] CI (test DB):
+  - record verified lalu push style saja lewat `create` (upsert) → tetap verified;
+  - push dengan isian berubah → di-reset.
 
-**Dependensi:** tidak ada
-**File:** `mobile/models.py`, `mobile/migrations/0021_geodata_style.py` (baru), `mobile/validation.py`, `mobile/serializers.py`, `mobile/tests_feature_style.py` (baru), `mobile/tests_feature_style_db.py` (baru)
-**Ukuran:** M
+**Dependensi:** tidak ada.
+**File:** `mobile/validation.py`, `mobile/serializers.py`, `mobile/tests_verification_keep.py` (baru), `mobile/tests_feature_style_db.py`.
+**Ukuran:** S–M.
 
-#### T2 — Mobile: model style feature + `GeoData.style`
-**Deskripsi.** `lib/models/feature_style.dart` berisi:
-- `featureStyleToJson(LayerStyle?)` (hex);
-- `featureStyleFromJson(Object?)`: `null` bila tidak valid, nilai di-clamp, key asing diabaikan;
-- `defaultFeatureStyle(GeometryType, AppSettings)` sesuai keputusan #2.
-
-`GeoData` mendapat `style` (`LayerStyle?`) pada `toJson`/`fromJson` (format lokal dan server) serta `copyWith(style:, clearStyle:)`.
-
-**Kriteria penerimaan**
-- [ ] Round-trip hex tidak berubah. Warna/tipe tidak valid → `null`. Nilai di luar rentang di-clamp.
-- [ ] Nilai awal per geometri sama dengan render default sekarang.
-- [ ] `GeoData` tanpa style: `toJson`/`fromJson` identik dengan sekarang, sehingga test lama tetap hijau.
-
-**Verifikasi**
-- [ ] `flutter test test/models/feature_style_test.dart test/models/geo_data_style_test.dart`.
-- [ ] `flutter test` penuh (641 + baru).
-- [ ] `flutter analyze` tanpa warning baru (baseline 29).
-
-**Dependensi:** tidak ada
-**File:** `lib/models/feature_style.dart` (baru), `lib/models/geo_data_model.dart`, `test/models/feature_style_test.dart` (baru), `test/models/geo_data_style_test.dart` (baru)
-**Ukuran:** M
-
-#### T3 — Mobile: DB v7 + draft menyimpan style
+#### T2 — Kontrak style direvisi: `pointSize` 10–24, key asing diabaikan (gis-backend + terestria)
 **Deskripsi.**
-- `_databaseVersion = 7`.
-- Kolom `geo_data.style TEXT` di tabel baru, ditambah migrasi `oldVersion < 7` yang idempoten memakai pola `missingColumns`.
-- `geoDataToRow`/`geoDataFromRow` menulis dan membaca JSON style.
-- `CollectionDraft` mendapat `style`.
+- Backend `clean_style`: rentang `pointSize` 10–24. Key di luar 5 key inti dibuang, bukan membuat seluruh style ditolak. 5 key inti tetap wajib.
+- Mobile `feature_style.dart`: `featureMinPointSize = 10`, `featureMaxPointSize = 24`.
+- Dokumen kontrak diperbarui.
 
 **Kriteria penerimaan**
-- [ ] DB baru punya kolom `style`.
-- [ ] Upgrade v6 → v7 mempertahankan semua record dengan `style = null`. Menjalankan migrasi dua kali tidak error.
-- [ ] Style tersimpan dan terbaca kembali utuh.
-- [ ] Draft menyimpan dan mengembalikan style. Draft lama tanpa key `style` tetap terbaca.
+- [ ] Backend: `pointSize` 10 dan 24 diterima. 9 dan 25 → style dibuang, record tetap diterima.
+- [ ] Backend: style dengan key asing (mis. `dash`) → tersimpan tanpa key itu. Salah satu key inti hilang → style dibuang.
+- [ ] Mobile: nilai di-clamp ke 10–24 saat dibaca dan dikirim. Dengan Settings `pointSize` 24, mengganti warna saja tidak mengecilkan point.
+- [ ] Render default (tanpa style) tetap identik; test lama lulus.
+- [ ] `docs/sync-push-contract.md` §4 memuat rentang dan aturan key asing yang baru.
 
 **Verifikasi**
-- [ ] `flutter test test/services/db_v7_test.dart` (pola `db_v6_test.dart`, sqflite ffi) dan test draft.
-- [ ] `flutter test` penuh, `flutter analyze`.
+- [ ] Backend: `"$PY" -m unittest mobile.tests_feature_style` dan `manage.py check`.
+- [ ] Mobile: `flutter test test/models/feature_style_test.dart`, lalu `flutter test` penuh dan `flutter analyze` (baseline).
 
-**Dependensi:** T2
-**File:** `lib/services/database_service.dart`, `lib/services/collection_draft_service.dart`, `test/services/db_v7_test.dart` (baru), test draft yang ada (ditambah kasus)
-**Ukuran:** M
+**Dependensi:** tidak ada.
+**File:** gis-backend `mobile/validation.py`, `mobile/tests_feature_style.py`; terestria `lib/models/feature_style.dart`, `test/models/feature_style_test.dart`, `docs/sync-push-contract.md`.
+**Ukuran:** S.
 
-#### T4 — Mobile: sync push/pull style + kontrak
+#### T3 — Tile peta web membawa style (gis-backend)
 **Deskripsi.**
-- `buildGeoDataPayload` **selalu** mengirim `style` (objek atau `null`).
-- Pull untuk record baru atau yang lebih baru di server: pakai `style` server bila key-nya ada; bila tidak ada, pertahankan style lokal.
-- `resolveUseServer` (konflik) mengikuti aturan yang sama.
-- `docs/sync-push-contract.md` mendapat bagian `style`.
+- Migrasi `0022_geodata_tile_add_style` (RunSQL) mengganti fungsi `get_geodata_tile` dengan 5 kolom style dari `gd.style`. Angka hanya diambil bila bertipe number, supaya data rusak tidak menggagalkan tile.
+- Reverse = fungsi versi 0020.
+- `_build_tile_cache_key` mendapat segmen versi `s2`.
 
 **Kriteria penerimaan**
-- [ ] Payload berisi `style` objek untuk record custom dan `null` untuk default.
-- [ ] Pull dengan `style` objek → tersimpan. Dengan `null` → dihapus. Tanpa key → style lokal tetap.
-- [ ] "Use server version" membawa style server.
+- [ ] Tile record ber-style memuat 5 properti style; record tanpa style tidak memuatnya.
+- [ ] Nilai style yang bukan tipe yang diharapkan tidak membuat pembuatan tile gagal.
+- [ ] Migrasi bisa dibalik ke fungsi versi 0020.
+- [ ] Key cache baru `tiles/project_{id}/s2/{z}/{x}/{y}.pbf` (group sama). `invalidate_tile_cache` tetap menghapus key lama maupun baru.
 
 **Verifikasi**
-- [ ] `flutter test test/services/sync_feature_style_test.dart` (fake HTTP dan storage, pola `sync_conflict_test.dart`).
-- [ ] `flutter test` penuh, `flutter analyze`.
+- [ ] Lokal:
+  - `"$PY" -m unittest mobile.tests_tile_style` (key cache, isi SQL migrasi dan reverse);
+  - cek graf migrasi offline (0022 → 0021);
+  - `manage.py check`.
+- [ ] CI: `mobile.tests_tile_style_db`. `_generate_tile_from_db` untuk record ber-style memuat `style_fill_color` dan `#FF9800`.
 
-**Dependensi:** T2, T3. T1 harus ter-deploy di dev sebelum uji di HP.
-**File:** `lib/services/sync_service.dart`, `docs/sync-push-contract.md`, `test/services/sync_feature_style_test.dart` (baru)
-**Ukuran:** M
+**Dependensi:** tidak ada (kolom `style` sudah ada dari `d54d508`).
+**File:** `mobile/migrations/0022_geodata_tile_add_style.py`, `mobile/views.py`, `mobile/tests_tile_style.py`, `mobile/tests_tile_style_db.py`.
+**Ukuran:** S–M.
 
-### Checkpoint A — lapisan data selesai
-- [ ] Semua test hijau: backend lokal, `flutter test`, `flutter analyze` tanpa warning baru.
-- [ ] Belum ada perubahan yang terlihat user.
-- [ ] Backend T1 sudah di dev bila ingin menguji sync di HP.
+### Checkpoint A — backend siap deploy
+- [ ] Semua test lokal backend hijau, `manage.py check` bersih, dan migrasi 0021 + 0022 konsisten (cek offline).
+- [ ] Test mobile T2 hijau; `flutter analyze` sesuai baseline.
+- [ ] (User) CI lulus: `tests_feature_style_db`, `tests_photo_download_db`, `tests_verification`, `tests_tile_style_db`.
 
-### Fase 2 — Lihat & atur style
+### Fase 2 — Mobile
 
-#### T5 — Mobile: render style per feature (peta project + navigasi)
-**Deskripsi.** File baru `lib/widgets/map/project_feature_layers.dart`:
-- `effectiveFeatureStyle(data, geometryType, settings)`;
-- pembangun marker/polyline/polygon untuk satu `GeoData`.
-
-Dipakai oleh `_buildMarkerCache` (peta project) dan `_buildProjectDataLayers` (navigasi). Ikon info masih dipertahankan; baru dihapus di T11.
+#### T4 — Editor ukuran point = ukuran di peta (terestria)
+**Deskripsi.** `StyleEditorFields` menerima batas dari pemanggil: rentang slider dan cara menghitung diameter point untuk pratinjau. Layers memakai batas lama (4–20, pratinjau lama). Bagian Style feature memakai 10–24, dan pratinjaunya memakai `featurePointDiameter`.
 
 **Kriteria penerimaan**
-- [ ] Feature dengan style custom tampil dengan warna, opacity, tebal, dan ukuran miliknya di kedua layar.
-- [ ] Feature tanpa style tampil **sama persis** dengan sekarang.
-- [ ] Caching, culling, dan clustering tidak berubah.
+- [ ] Form "Survey data" dan layar edit: slider ukuran point 10–24 (14 langkah); tiap langkah mengubah diameter marker di peta (20–48 dp).
+- [ ] Pratinjau point berdiameter sama dengan marker di peta.
+- [ ] Editor Layers: rentang, langkah, dan pratinjau tidak berubah (test regresi).
+- [ ] Muat di 360 dp tanpa overflow.
 
-**Verifikasi**
-- [ ] `flutter test test/widgets/project_feature_layers_test.dart`: warna/opacity/tebal polyline dan polygon serta ukuran/warna marker, untuk kasus custom maupun default.
-- [ ] `flutter test`, `flutter analyze`.
-- [ ] Manual: peta project dan navigasi dengan data campuran.
+**Verifikasi:** `flutter test test/widgets/style_editor_test.dart test/widgets/feature_style_section_test.dart`, `flutter test` penuh, `flutter analyze` (baseline).
+**Dependensi:** T2.
+**File:** `lib/widgets/style/style_editor.dart`, `lib/widgets/style/feature_style_section.dart`, `lib/screens/layers/layers_screen.dart`, `test/widgets/style_editor_test.dart`, `test/widgets/feature_style_section_test.dart`.
+**Ukuran:** M.
 
-**Dependensi:** T2
-**File:** `lib/widgets/map/project_feature_layers.dart` (baru), `lib/screens/data_collection/data_collection_screen.dart`, `lib/screens/navigation/navigation_screen.dart`, `test/widgets/project_feature_layers_test.dart` (baru)
-**Ukuran:** M
-
-#### T6 — Mobile: editor style bersama (diekstrak dari Layers)
-**Deskripsi.** `lib/widgets/style/style_editor.dart` berisi `StyleEditorFields` (warna, slider per geometri, pemilih warna) dan `StylePreview`, dipindahkan dari `_StyleEditorSheet` di `layers_screen.dart`. LayersScreen memakai widget bersama ini **tanpa perubahan perilaku**.
+#### T5 — Tap: yang kena langsung didahulukan (terestria)
+**Deskripsi.** Hit-test dua tingkat (Keputusan 4). `HitLine` membawa setengah tebal garis dari style feature.
 
 **Kriteria penerimaan**
-- [ ] Kontrol per geometri sama seperti sekarang:
-  - point: warna, opacity, ukuran;
-  - line: warna, opacity, tebal;
-  - polygon: warna isi, warna garis tepi, opacity, tebal.
-- [ ] Pratinjau berubah langsung.
-- [ ] Editor layer (tambah/edit layer) tetap berjalan seperti sebelumnya.
+- [ ] Dua polygon bersebelahan (84 dp): tap di dalam A, 20 dp dari tepi bersama → hanya A. Pada grid 3×3, tap di dalam blok tengah tidak memunculkan daftar pilihan.
+- [ ] Tap tepat di point P1 dengan point lain 30 dp di sebelahnya → hanya P1. Tap di antara dua point (tidak tepat di salah satunya) → keduanya.
+- [ ] Polygon yang benar-benar bertumpuk (yang kecil di dalam yang besar) → keduanya, terkecil dulu (seperti sekarang).
+- [ ] Tap di luar semua polygon, ≤ 24 dp dari tepi salah satunya → polygon itu.
+- [ ] Tap di atas garis A dengan garis B 20 dp di sebelahnya → hanya A.
 
-**Verifikasi**
-- [ ] `flutter test test/widgets/style_editor_test.dart`: kontrol per geometri, slider memanggil `onChanged`, lebar 360 dp tanpa overflow.
-- [ ] `flutter test`, `flutter analyze`.
-- [ ] Manual: edit style layer impor.
+**Verifikasi:** `flutter test test/services/feature_hit_test_test.dart test/widgets/project_features_at_tap_test.dart`, `flutter test` penuh, `flutter analyze`.
+**Dependensi:** tidak ada.
+**File:** `lib/services/map/feature_hit_test.dart`, `lib/widgets/map/project_feature_layers.dart`, `test/services/feature_hit_test_test.dart`, `test/widgets/project_features_at_tap_test.dart`.
+**Ukuran:** S–M.
 
-**Dependensi:** tidak ada
-**File:** `lib/widgets/style/style_editor.dart` (baru), `lib/screens/layers/layers_screen.dart`, `test/widgets/style_editor_test.dart` (baru)
-**Ukuran:** S–M
-
-#### T7 — Mobile: bagian "Style" di form "Survey data"
-**Deskripsi.** `lib/widgets/style/feature_style_section.dart`:
-- saat tertutup menampilkan ringkasan: "Default", atau swatch plus ringkasan singkat;
-- saat dibuka menampilkan `StyleEditorFields` sesuai geometri project;
-- tombol "Use default".
-
-Di `data_collection_screen.dart`:
-- state `_featureStyle`;
-- bagian Style dipasang di bawah `DynamicForm`;
-- `_saveData` menyimpan style;
-- **"Save & next" mempertahankan style**;
-- draft menyimpan dan memulihkan style.
-
-**Kriteria penerimaan**
-- [ ] Mengubah style lalu Save membuat feature baru tersimpan dengan style itu dan tampil sesuai style di peta (T5). Tanpa diubah, `style = null`.
-- [ ] "Save & next" membawa style ke data berikutnya. Membuka project lagi mulai dari default.
-- [ ] Menutup form, lalu kembali atau restart saat ada draft, tidak menghilangkan style.
-
-**Verifikasi**
-- [ ] `flutter test test/widgets/feature_style_section_test.dart`:
-  - tertutup menampilkan "Default";
-  - mengubah warna memanggil `onChanged`;
-  - "Use default" menghasilkan `null`;
-  - 360 dp tanpa overflow.
-- [ ] `flutter test`, `flutter analyze`.
-- [ ] Manual: koleksi point, line, dan polygon dengan style berbeda.
-
-**Dependensi:** T3, T5, T6
-**File:** `lib/widgets/style/feature_style_section.dart` (baru), `lib/screens/data_collection/data_collection_screen.dart`, `test/widgets/feature_style_section_test.dart` (baru)
-**Ukuran:** M
-
-#### T8 — Mobile: ubah/reset style di layar edit data
-**Deskripsi.** `EditGeoDataScreen` menampilkan `FeatureStyleSection` dengan style record. Saat disimpan: `copyWith(style / clearStyle)`, `isSynced: false`, `updatedAt` baru (seperti edit atribut sekarang).
-
-**Kriteria penerimaan**
-- [ ] Style bisa diganti atau di-reset dari layar edit.
-- [ ] Setelah disimpan, record jadi "belum sync" dan style baru tampil di peta.
-- [ ] Record lain tidak tersentuh.
-
-**Verifikasi**
-- [ ] Widget test layar edit dengan fake storage: ubah style lalu Save → yang tersimpan punya style dan `isSynced == false`.
-- [ ] `flutter test`, `flutter analyze`.
-
-**Dependensi:** T7
-**File:** `lib/screens/project/edit_geo_data_screen.dart`, `test/widgets/edit_geo_data_style_test.dart` (baru)
-**Ukuran:** S
-
-### Checkpoint B — style bisa diatur & terlihat
-- [ ] Semua test hijau.
-- [ ] Manual di HP: atur style saat koleksi dan saat edit, lihat di peta project dan navigasi, sync, lalu pull di HP kedua memunculkan style yang sama. Syarat: backend T1 sudah di dev.
-
-### Fase 3 — Tap langsung
-
-#### T9 — Mobile: hit-test murni
-**Deskripsi.** `lib/services/map/feature_hit_test.dart` menerima posisi tap, bentuk feature dalam koordinat layar (point, line, polygon), dan toleransi dalam piksel. Hasilnya daftar feature yang kena, diurutkan:
-1. point, dari yang terdekat;
-2. line, dari yang terdekat;
-3. polygon, dari yang terkecil.
-
-Ada juga helper untuk membangun bentuk dari `GeoData` lewat callback proyeksi `LatLng → Offset`, sehingga bisa diuji tanpa peta.
-
-**Kriteria penerimaan**
-- [ ] Point kena bila jarak ≤ radius marker + toleransi.
-- [ ] Line kena bila jarak ke segmen ≤ toleransi.
-- [ ] Polygon kena bila tap di dalam area (ray casting) atau ≤ toleransi dari garis tepi.
-- [ ] Beberapa hit → semua dikembalikan dengan urutan stabil. Tidak ada hit → kosong.
-- [ ] Geometri rusak (line 1 titik, polygon < 3 titik) diabaikan tanpa error.
-
-**Verifikasi**
-- [ ] `flutter test test/services/feature_hit_test_test.dart` (unit murni).
-- [ ] `flutter analyze`.
-
-**Dependensi:** tidak ada
-**File:** `lib/services/map/feature_hit_test.dart` (baru), `test/services/feature_hit_test_test.dart` (baru)
-**Ukuran:** S
-
-#### T10 — Mobile: daftar pilihan saat tap mengenai beberapa feature
+#### T6 — Yang tergambar = yang bisa diketuk (terestria)
 **Deskripsi.**
-- `lib/widgets/map/feature_pick_sheet.dart`: bottom sheet berisi daftar feature yang kena. Setiap item menampilkan judul record, swatch style efektif, dan ikon geometri; memilih satu mengembalikan `GeoData` tersebut.
-- Judul memakai helper bersama `recordTitle()`. Helper ini diekstrak dari `GeoDataListItem._getTitle()`: nilai field non-foto pertama, fallback "Survey Data #id8". `GeoDataListItem` ikut memakainya.
+- Helper publik di `project_feature_layers.dart` untuk mengecek irisan bbox feature dengan area peta, dipakai bersama oleh hit-test dan culling.
+- `_buildMarkerCache` menghitung bbox tiap line/polygon sekali.
+- `_updateVisibleLayers` memakai helper itu, menggantikan aturan "ada titik sudut di area".
 
 **Kriteria penerimaan**
-- [ ] Semua hit tampil sesuai urutan T9, dengan judul dan swatch yang benar.
-- [ ] Tap item mengembalikan record itu. Menutup sheet mengembalikan `null`.
-- [ ] Judul di daftar data tidak berubah.
+- [ ] Polygon yang menutupi seluruh layar (semua titik sudut di luar area + buffer) tetap tergambar. Feature yang sepenuhnya di luar area tidak tergambar.
+- [ ] Line panjang yang melintasi layar dengan kedua ujung jauh tetap tergambar.
+- [ ] Point dan clustering tidak berubah.
+- [ ] Bbox tidak dihitung ulang setiap peta digeser; cukup saat data dimuat.
 
-**Verifikasi**
-- [ ] `flutter test test/widgets/feature_pick_sheet_test.dart` (360 dp tanpa overflow) dan test `recordTitle`.
-- [ ] Test `GeoDataListItem` yang ada tetap hijau. `flutter analyze`.
+**Verifikasi:** test helper di `test/widgets/project_feature_layers_test.dart`, `flutter test` penuh, `flutter analyze`. Manual: zoom 18 di tengah blok besar → blok tetap tampil dan bisa diketuk.
+**Dependensi:** tidak ada.
+**File:** `lib/widgets/map/project_feature_layers.dart`, `lib/screens/data_collection/data_collection_screen.dart`, `test/widgets/project_feature_layers_test.dart`.
+**Ukuran:** S.
 
-**Dependensi:** T5 (style efektif), T9 (urutan)
-**File:** `lib/widgets/map/feature_pick_sheet.dart` (baru), `lib/utils/record_title.dart` (baru), `lib/widgets/geo_data_list_item.dart`, `test/widgets/feature_pick_sheet_test.dart` (baru)
-**Ukuran:** S–M
-
-#### T11 — Mobile: wiring tap langsung + hapus ikon info
-**Deskripsi.** `_onMapTap` di peta project mengikuti urutan:
-1. alat ukur aktif → titik ukur;
-2. mode gambar (bukan tracking) → tambah titik;
-3. selain itu → hit-test feature yang **terlihat**, diproyeksikan dengan `_mapController.camera`:
-   - 0 hit → tidak terjadi apa-apa;
-   - 1 hit → `_showDataDetail`;
-   - lebih dari 1 → `FeaturePickSheet`, lalu detail.
-
-Point tidak lagi memakai `GestureDetector` sendiri, sedangkan cluster tetap zoom-in. Ikon info line/polygon dihapus dari pembangun bersama (T5), sehingga berlaku di peta project dan navigasi.
+#### T7 — Hapus kode mati layer ikon line/polygon (terestria)
+**Deskripsi.** Hapus cabang `MarkerLayer(_visibleMarkers)` untuk line/polygon di `_buildExistingDataLayers` beserta komentar "tap targets"-nya. Sejak T11, marker hanya ada untuk point.
 
 **Kriteria penerimaan**
-- [ ] Tap pada line (dalam toleransi), di dalam polygon, atau pada point membuka detail. Ikon info tidak ada lagi di kedua layar.
-- [ ] Polygon bertumpuk atau point bertumpuk → daftar pilihan muncul.
-- [ ] Alat ukur dan mode gambar tetap memakai tap untuk menambah titik. Saat tracking, tap tetap bisa memilih feature.
-- [ ] Tap di area kosong tidak melakukan apa-apa.
+- [ ] Tidak ada perubahan perilaku; `flutter analyze` tanpa warning baru; test hijau.
+
+**Verifikasi:** `flutter test`, `flutter analyze`.
+**Dependensi:** T6 (file sama, supaya tidak konflik).
+**File:** `lib/screens/data_collection/data_collection_screen.dart`.
+**Ukuran:** XS.
+
+#### T8 — Style di sheet "Tracking Aktif" (terestria) — opsional
+**Deskripsi.** `AttributeFormSheet` (stop & save dari panel Tracking Aktif) menampilkan `FeatureStyleSection`, dan `buildGeoData` menerima `style`.
+
+**Kriteria penerimaan**
+- [ ] Sheet menampilkan bagian Style (saat tertutup: "Default").
+- [ ] Style diubah → record tersimpan membawa style. Tidak diubah → `null`.
+- [ ] Muat di 360 dp.
+
+**Verifikasi:** `flutter test test/services/tracking/session_to_geodata_test.dart test/widgets/attribute_form_sheet_test.dart`, `flutter test` penuh, `flutter analyze`.
+**Dependensi:** tidak ada.
+**File:** `lib/widgets/tracking/attribute_form_sheet.dart`, `lib/services/tracking/session_to_geodata.dart`, `test/services/tracking/session_to_geodata_test.dart`, `test/widgets/attribute_form_sheet_test.dart` (baru).
+**Ukuran:** S.
+
+### Checkpoint B — mobile
+- [ ] `flutter test` hijau (714 + test baru); `flutter analyze` 0 error / 29 warning.
+- [ ] (User, di HP)
+  - tap pada blok bersebelahan langsung membuka detailnya;
+  - polygon bertumpuk memunculkan daftar pilihan;
+  - slider ukuran point terlihat efeknya, dan pratinjau sama dengan di peta;
+  - zoom dekat di tengah blok besar → blok tampil dan bisa diketuk;
+  - Style di sheet Tracking Aktif.
+
+### Fase 3 — Web dashboard
+
+#### T9 — Pilihan warna peta: Status verifikasi / Style feature (gis-dashboard)
+**Deskripsi.** Di peta data survei (`ProjectMapView`, mode project dan group): pilihan **Warna peta** dengan dua opsi, legenda sesuai mode, dan pilihan diingat per browser. Aturan warna mengikuti Keputusan 6.
+
+**Kriteria penerimaan**
+- [ ] Ganti mode langsung mengubah warna point/line/polygon tanpa memuat ulang halaman. Berlaku di mode vector tile maupun GeoJSON, project maupun group.
+- [ ] Mode Status sama persis dengan sekarang.
+- [ ] Mode Style: record ber-style tampil dengan warna, opacity, tebal, dan ukuran dari style-nya. Record tanpa style memakai default pabrik aplikasi.
+- [ ] Legenda menyebut mode aktif ("Warna: Status verifikasi" / "Warna: Style feature"). Di mode Style, legenda menampilkan contoh "Default (tanpa style)".
+- [ ] Filter verifikasi tetap bekerja di kedua mode; feature terpilih tetap merah.
+- [ ] Pilihan bertahan setelah reload. Bila localStorage tidak tersedia → Status.
+- [ ] URL tile memakai `sv=2`.
 
 **Verifikasi**
-- [ ] Test pembangun layer diperbarui: tidak ada marker info untuk line/polygon, dan point tanpa `GestureDetector`.
-- [ ] `flutter test`, `flutter analyze`.
-- [ ] Manual di HP: line tipis, polygon kecil/besar/bertumpuk, point rapat, zoom rendah (cluster), mode gambar, dan alat ukur.
+- [ ] `npm test` dengan test baru `mapColorMode.test.mjs`:
+  - expression per mode dan per layer;
+  - nama properti sama dengan kolom tile T3;
+  - warna default dan ukuran point;
+  - baca/simpan pilihan.
+- [ ] `npx tsc --noEmit` sama dengan baseline (1 error lama); `next lint` per file tanpa masalah baru.
+- [ ] Manual di browser (setelah backend T3 ter-deploy di dev): project point/line/polygon dan group; ganti mode, reload, dan filter.
 
-**Dependensi:** T5, T9, T10
-**File:** `lib/screens/data_collection/data_collection_screen.dart`, `lib/widgets/map/project_feature_layers.dart`, `test/widgets/project_feature_layers_test.dart`
-**Ukuran:** M
+**Dependensi:** T3 untuk mode vector tile (mode GeoJSON bisa jalan tanpa T3).
+**File:** `components/mobilesurveyproject/mapColorMode.ts` (baru), `components/mobilesurveyproject/mapColorMode.test.mjs` (baru), `components/mobilesurveyproject/components/MapColorLegend.tsx` (baru), `components/mobilesurveyproject/ProjectMapView.tsx`, `components/mobilesurveyproject/types.ts`.
+**Ukuran:** M.
 
 ### Checkpoint C — selesai
-- [ ] Semua kriteria SPEC §9 terpenuhi.
-- [ ] `flutter test` hijau dan `flutter analyze` tanpa warning baru. Unittest backend dan `manage.py check` bersih, test DB lulus di CI.
-- [ ] Uji di HP:
-  - upgrade dari versi sebelumnya (v6 → v7) tanpa kehilangan data;
-  - style ikut sync ke HP kedua;
-  - app versi lama tetap bisa push tanpa menghapus style;
-  - edit dari web dashboard tidak menghapus style;
-  - ketepatan dan kenyamanan tap (toleransi disetel bila perlu).
-- [ ] Urutan rilis: deploy backend (T1) **sebelum** rilis app.
+- [ ] Di ketiga repo, semua test lokal hijau dan baseline analyze/tsc/lint tidak memburuk.
+- [ ] (User) Test DB backend lulus di CI; uji manual Checkpoint B dan T9 selesai.
+- [ ] Urutan deploy di bawah dijalankan.
 
-## Risiko dan mitigasi
+## Urutan deploy (oleh user)
+1. gis-backend `dev1`: `d54d508` + T1–T3 → CI hijau → deploy (migrasi `0021`, `0022`).
+2. gis-dashboard (T9), setelah backend.
+3. Rilis aplikasi mobile, setelah backend.
+
+## Perubahan SPEC (diterapkan di commit persiapan setelah plan disetujui)
+- §1 Keputusan: web dashboard menampilkan style lewat pilihan warna peta. Ekspor dan PDF tetap belum.
+- §3: `pointSize` 10–24; key asing diabaikan (5 key inti wajib); aturan verifikasi (perubahan style atau foto saja tidak me-reset verifikasi).
+- §7: test hit-test dua tingkat.
+- §9, kriteria baru:
+  - (12) perubahan style atau foto saja tidak mengubah verifikasi;
+  - (13) tap di dalam satu blok yang bersebelahan dengan blok lain langsung membuka detailnya;
+  - (14) peta web punya pilihan warna dengan legenda yang menyebut mode aktif.
+- §10: pertanyaan 2 (web dashboard) terjawab sebagian.
+
+## Risiko
 
 | Risiko | Dampak | Mitigasi |
 |---|---|---|
-| `data_collection_screen.dart` sangat besar | Sedang | Logika baru di file terpisah (T5, T7, T9, T10); screen hanya wiring |
-| Tap kurang tepat di HP (line tipis, jari besar) | Sedang | Toleransi dalam dp, mulai 24 dp (target sentuh 48 dp); jadi konstanta yang mudah disetel; uji manual di Checkpoint C |
-| Menghapus `GestureDetector` di point membuat tap tidak sampai ke peta | Sedang | Tanpa recognizer di marker, tap diteruskan ke `onTap` FlutterMap; diuji manual di T11; cluster tetap punya `GestureDetector` |
-| App baru bicara dengan backend lama (T1 belum deploy) | Sedang | Backend lama mengabaikan `style`; pull tanpa key mempertahankan style lokal (T4); deploy T1 lebih dulu |
-| App lama menimpa style saat push | Sedang | Backend: key tidak ada → dipertahankan (T1, diuji) |
-| Style rusak memblokir sync | Tinggi | Tidak valid → dibuang, record diterima (T1); mobile meng-clamp sebelum kirim (T2) |
-| Migrasi DB v7 di perangkat | Sedang | Idempoten + test upgrade v6 → v7 (T3) |
-| Hit-test lambat dengan data banyak | Rendah | Hanya feature yang terlihat (culling yang ada), O(jumlah vertex), dipanggil hanya saat tap |
-| Refactor editor Layers mengubah perilaku | Rendah | T6 murni ekstraksi + widget test + cek manual |
+| Perbandingan isi menganggap "sama" padahal isi berubah, sehingga verifikasi lama tetap berlaku | Tinggi | Field non-foto dibandingkan persis; format yang tidak dikenal dianggap berubah; test per kasus |
+| Perbandingan menganggap "berubah" padahal sama (format angka/tanggal berbeda), sehingga perbaikan tidak berefek | Sedang | Test dengan payload berbentuk kiriman HP sungguhan (push lalu kirim ulang); titik dibandingkan sebagai angka, bukan teks |
+| Fungsi tile rusak sehingga peta web kosong | Tinggi | Cast angka hanya bila bertipe number; test DB di CI; migrasi bisa dibalik |
+| Kontrak berubah setelah sempat dipakai | Sedang | Belum ada yang ter-deploy atau dirilis; T2 dikerjakan sebelum deploy; mobile men-clamp saat membaca |
+| `ProjectMapView.tsx` makin besar | Rendah | Logika di `mapColorMode.ts` dan `MapColorLegend.tsx`; file besar hanya wiring |
+| Hijau/oranye default aplikasi mirip warna status verified/unverified | Sedang | Judul legenda selalu menyebut mode; pilihan mode terlihat di peta |
+| Aturan tap berubah dari yang sudah dites | Rendah | Test untuk setiap kasus; uji di HP (Checkpoint B) |
 
-## Pertanyaan terbuka
-Tidak ada yang menghalangi. Default dari SPEC §10 dipakai: ekspor dan web dashboard di tahap berikutnya, tap langsung tidak di layar navigasi, toleransi awal 24 dp.
+## Pertanyaan terbuka (default dipakai bila tidak dijawab)
+1. **T8 (Style di sheet Tracking Aktif).** Default: dikerjakan.
+2. **Ukuran point di web mode Style** = `pointSize × ⅔`. Default: ya.
+3. **Peta kecil di modal detail record** (`DataDetailMap`). Default: tetap memakai warna status.
+4. **Pilihan warna diingat per browser**, bukan per akun. Default: ya.
+5. **Test upgrade DB v6 → v7 di SQLite sungguhan** butuh dev dependency `sqflite_common_ffi`. Default: tidak (cek manual di HP).
+
+## Baseline & perintah
+- **terestria:** `flutter test` 714 lulus; `flutter analyze` 0 error, 29 warning.
+- **gis-backend** (Git Bash). Unittest lokal: 64 lulus. Test `*_db` dan `tests_verification` hanya jalan di CI.
+  ```
+  PY="/c/Users/User/.conda/envs/django-env/python.exe"
+  export PATH="/c/Users/User/.conda/envs/django-env/Library/bin:$PATH"
+  "$PY" -m unittest mobile.tests_feature_style mobile.tests_photo_download mobile.tests_push_rules mobile.tests_pull_filter  # + modul test baru
+  "$PY" manage.py check
+  ```
+- **gis-dashboard:** `npm test` 19 lulus; `npx tsc --noEmit` 1 error lama (`pages/api/auth/[...nextauth].tsx:13`); `next lint` dibandingkan per file dengan HEAD.
