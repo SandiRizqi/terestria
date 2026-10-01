@@ -3,7 +3,16 @@ import 'package:flutter/material.dart';
 import '../../models/feature_style.dart';
 import '../../models/layer_model.dart';
 import '../../models/project_model.dart';
+import '../map/project_feature_layers.dart';
 import 'style_editor.dart';
+
+/// Style feature project: ukuran point 10–24 (= diameter marker 20–48 dp di
+/// peta); pratinjau point berdiameter sama dengan marker di peta.
+const featureStyleLimits = StyleLimits(
+  minPointSize: featureMinPointSize,
+  maxPointSize: featureMaxPointSize,
+  pointDiameter: featurePointDiameter,
+);
 
 /// Bagian "Style" di form data survei & layar edit: style tampilan feature
 /// ini. Tertutup → ringkasan ("Default"/"Custom" + swatch); dibuka → editor
@@ -83,6 +92,7 @@ class _FeatureStyleSectionState extends State<FeatureStyleSection> {
                   StyleEditorFields(
                     style: effective,
                     geometry: geometry,
+                    limits: featureStyleLimits,
                     onChanged: widget.onChanged,
                   ),
                   Align(

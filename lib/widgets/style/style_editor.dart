@@ -36,17 +36,49 @@ StyleGeometry styleGeometryForProject(GeometryType type) {
   }
 }
 
+/// Rentang ukuran point dan diameter point di pratinjau — berbeda antara
+/// layer impor (Layers) dan style feature project, karena keduanya digambar
+/// dengan ukuran berbeda di peta. Kontrol lain sama.
+class StyleLimits {
+  final double minPointSize;
+  final double maxPointSize;
+
+  /// Diameter lingkaran point di pratinjau (sama dengan di peta).
+  final double Function(LayerStyle style) pointDiameter;
+
+  const StyleLimits({
+    required this.minPointSize,
+    required this.maxPointSize,
+    required this.pointDiameter,
+  });
+
+  /// Satu langkah slider = 1.
+  int get pointSizeDivisions => (maxPointSize - minPointSize).round();
+}
+
+double _layerPointDiameter(LayerStyle style) =>
+    (style.pointSize.clamp(4.0, 18.0) * 2).toDouble();
+
+/// Editor Layers (layer impor): ukuran point 4–20, pratinjau seperti semula.
+const layerStyleLimits = StyleLimits(
+  minPointSize: 4,
+  maxPointSize: 20,
+  pointDiameter: _layerPointDiameter,
+);
+
 /// Kontrol style sesuai [geometry]: warna (polygon: + warna tepi), opacity,
 /// tebal garis (bukan point), ukuran point (point saja), dan pratinjau.
 class StyleEditorFields extends StatelessWidget {
   final LayerStyle style;
   final StyleGeometry geometry;
+  final StyleLimits limits;
   final ValueChanged<LayerStyle> onChanged;
 
   const StyleEditorFields({
     super.key,
     required this.style,
     required this.geometry,
+    required this.limits,
     required this.onChanged,
   });
 
@@ -142,11 +174,13 @@ class StyleEditorFields extends StatelessWidget {
           const StyleSectionLabel('Point Size'),
           const SizedBox(height: 4),
           _SliderRow(
-            // Rentang editor Layers (layer impor).
-            value: style.pointSize.clamp(4.0, 20.0).toDouble(),
-            min: 4.0,
-            max: 20.0,
-            divisions: 16,
+            // Nilai di luar rentang dijepit agar slider tetap aman.
+            value: style.pointSize
+                .clamp(limits.minPointSize, limits.maxPointSize)
+                .toDouble(),
+            min: limits.minPointSize,
+            max: limits.maxPointSize,
+            divisions: limits.pointSizeDivisions,
             label: style.pointSize.toStringAsFixed(0),
             onChanged: (v) => onChanged(style.copyWith(pointSize: v)),
           ),
@@ -154,7 +188,11 @@ class StyleEditorFields extends StatelessWidget {
         const SizedBox(height: 16),
         const StyleSectionLabel('Preview'),
         const SizedBox(height: 8),
-        StylePreview(style: style, geometry: geometry),
+        StylePreview(
+          style: style,
+          geometry: geometry,
+          pointDiameter: limits.pointDiameter(style),
+        ),
       ],
     );
   }
@@ -243,7 +281,16 @@ class _SliderRow extends StatelessWidget {
 class StylePreview extends StatelessWidget {
   final LayerStyle style;
   final StyleGeometry geometry;
-  const StylePreview({super.key, required this.style, required this.geometry});
+
+  /// Diameter lingkaran point (lihat [StyleLimits.pointDiameter]).
+  final double pointDiameter;
+
+  const StylePreview({
+    super.key,
+    required this.style,
+    required this.geometry,
+    required this.pointDiameter,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
@@ -255,14 +302,21 @@ class StylePreview extends StatelessWidget {
         child: Center(
             child: CustomPaint(
                 size: const Size(200, 50),
-                painter: _PreviewPainter(style: style, geometry: geometry))),
+                painter: _PreviewPainter(
+                    style: style,
+                    geometry: geometry,
+                    pointDiameter: pointDiameter))),
       );
 }
 
 class _PreviewPainter extends CustomPainter {
   final LayerStyle style;
   final StyleGeometry geometry;
-  const _PreviewPainter({required this.style, required this.geometry});
+  final double pointDiameter;
+  const _PreviewPainter(
+      {required this.style,
+      required this.geometry,
+      required this.pointDiameter});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -279,7 +333,7 @@ class _PreviewPainter extends CustomPainter {
     final cy = size.height / 2;
 
     if (geometry == StyleGeometry.point) {
-      final r = style.pointSize.clamp(4.0, 18.0);
+      final r = pointDiameter / 2;
       canvas.drawCircle(Offset(cx, cy), r, fill);
       canvas.drawCircle(Offset(cx, cy), r, stroke);
     } else if (geometry == StyleGeometry.line) {
@@ -304,7 +358,9 @@ class _PreviewPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_PreviewPainter o) =>
-      o.style != style || o.geometry != geometry;
+      o.style != style ||
+      o.geometry != geometry ||
+      o.pointDiameter != pointDiameter;
 }
 
 /// Contoh kecil style (ringkasan & daftar): lingkaran (point), garis (line), atau

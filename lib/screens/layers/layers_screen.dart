@@ -529,6 +529,7 @@ class _StyleEditorSheetState extends State<_StyleEditorSheet> {
                     style: _style,
                     geometry:
                         styleGeometryForLayer(widget.layer.geometryType),
+                    limits: layerStyleLimits,
                     onChanged: (s) => setState(() => _style = s),
                   ),
 

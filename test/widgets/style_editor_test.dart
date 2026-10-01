@@ -15,7 +15,8 @@ const _style = LayerStyle(
   pointSize: 12,
 );
 
-Future<List<LayerStyle>> _pump(WidgetTester tester, StyleGeometry geometry) async {
+Future<List<LayerStyle>> _pump(WidgetTester tester, StyleGeometry geometry,
+    {StyleLimits limits = layerStyleLimits, LayerStyle style = _style}) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -25,8 +26,9 @@ Future<List<LayerStyle>> _pump(WidgetTester tester, StyleGeometry geometry) asyn
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: StyleEditorFields(
-          style: _style,
+          style: style,
           geometry: geometry,
+          limits: limits,
           onChanged: changes.add,
         ),
       ),
@@ -34,6 +36,10 @@ Future<List<LayerStyle>> _pump(WidgetTester tester, StyleGeometry geometry) asyn
   ));
   return changes;
 }
+
+/// Slider terakhir pada geometri point = ukuran point.
+Slider _pointSizeSlider(WidgetTester tester) =>
+    tester.widgetList<Slider>(find.byType(Slider)).last;
 
 void main() {
   test('pemetaan jenis geometri layer & project', () {
@@ -75,6 +81,33 @@ void main() {
     expect(find.text('Border Color'), findsOneWidget);
     expect(find.text('Fill Opacity'), findsOneWidget);
     expect(find.text('Line Width'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Layers: ukuran point 4–20 (16 langkah), pratinjau seperti '
+      'sebelumnya', (tester) async {
+    await _pump(tester, StyleGeometry.point);
+    final slider = _pointSizeSlider(tester);
+    expect((slider.min, slider.max, slider.divisions), (4.0, 20.0, 16));
+    // Pratinjau lama: jari-jari = pointSize (dijepit 4–18).
+    expect(tester.widget<StylePreview>(find.byType(StylePreview)).pointDiameter,
+        24);
+  });
+
+  testWidgets('rentang & diameter pratinjau mengikuti batas dari pemanggil',
+      (tester) async {
+    final limits = StyleLimits(
+      minPointSize: 10,
+      maxPointSize: 24,
+      pointDiameter: (s) => s.pointSize * 2,
+    );
+    await _pump(tester, StyleGeometry.point,
+        limits: limits, style: _style.copyWith(pointSize: 30));
+    final slider = _pointSizeSlider(tester);
+    expect((slider.min, slider.max, slider.divisions), (10.0, 24.0, 14));
+    expect(slider.value, 24); // di luar rentang → dijepit, slider tetap aman
+    expect(tester.widget<StylePreview>(find.byType(StylePreview)).pointDiameter,
+        60);
     expect(tester.takeException(), isNull);
   });
 

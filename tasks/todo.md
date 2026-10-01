@@ -14,7 +14,7 @@ Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend 
 - [ ] (User) CI: `tests_feature_style_db`, `tests_photo_download_db`, `tests_verification`, `tests_tile_style_db`.
 
 ## Fase 2 — Mobile
-- [ ] T4: editor ukuran point — rentang per pemakai (Layers 4–20, feature 10–24), pratinjau = diameter marker di peta.
+- [x] T4: editor ukuran point — rentang per pemakai (`StyleLimits`: Layers 4–20, feature 10–24 / 14 langkah), pratinjau = diameter marker di peta (`StylePreview.pointDiameter`).
 - [ ] T5: hit-test dua tingkat — yang kena langsung didahulukan; toleransi 24 dp hanya bila tidak ada yang kena langsung.
 - [ ] T6: culling tampilan line/polygon pakai aturan bbox yang sama dengan hit-test (bbox dihitung saat data dimuat).
 - [ ] T7: hapus kode mati `MarkerLayer` line/polygon di `_buildExistingDataLayers`.

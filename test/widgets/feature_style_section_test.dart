@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/models/layer_model.dart';
 import 'package:geoform_app/models/project_model.dart';
+import 'package:geoform_app/widgets/map/project_feature_layers.dart';
 import 'package:geoform_app/widgets/style/feature_style_section.dart';
 import 'package:geoform_app/widgets/style/style_editor.dart';
 
@@ -24,7 +25,9 @@ const _custom = LayerStyle(
 );
 
 Future<List<LayerStyle?>> _pump(WidgetTester tester,
-    {LayerStyle? style, GeometryType type = GeometryType.polygon}) async {
+    {LayerStyle? style,
+    GeometryType type = GeometryType.polygon,
+    LayerStyle defaultStyle = _default}) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -36,7 +39,7 @@ Future<List<LayerStyle?>> _pump(WidgetTester tester,
         child: FeatureStyleSection(
           geometryType: type,
           style: style,
-          defaultStyle: _default,
+          defaultStyle: defaultStyle,
           onChanged: changes.add,
         ),
       ),
@@ -86,6 +89,33 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Use default'));
     expect(changes, [null]);
+  });
+
+  testWidgets('point: ukuran 10–24 (14 langkah); pratinjau = diameter marker '
+      'di peta', (tester) async {
+    final changes = await _pump(tester, type: GeometryType.point);
+    await tester.tap(find.text('Style'));
+    await tester.pumpAndSettle();
+    final slider = tester.widgetList<Slider>(find.byType(Slider)).last;
+    expect((slider.min, slider.max, slider.divisions), (10.0, 24.0, 14));
+    // pointSize 12 → marker 24 dp di peta.
+    expect(tester.widget<StylePreview>(find.byType(StylePreview)).pointDiameter,
+        featurePointDiameter(_default));
+    expect(featurePointDiameter(_default), 24);
+    slider.onChanged!(20);
+    expect(changes.single!.pointSize, 20);
+  });
+
+  testWidgets('point: Settings 24 → slider di 24, tidak dijepit ke 20',
+      (tester) async {
+    await _pump(tester,
+        type: GeometryType.point,
+        defaultStyle: _default.copyWith(pointSize: 24));
+    await tester.tap(find.text('Style'));
+    await tester.pumpAndSettle();
+    expect(tester.widgetList<Slider>(find.byType(Slider)).last.value, 24);
+    expect(tester.widget<StylePreview>(find.byType(StylePreview)).pointDiameter,
+        48);
   });
 
   testWidgets('masih default: tombol "Use default" nonaktif', (tester) async {
