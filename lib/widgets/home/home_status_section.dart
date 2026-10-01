@@ -17,7 +17,8 @@ import '../tracking/active_tracking_panel.dart';
 
 /// Kartu status di beranda: tracking aktif, kesiapan lapangan, dan antrean
 /// sync (dengan tombol "Sync now"). Data diambil dari [FieldReadinessService]
-/// tanpa uji GPS (cepat).
+/// tanpa uji GPS (cepat); sinyal GPS memakai uji lengkap terakhir di layar
+/// checklist bila masih berlaku ([homeReadinessSummary]).
 /// Subjudul kartu sync saat auto-sync terakhir gagal: sebut alasan pertama
 /// (mis. project nonaktif) — ketuk kartu untuk semua alasan.
 String lastAutoSyncSubtitle(AutoSyncRun run, String time) =>
@@ -32,11 +33,16 @@ class HomeStatusSection extends StatefulWidget {
   /// Untuk test: sumber data kartu (default: cek cepat tanpa GPS).
   final Future<ReadinessInputs> Function()? collect;
 
+  /// Untuk test: uji GPS lengkap terakhir (default:
+  /// [FieldReadinessService.lastGpsTest]).
+  final GpsTestResult? Function()? lastGpsTest;
+
   const HomeStatusSection({
     super.key,
     required this.onOpenProject,
     required this.onOpenReadiness,
     this.collect,
+    this.lastGpsTest,
   });
 
   @override
@@ -84,7 +90,8 @@ class HomeStatusSectionState extends State<HomeStatusSection> {
     _loading = true;
     try {
       final inputs = await (widget.collect ??
-          () => FieldReadinessService().collect(testGps: false))();
+          () => FieldReadinessService()
+              .collect(testGps: false, mapFromRecentPosition: true))();
       if (mounted) setState(() => _inputs = inputs);
     } catch (e, st) {
       logWarn('Home status refresh failed', tag: 'HOME', error: e, stack: st);
@@ -199,42 +206,25 @@ class HomeStatusSectionState extends State<HomeStatusSection> {
   }
 
   Widget _readinessCard(ReadinessInputs inputs) {
-    final items = evaluateReadiness(inputs);
-    final c = readinessCounts(items);
-    final attention = items
-        .where((i) =>
-            i.level == ReadinessLevel.problem ||
-            i.level == ReadinessLevel.warning)
-        .where((i) => i.id != 'pending_sync') // ada kartu sendiri
-        .map((i) => i.title)
-        .toList();
-    final problems = c.problems;
-    final warnings = attention.length - problems;
-    final (color, icon, title) = problems > 0
-        ? (
-            Colors.red.shade700,
-            Icons.error_rounded,
-            '$problems problem${problems == 1 ? '' : 's'} before the field'
-          )
-        : warnings > 0
-            ? (
-                Colors.orange.shade800,
-                Icons.warning_amber_rounded,
-                '$warnings ${warnings == 1 ? 'item needs' : 'items need'} '
-                    'attention'
-              )
-            : (
-                Colors.green.shade700,
-                Icons.verified_rounded,
-                'Ready for the field'
-              );
+    final summary = homeReadinessSummary(inputs,
+        lastGpsTest: (widget.lastGpsTest ??
+            () => FieldReadinessService.lastGpsTest)());
+    final (color, icon) = switch (summary.level) {
+      ReadinessLevel.problem => (Colors.red.shade700, Icons.error_rounded),
+      ReadinessLevel.warning =>
+        (Colors.orange.shade800, Icons.warning_amber_rounded),
+      _ => (
+          Colors.green.shade700,
+          summary.gpsTested
+              ? Icons.verified_rounded
+              : Icons.check_circle_outline_rounded
+        ),
+    };
     return _card(
       color: color,
       icon: icon,
-      title: title,
-      subtitle: attention.isEmpty
-          ? 'Permissions, GPS, battery and storage look good'
-          : attention.take(3).join(' · '),
+      title: summary.title,
+      subtitle: summary.subtitle,
       trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
       onTap: widget.onOpenReadiness,
     );

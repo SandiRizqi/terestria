@@ -26,6 +26,9 @@ class FieldReadinessService {
   /// Batas waktu mencoba fix GPS saat checklist dibuka.
   static const gpsTimeout = Duration(seconds: 20);
 
+  /// Uji GPS lengkap terakhir sejak app dibuka (dipakai ringkasan beranda).
+  static GpsTestResult? lastGpsTest;
+
   Future<T?> _safe<T>(String step, Future<T> Function() f,
       {Duration timeout = const Duration(seconds: 8)}) async {
     try {
@@ -46,9 +49,13 @@ class FieldReadinessService {
 
   /// [testGps] false = lewati percobaan fix (cek cepat sebelum Start).
   /// [previousFix] dipakai bila fix baru tak didapat.
+  /// [mapFromRecentPosition] (beranda): tanpa fix, peta offline dicek di
+  /// posisi yang sudah ada — fix uji GPS terakhir atau posisi terakhir HP,
+  /// maks [readinessHomeMaxAge]. Posisi ini tidak dinilai sebagai sinyal GPS.
   Future<ReadinessInputs> collect({
     bool testGps = true,
     GeoPoint? previousFix,
+    bool mapFromRecentPosition = false,
   }) async {
     final location = LocationServiceV2();
     final health = DeviceHealthService();
@@ -86,10 +93,26 @@ class FieldReadinessService {
         await _safe('selected basemap', BasemapService().getSelectedBasemap);
     if (basemap != null) {
       basemapName = basemap.name;
-      offline = fix == null
+      var mapAt = fix;
+      if (mapAt == null && mapFromRecentPosition && canFix) {
+        final last = await _safe(
+            'last known position', Geolocator.getLastKnownPosition);
+        mapAt = freshestFix([
+          lastGpsTest?.fix,
+          if (last != null)
+            GeoPoint(
+              latitude: last.latitude,
+              longitude: last.longitude,
+              accuracy: last.accuracy,
+              timestamp: last.timestamp,
+            ),
+        ], DateTime.now(), readinessHomeMaxAge);
+      }
+      final at = mapAt;
+      offline = at == null
           ? OfflineCoverage.noLocation
           : (await _safe('offline coverage',
-                  () => offlineCoverageAt(basemap, fix!))) ??
+                  () => offlineCoverageAt(basemap, at))) ??
               OfflineCoverage.unknown;
     }
 
@@ -135,6 +158,7 @@ class FieldReadinessService {
       pendingPhotos: photos,
       unsavedSessions: unsaved,
     );
+    if (inputs.gpsTested) lastGpsTest = gpsTestResultOf(inputs);
     final counts = readinessCounts(evaluateReadiness(inputs));
     logInfo(
         'Readiness: ${counts.problems} problem(s), ${counts.warnings} '
