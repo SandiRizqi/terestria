@@ -3,7 +3,11 @@ import 'package:flutter/services.dart';
 import '../models/form_field_model.dart';
 import '../models/geo_data_model.dart';
 import '../services/pinned_values_service.dart';
+import '../utils/field_values.dart';
 import 'photo_field_widget.dart';
+
+// Dulu didefinisikan di sini; dipakai luas lewat file ini.
+export '../utils/field_values.dart' show parseLocaleNumber;
 import 'package:mobile_scanner/mobile_scanner.dart' hide GeoPoint;
 
 // ── Enum untuk 3 mode case pada text field ──
@@ -1264,14 +1268,6 @@ class _ScannerOverlayPainter extends CustomPainter {
 // Validasi & helper bersama (form koleksi, form atribut tracking)
 // ════════════════════════════════════════════════════════
 
-/// Angka dari input user: menerima koma atau titik desimal (keyboard lokal
-/// Indonesia memakai koma) dan tanda minus. Null bila bukan angka.
-double? parseLocaleNumber(String input) {
-  final s = input.trim().replaceAll(',', '.');
-  if (s.isEmpty || s == '-' || s == '.' || s == '-.') return null;
-  return double.tryParse(s);
-}
-
 /// Pengendali [DynamicForm] dari luar (mis. menggulir ke field bermasalah).
 class DynamicFormController {
   _DynamicFormState? _state;
@@ -1287,64 +1283,16 @@ class FieldIssue {
   const FieldIssue(this.field, this.message);
 }
 
-bool _isBlank(Object? v) =>
-    v == null || (v is String && v.trim().isEmpty) || (v is List && v.isEmpty);
-
-/// Field yang belum memenuhi syarat, urut sesuai form. Aturan sama dengan
-/// validator tiap field — dipakai untuk memblokir simpan (dulu data tetap
-/// tersimpan walau field wajib kosong) dan untuk indikator progres.
+/// Field yang belum memenuhi syarat, urut sesuai form. Aturan per field ada
+/// di [fieldValueIssue] (sama dengan server) — dipakai untuk memblokir simpan
+/// dan untuk indikator progres.
 List<FieldIssue> formFieldIssues(
-    List<FormFieldModel> fields, Map<String, dynamic> data) {
-  final issues = <FieldIssue>[];
-  for (final field in fields) {
-    final value = data[field.label];
-    switch (field.type) {
-      case FieldType.photo:
-        final count = value is List ? value.length : (_isBlank(value) ? 0 : 1);
-        final minPhotos = field.minPhotos ?? (field.required ? 1 : 0);
-        final maxPhotos = field.maxPhotos ?? 1;
-        if (count < minPhotos) {
-          issues.add(FieldIssue(
-              field,
-              minPhotos == 1
-                  ? 'needs a photo'
-                  : 'needs at least $minPhotos photos'));
-        } else if (count > maxPhotos) {
-          issues.add(FieldIssue(field, 'allows at most $maxPhotos photo(s)'));
-        }
-        break;
-      case FieldType.checkbox:
-        final checked = value == true ||
-            value?.toString().toLowerCase() == 'true' ||
-            value?.toString() == '1';
-        if (field.required && !checked) {
-          issues.add(FieldIssue(field, 'must be checked'));
-        }
-        break;
-      case FieldType.number:
-      case FieldType.decimal:
-        if (_isBlank(value)) {
-          if (field.required) issues.add(FieldIssue(field, 'is required'));
-        } else if (value is! num && parseLocaleNumber(value.toString()) == null) {
-          issues.add(FieldIssue(field, 'is not a valid number'));
-        }
-        break;
-      case FieldType.text:
-      case FieldType.date:
-      case FieldType.dropdown:
-      case FieldType.textarea:
-      case FieldType.multiselect:
-      case FieldType.time:
-      case FieldType.datetime:
-      case FieldType.rating:
-        if (field.required && _isBlank(value)) {
-          issues.add(FieldIssue(field, 'is required'));
-        }
-        break;
-    }
-  }
-  return issues;
-}
+        List<FormFieldModel> fields, Map<String, dynamic> data) =>
+    [
+      for (final field in fields)
+        if (fieldValueIssue(field, data[field.label]) case final message?)
+          FieldIssue(field, message),
+    ];
 
 /// Ringkasan "3 of 5 required fields completed" + bar progres.
 class RequiredFieldsProgress extends StatelessWidget {
