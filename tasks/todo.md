@@ -1,45 +1,69 @@
-# TODO — Perbaikan hasil review + pilihan warna peta di web (1 Okt 2026)
+# TODO — Form & Aturan Project (1 Okt 2026)
 
-Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Plan sebelumnya: `plan-feature-style.md` (arsip lokal)
-Repo: `gis-backend` @ `dev1` (T1–T3) · `terestria` @ `main` (T2, T4–T8) · `gis-dashboard` @ `dev1` (T9). Commit per task, tanpa push/deploy.
-Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend unittest lokal 64 · dashboard `npm test` 19, `tsc` 1 error lama.
+Plan: [plan.md](plan.md) · Spec: [SPEC.md](../SPEC.md) · Plan sebelumnya: `plan-style-review-fixes.md` (arsip lokal)
+Repo: `gis-backend` @ `dev1` (T1, T13–T15) · `terestria` @ `main` (T2–T9, T16–T20) · `gis-dashboard` @ `dev1` (T10–T12, T21–T25). Commit per task, tanpa push/deploy.
+Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend unittest lokal 99 · dashboard `npm test` 29, `tsc` 1 error lama.
 
-## Fase 1 — Backend (sebelum deploy `d54d508`)
-- [x] T1 (kritis, gis-backend `ec74e6f`): verifikasi hanya di-reset bila isian form non-foto atau koordinat titik berubah; foto dan style tidak dicek; `updated_at` tetap naik. Test lokal +13 (`tests_verification_keep`), test DB +2 (CI).
-- [x] T2 (gis-backend `c4873f4`): kontrak style — `pointSize` 10–24, key asing diabaikan (backend `clean_style` + mobile `feature_style.dart` + `docs/sync-push-contract.md`). Slider ukuran point editor Layers tetap 4–20; rentang editor feature menyusul di T4.
-- [x] T3 (gis-backend `cbe6e21`): tile MVT membawa 5 properti style (migrasi `0022`) + segmen versi `s2` di key cache tile. Test lokal +7 (`tests_tile_style`), test DB +3 (CI, `tests_tile_style_db`).
+## Fase 1 — Tipe field: server & HP
+- [ ] T1 (backend): validasi `time`, `datetime`, `multiselect`, `rating`, `decimal`, min/maks.
+- [ ] T2: model field (5 tipe baru, min/max/unit, nama tipe asli dipertahankan), daftar tipe tunggal, perbaikan `decimal` (cloud/template), payload sync.
+- [ ] T3: `field_values.dart` + `formFieldIssues` dengan aturan yang sama dengan server.
+- [ ] T4: input teks panjang & skala 1–5 (+ builder).
+- [ ] T5: input pilihan ganda `"A; B"` (+ editor opsi tanpa `;`).
+- [ ] T6: input waktu & tanggal-waktu.
+- [ ] T7: min/maks + satuan (builder + form).
+- [ ] T8: nilai default (record baru saja; draft → pin → default; `now`).
+- [ ] T9: tipe baru di filter, ekspor, detail, lembar konflik, judul record.
 
 ### Checkpoint A
-- [x] Test lokal backend hijau (86), `manage.py check` bersih, migrasi konsisten (cek offline: tanpa migrasi tertunda, 0022 → 0021); test mobile T2 hijau (715), `flutter analyze` 0 error / 29 warning.
-- [ ] (User) CI: `tests_feature_style_db`, `tests_photo_download_db`, `tests_verification`, `tests_tile_style_db`.
+- [ ] Test lokal HP + backend hijau; analyze sesuai baseline.
+- [ ] (User, di HP) project dengan tipe baru: isi, simpan, sync, pull di HP kedua; tipe tak dikenal tidak berubah.
 
-## Fase 2 — Mobile
-- [x] T4: editor ukuran point — rentang per pemakai (`StyleLimits`: Layers 4–20, feature 10–24 / 14 langkah), pratinjau = diameter marker di peta (`StylePreview.pointDiameter`).
-- [x] T5: hit-test dua tingkat — yang kena langsung didahulukan (marker, setengah tebal garis + 4 dp, di dalam polygon); toleransi 24 dp hanya bila tidak ada yang kena langsung. Grid 3×3 blok 84 dp: 0% tap di blok tengah memunculkan daftar (dulu 82%).
-- [x] T6: culling tampilan line/polygon pakai aturan bbox yang sama dengan hit-test (`featureBounds` + `boundsIntersect`; bbox dihitung saat data dimuat).
-- [x] T7: hapus kode mati `MarkerLayer` line/polygon di `_buildExistingDataLayers` (tanpa perubahan perilaku; 731 test, analyze baseline).
-- [x] T8 (opsional, default dikerjakan): bagian Style di sheet stop & save "Tracking Aktif"; `buildGeoData(style:)`.
+## Fase 2 — Tipe field: web
+- [ ] T10: `fieldTypes.ts` (murni) + `types.ts`.
+- [ ] T11: tampilan nilai terformat (tabel, detail, popup).
+- [ ] T12: `FieldValueInput` di Edit Attributes & popup peta.
 
 ### Checkpoint B
-- [x] `flutter test` hijau (735); `flutter analyze` 0 error / 29 warning (baseline).
-- [ ] (User, di HP) blok bersebelahan, polygon bertumpuk, slider ukuran point + pratinjau, zoom di dalam blok besar, Style di Tracking Aktif.
+- [ ] `npm test`, `tsc` (baseline), lint, `next build` hijau.
+- [ ] (User, di browser) tampilan & edit atribut tipe lama dan baru.
 
-## Fase 3 — Web dashboard
-- [x] T9 (gis-dashboard `6fb96e8`): pilihan "Warna peta" (Status verifikasi / Style feature) + legenda mode aktif + diingat per browser; `sv=2` di URL tile. `mapColorMode.ts` (+10 test node), `MapColorLegend.tsx`.
+## Fase 3 — Aturan project
+- [ ] T13 (backend): `min_accuracy`, `unique_fields`, `GeoData.unique_key`, migrasi `0023`, serializer, 400 untuk error validasi.
+- [ ] T14 (backend): aturan akurasi → 422 `low_accuracy`.
+- [ ] T15 (backend): aturan kombinasi unik → 422 `duplicate` (transaksi + kunci project).
+- [ ] T16: `Project.minAccuracy`/`uniqueFields`, DB v8, push/pull.
+- [ ] T17: bagian "Project rules" di pembuat project HP.
+- [ ] T18: akurasi — titik GPS (mode ikuti) vs manual (0), tolak titik point di luar batas, editor geometri.
+- [ ] T19: akurasi — rata-rata line/polygon & peringatan (form, sheet, edit, editor).
+- [ ] T20: cek kombinasi unik saat simpan (koleksi, sheet, edit).
 
 ### Checkpoint C
-- [x] Test lokal ketiga repo hijau: backend unittest 86, `flutter test` 735, dashboard `npm test` 29. Baseline tidak memburuk: `flutter analyze` 0 error / 29 warning, `tsc` 1 error lama, lint `ProjectMapView.tsx` sama dengan HEAD (6 warning lama), `next build` berhasil.
-- [ ] (User) Uji manual T9 di browser setelah backend T3 ter-deploy di dev.
-- [ ] (User) Deploy berurutan: backend (`d54d508` + T1–T3) → dashboard (T9) → rilis app.
+- [ ] Test lokal hijau; migrasi `0023` konsisten (cek offline).
+- [ ] (User) CI: `tests_project_rules_db` dan test DB lain.
+- [ ] (User, di HP) point akurasi buruk ditolak; tracking rata-rata buruk → push ditolak → hapus titik → sync berhasil; duplikat lokal diblokir, duplikat dari HP lain ditolak server.
 
-## Dibawa dari build sebelumnya (style per feature + tap langsung)
+## Fase 4 — Builder project web
+- [ ] T21: `builderState.ts` + `builderValidation.ts` (murni, teruji).
+- [ ] T22: builder kartu field di dialog project + "New project" + hapus `CreateEditDialog.tsx`.
+- [ ] T23: drag & drop urutan (`framer-motion` Reorder) + tombol naik/turun.
+- [ ] T24: pratinjau form langsung.
+- [ ] T25: aturan project di builder (akurasi minimum, kombinasi unik).
+
+### Checkpoint D
+- [ ] Ketiga repo: test lokal hijau; baseline tidak memburuk; `next build` berhasil.
+- [ ] (User) CI test DB backend; uji manual builder web (buat project, seret, pratinjau, aturan, simpan, pull di HP).
+- [ ] (User) Deploy: backend (`0023`) → app & dashboard.
+
+## Dibawa dari build sebelumnya (perbaikan review style + warna peta web)
+- [ ] (User) CI: `tests_feature_style_db`, `tests_verification`, `tests_tile_style_db`, `tests_photo_download_db`.
+- [ ] (User) Deploy berurutan: backend (`d54d508`, `ec74e6f`, `c4873f4`, `cbe6e21`; migrasi `0021`, `0022`) → dashboard (`6fb96e8`) → rilis app.
 - [ ] (User, di HP)
-  - atur style saat koleksi dan saat edit, lalu lihat di peta project dan layar navigasi;
-  - sync ke HP kedua;
-  - upgrade DB v6 → v7 tanpa kehilangan data;
-  - app versi lama tidak menghapus style;
-  - edit dari dashboard tidak menghapus style;
-  - ketepatan tap pada line tipis dan polygon kecil;
-  - cluster di zoom rendah tetap zoom-in;
-  - mode gambar dan alat ukur tetap menambah titik.
-- Item build dashboard sebelumnya (download foto, polygon verifikasi) tetap di `gis-dashboard/tasks/todo.md`.
+  - blok bersebelahan langsung terbuka saat diketuk;
+  - polygon bertumpuk memunculkan daftar pilihan;
+  - slider ukuran point dan pratinjaunya;
+  - zoom di dalam blok besar;
+  - Style di sheet Tracking Aktif;
+  - daftar uji style per feature sebelumnya (sync ke HP kedua, upgrade DB v6 → v7, app lama, edit dashboard, ketepatan tap).
+- [ ] (User, di browser) pilihan "Warna peta" (Status/Style) setelah backend `cbe6e21` ter-deploy.
+- Celah keamanan "update project tanpa cek pembuat" sudah dikerjakan terpisah dari plan ini (task "Batasi update project ke pembuatnya", 1 Okt 2026). Butuh test DB di CI (`tests_project_owner_db`) dan deploy backend.

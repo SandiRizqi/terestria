@@ -1,301 +1,580 @@
-# Rencana: Perbaikan hasil review + pilihan warna peta di web
+# Rencana: Form & Aturan Project — Tipe Field Baru, Builder Web Interaktif, Akurasi Minimum, Kombinasi Unik
 
 Status: **disetujui user (2026-10-01)**; pertanyaan terbuka memakai default · Tanggal: 2026-10-01
-Spec: [SPEC.md](../SPEC.md) (disetujui 2026-09-30). Bagian yang berubah tercantum di "Perubahan SPEC" dan diterapkan di commit persiapan setelah plan ini disetujui.
-Plan sebelumnya: `tasks/plan-feature-style.md` (arsip lokal; versi git ada di riwayat `tasks/plan.md`). Item manual yang belum selesai dari plan itu dibawa ke `tasks/todo.md`.
+Spec: [SPEC.md](../SPEC.md) (disetujui 2026-10-01).
+Plan sebelumnya: `tasks/plan-style-review-fixes.md` (arsip lokal; versi git ada di riwayat `tasks/plan.md`). Item manual yang belum selesai dari plan itu dibawa ke `tasks/todo.md`.
 
 Satu commit per task per repo, tanpa push/deploy. Status semua task dicatat di `tasks/todo.md` (terestria).
 
 | Repo | Branch | Task |
 |---|---|---|
-| gis-backend | `dev1` | T1, T2 (validasi), T3 |
-| terestria | `main` | T2 (model), T4–T8 |
-| gis-dashboard | `dev1` | T9 |
+| gis-backend | `dev1` | T1, T13–T15 |
+| terestria | `main` | T2–T9, T16–T20 |
+| gis-dashboard | `dev1` | T10–T12, T21–T25 |
 
 ## Ringkasan
 
-1. **Perbaikan hasil review** build style per feature + tap langsung (terestria `d44caea..b0a854b`, backend `d54d508`): 1 kritis, 3 penting, 2 saran, dan kode mati.
-2. **Fitur baru di web dashboard:** user memilih warna peta data survei, yaitu **Status verifikasi** (seperti sekarang) atau **Style feature** dari aplikasi mobile. Legenda selalu menyebut mode yang aktif, jadi jelas warna di peta berasal dari status atau dari style.
+Empat bagian dari SPEC, dikerjakan dalam empat fase. Tiap fase bisa dipakai sendiri:
 
-Urutan kerja: backend dulu, karena kontrak style ikut berubah dan semuanya harus masuk sebelum `d54d508` di-deploy. Lalu mobile, terakhir dashboard (butuh tile dari T3).
+1. **Tipe field (server + HP).** 5 tipe baru, min/maks + satuan, nilai default, dan perbaikan celah tipe.
+2. **Tipe field (web).** Nilai tampil terformat; edit atribut dan popup peta memakai input sesuai tipe.
+3. **Aturan project.** `min_accuracy` dan `unique_fields` di server dan HP.
+4. **Builder project web.** Buat/edit project dari web dengan kartu field yang bisa diseret, dilipat, dan disalin; validasi langsung; pratinjau form; pengaturan aturan project.
 
 ## Keputusan arsitektur
 
-1. **Verifikasi hanya di-reset kalau isi record berubah** (`GeoDataSerializer.update`).
-   - Yang dibandingkan dengan nilai tersimpan: **isian form non-foto** (persis sama) dan **koordinat titik** (urutan latitude/longitude, dibandingkan sebagai angka).
-   - **Foto tidak dibandingkan** (keputusan user 2026-10-01). Menambah, mengganti, atau menghapus foto tidak me-reset verifikasi. Field foto dikenali dari tipe field project (`photo`), dengan cadangan dari bentuk nilainya (daftar objek ber-`serverKey`/`localPath`) dan key lama `*_oss_urls`/`*_oss_keys`.
-   - Kalau yang berubah hanya style (atau data dikirim ulang tanpa perubahan), status verifikasi, `verified_by`/`verified_at`, error validasi, dan `schema_snapshot` tidak berubah. `updated_at` tetap naik supaya HP lain menarik perubahannya.
-   - Create tidak berubah (selalu divalidasi).
-   - Ini mengubah aturan backend di luar `style` (SPEC "Ask first"); diminta user lewat perbaikan ini.
-2. **Kontrak style direvisi selagi belum ada yang ter-deploy.**
-   - `pointSize` **10–24** (sebelumnya 4–20). Rentang ini persis memetakan diameter marker 20–48 dp di HP, jadi setiap langkah slider terlihat. Semua nilai Settings (8–24) muat; 8–9 memang sudah tampil 20 dp, sama dengan 10.
-   - Key asing **diabaikan** (5 key inti tetap wajib), supaya app versi baru bisa menambah properti tanpa style-nya dibuang oleh backend versi ini.
-   - Mobile men-clamp saat membaca, jadi style uji coba yang terlanjur tersimpan dengan nilai < 10 tetap terbaca.
-3. **Editor style menerima batas dari pemanggil.** Layers tetap 4–20 dengan pratinjau lamanya. Style feature memakai 10–24, dan pratinjau point = diameter marker di peta.
-4. **Hit-test dua tingkat.**
-   - Tingkat 1, "kena langsung": tap di dalam lingkaran marker, di atas garis (setengah tebal garis + 4 dp), atau di dalam polygon.
-   - Tingkat 2, hanya bila tingkat 1 kosong: dalam toleransi 24 dp.
-   - Urutan di dalam tingkat tetap: point terdekat → line terdekat → polygon terkecil. Daftar pilihan tetap muncul untuk feature yang benar-benar bertumpuk.
-5. **Yang tergambar = yang bisa diketuk.** Culling tampilan line/polygon memakai aturan bbox yang sama dengan hit-test. Bbox dihitung sekali setiap data dimuat.
-6. **Warna peta web dipilih user.**
-   - Pilihan `Status verifikasi` | `Style feature`. Default Status (perilaku sekarang), diingat per browser lewat localStorage (aman bila tidak tersedia).
-   - Tile (MVT) membawa 5 properti datar: `style_fill_color`, `style_fill_opacity`, `style_stroke_color`, `style_stroke_width`, `style_point_size`. Properti ini tidak ada bila feature tanpa style. Mode GeoJSON (cadangan) mengisi properti yang sama dari `data.style`.
-   - Feature tanpa style memakai **default pabrik aplikasi**: point `#2196F3`; line `#4CAF50` α 0.8 tebal 3; polygon isi `#FF9800` α 0.3, tepi `#FF9800` tebal 3. Settings tiap HP bisa berbeda dan tidak dikirim ke server, jadi web tidak bisa meniru Settings masing-masing HP.
-   - Ukuran point di mode Style = `pointSize × ⅔` px (default 12 → 8 px, sama dengan sekarang). Tepi polygon α 0.85 seperti di HP.
-   - Filter verifikasi dan sorotan merah feature terpilih tetap berlaku di kedua mode.
-   - Logika warna (expression MapLibre, default, isi legenda) ditaruh di modul murni `mapColorMode.ts` yang dites. Pilihan + legenda di komponen baru, sehingga `ProjectMapView.tsx` (±1.900 baris) hanya mendapat wiring.
-7. **Tile lama tanpa style tidak tersaji setelah deploy.**
-   - Key cache OSS mendapat segmen versi: `tiles/project_{id}/s2/…`. Segmen ini masih di bawah prefix invalidasi yang sama, jadi tile lama ikut terhapus saat invalidasi berikutnya.
-   - URL tile di dashboard mendapat `sv=2` untuk melewati cache browser (1 jam).
+1. **Satu sumber pengetahuan tipe per stack.**
+   - HP: `fieldTypeFromName` + `field_type_info.dart` (nama, ikon) + `field_values.dart` (format/parse/validasi/tampilan).
+   - Web: `fieldTypes.ts`.
+   - Server: `validation.py`.
+   - Aturan validasi diuji dengan tabel kasus yang sama di ketiganya.
+2. **Tipe baru baru bisa dipilih di builder HP setelah inputnya ada.** T2 menambah tipe di model; T4–T6 menyalakannya satu per satu. Commit di antaranya tidak pernah menawarkan tipe tanpa input. Tipe baru yang datang dari server sebelum itu tampil sementara seperti teks.
+3. **Pilihan ganda disimpan sebagai teks `"A; B"`,** urut sesuai opsi (SPEC Asumsi 2). Nama tipe yang tidak dikenal dipertahankan saat form disimpan ulang, di HP maupun web.
+4. **Kombinasi unik di server memakai kolom terhitung `GeoData.unique_key`.**
+   - Isinya kunci ternormalisasi (SPEC §3.7), dihitung saat record disimpan. Pencarian duplikat cukup satu query berindeks `(project, unique_key)`, tanpa memuat `form_data` semua record.
+   - Saat `unique_fields` project berubah, kunci semua record project itu dihitung ulang (per batch).
+   - Bila kunci baru sama dengan kunci tersimpan record itu, cek dilewati, jadi data duplikat lama tetap bisa diedit.
+   - Cek + simpan berjalan dalam transaksi dengan `select_for_update` pada baris project.
+5. **Aturan akurasi di server** memakai satu helper murni (point: akurasi titik; line/polygon: rata-rata titik GPS, akurasi > 0). Dipakai di `create`, `bulk_sync`, dan `partial_update` (hanya bila `points` dikirim). Penolakan memakai HTTP 422 + `error_code`.
+6. **HP sudah menampilkan pesan server apa adanya bila ada `error_code`** (`SyncService._serverErrorMessage`). Penolakan `low_accuracy`/`duplicate` langsung terbaca, termasuk di versi app yang sekarang dipakai. Record tetap "belum sync" dengan pesan itu.
+7. **Asal titik di HP** (SPEC §3.6):
+   - tombol tambah titik dengan mode "ikuti GPS" → titik GPS (koordinat + akurasi fix);
+   - crosshair digeser manual atau tap → manual, akurasi 0;
+   - editor geometri: vertex sisipan = 0, vertex dipindah mempertahankan akurasinya.
+   - Semua tampilan akurasi memperlakukan 0 sebagai "placed manually".
+8. **Logika baru di file terpisah.** `data_collection_screen.dart` (±4.300 baris), `dynamic_form.dart` (±1.400), dan `MobileSurveyDashboard.tsx` (±1.250) hanya mendapat wiring. Logika ada di `project_rules.dart`, `field_values.dart`, `form_inputs/`, `fieldTypes.ts`, dan `builder/`.
+9. **Builder web dibangun baru** di dialog project `MobileSurveyDashboard.tsx` (komponen di `builder/`). `CreateEditDialog.tsx` yang tidak terpasang dihapus. Project baru dari web mendapat id dari `crypto.randomUUID()`, karena endpoint project adalah upsert yang wajib `id`.
+10. **Endpoint project sudah mengembalikan 400 untuk error validasi** (sebelumnya tertangkap jadi 500), lewat task keamanan "Batasi update project ke pembuatnya". Task itu juga menetapkan:
+    - upsert dari non-pembuat → 200 `applied: false` tanpa perubahan;
+    - PUT/PATCH dari non-pembuat → 403 `not_project_owner`;
+    - `created_by` tidak bisa dipalsukan atau diganti.
 
 ## Grafik dependensi
 
 ```
-Fase 1 — backend (sebelum deploy d54d508)
-  T1 verifikasi tetap bila isi tidak berubah
-  T2 kontrak style: pointSize 10–24, key asing diabaikan (backend + model mobile)
-  T3 tile MVT membawa style + versi cache tile
-Fase 2 — mobile
-  T4 editor ukuran point = ukuran di peta ◄── T2
-  T5 hit-test dua tingkat
-  T6 culling tampilan = aturan hit-test ──► T7 hapus kode mati layer ikon (file sama)
-  T8 Style di sheet "Tracking Aktif" (opsional, lihat pertanyaan terbuka)
-Fase 3 — web dashboard
-  T9 pilihan warna peta + legenda ◄── T3 (mode vector tile)
+Fase 1 — tipe field (server + HP)
+  T1 BE validasi tipe/min-maks
+  T2 HP model + daftar tipe ──► T3 HP helper nilai & validasi ──┬─► T4 teks panjang + skala
+                                                               ├─► T5 pilihan ganda
+                                                               ├─► T6 waktu & tanggal-waktu
+                                                               ├─► T7 min/maks + satuan
+                                                               └─► T9 filter/ekspor/detail
+                                         T4–T7 ──► T8 nilai default
+Fase 2 — tipe field (web)
+  T10 fieldTypes.ts ──► T11 tampilan terformat ──► T12 input sesuai tipe (FieldValueInput)
+Fase 3 — aturan project
+  T13 BE pengaturan + migrasi 0023 ──┬─► T14 BE akurasi (422)
+                                     └─► T15 BE unik (422)
+  T16 HP model/DB v8/sync (◄ kontrak T13) ──┬─► T17 HP UI "Project rules"
+                                            ├─► T18 HP akurasi: ambil titik & manual ──► T19 HP rata-rata & peringatan
+                                            └─► T20 HP cek unik saat simpan (◄ T18: project_rules.dart)
+Fase 4 — builder web
+  T21 state & validasi builder (◄ T10) ──► T22 builder kartu + New project (◄ T12) ──┬─► T23 drag & drop
+                                                                                    ├─► T24 pratinjau (◄ T12)
+                                                                                    └─► T25 aturan project (◄ T13)
 ```
 
-- T1, T2, dan T3 saling bebas. T5, T6, dan T8 juga saling bebas.
+- T1, T10, dan T13 bisa dikerjakan paralel dengan fase sebelumnya. Urutan di bawah mengikuti fase.
 
 ## Tasks
 
-### Fase 1 — Backend (semua sebelum `d54d508` di-deploy)
+### Fase 1 — Tipe field: server & HP
 
-#### T1 — Verifikasi tidak di-reset bila isi record tidak berubah (gis-backend) — kritis
-**Deskripsi.** Fungsi murni `ingest_content_changed(form_fields, old_form_data, new_form_data, old_points, new_points)` di `validation.py`, mengikuti aturan di Keputusan 1. `GeoDataSerializer.update` hanya memanggil `_apply_ingest_verification` bila fungsi itu mengembalikan `True`. `updated_at` selalu naik.
+#### T1 — Backend: validasi tipe baru, `decimal`, min/maks (gis-backend)
+**Deskripsi.** `validate_form_data` menerapkan SPEC §3.3:
+- `time`, `datetime`, `multiselect` (bagian ⊆ opsi), `rating` (1–5; angka atau teks angka);
+- `decimal` kini dicek sebagai angka;
+- `min`/`max` untuk `number`/`decimal`;
+- `textarea` tanpa cek.
 
-**Kriteria penerimaan**
-- [ ] Record verified, lalu update style saja → `verification_status`, `verified_by`, `verified_at`, `validation_errors`, dan `schema_snapshot` tidak berubah. `style` dan `updated_at` berubah.
-- [ ] Data dikirim ulang persis sama → verifikasi tetap.
-- [ ] Hanya foto yang berubah (ditambah, diganti, dihapus, atau beda `serverUrl`/`localPath`) → verifikasi tetap.
-- [ ] Verifikasi di-reset seperti sekarang bila salah satu terjadi:
-  - nilai field non-foto berubah;
-  - field non-foto ditambah atau dihapus;
-  - koordinat titik berubah, bertambah, atau berkurang.
-- [ ] Create tidak berubah. Test lama `test_update_mereset_verifikasi` tetap lulus.
-
-**Verifikasi**
-- [ ] Lokal: `"$PY" -m unittest mobile.tests_verification_keep` (baru, murni), semua test lokal lain, dan `"$PY" manage.py check`.
-- [ ] CI (test DB):
-  - record verified lalu push style saja lewat `create` (upsert) → tetap verified;
-  - push dengan isian berubah → di-reset.
-
-**Dependensi:** tidak ada.
-**File:** `mobile/validation.py`, `mobile/serializers.py`, `mobile/tests_verification_keep.py` (baru), `mobile/tests_feature_style_db.py`.
-**Ukuran:** S–M.
-
-#### T2 — Kontrak style direvisi: `pointSize` 10–24, key asing diabaikan (gis-backend + terestria)
-**Deskripsi.**
-- Backend `clean_style`: rentang `pointSize` 10–24. Key di luar 5 key inti dibuang, bukan membuat seluruh style ditolak. 5 key inti tetap wajib.
-- Mobile `feature_style.dart`: `featureMinPointSize = 10`, `featureMaxPointSize = 24`.
-- Dokumen kontrak diperbarui.
+Pesan error berbahasa Indonesia seperti pesan yang ada.
 
 **Kriteria penerimaan**
-- [ ] Backend: `pointSize` 10 dan 24 diterima. 9 dan 25 → style dibuang, record tetap diterima.
-- [ ] Backend: style dengan key asing (mis. `dash`) → tersimpan tanpa key itu. Salah satu key inti hilang → style dibuang.
-- [ ] Mobile: nilai di-clamp ke 10–24 saat dibaca dan dikirim. Dengan Settings `pointSize` 24, mengganti warna saja tidak mengecilkan point.
-- [ ] Render default (tanpa style) tetap identik; test lama lulus.
-- [ ] `docs/sync-push-contract.md` §4 memuat rentang dan aturan key asing yang baru.
+- [ ] Setiap aturan §3.3 menolak contoh yang melanggar dan menerima contoh yang benar (tabel kasus, dipakai juga oleh test HP dan web).
+- [ ] `min`/`max` inklusif, boleh salah satu saja, hanya untuk angka/desimal.
+- [ ] Test lama tetap lulus (`tests_validation`, 13).
 
-**Verifikasi**
-- [ ] Backend: `"$PY" -m unittest mobile.tests_feature_style` dan `manage.py check`.
-- [ ] Mobile: `flutter test test/models/feature_style_test.dart`, lalu `flutter test` penuh dan `flutter analyze` (baseline).
-
+**Verifikasi:** `"$PY" -m unittest mobile.tests_field_types mobile.tests_validation`, lalu semua test lokal dan `manage.py check`.
 **Dependensi:** tidak ada.
-**File:** gis-backend `mobile/validation.py`, `mobile/tests_feature_style.py`; terestria `lib/models/feature_style.dart`, `test/models/feature_style_test.dart`, `docs/sync-push-contract.md`.
+**File:** `mobile/validation.py`, `mobile/tests_field_types.py` (baru).
 **Ukuran:** S.
 
-#### T3 — Tile peta web membawa style (gis-backend)
+#### T2 — HP: model field, daftar tipe tunggal, tipe tak dikenal dipertahankan (terestria)
 **Deskripsi.**
-- Migrasi `0022_geodata_tile_add_style` (RunSQL) mengganti fungsi `get_geodata_tile` dengan 5 kolom style dari `gd.style`. Angka hanya diambil bila bertipe number, supaya data rusak tidak menggagalkan tile.
-- Reverse = fungsi versi 0020.
-- `_build_tile_cache_key` mendapat segmen versi `s2`.
+- `FieldType` + `textarea`, `multiselect`, `time`, `datetime`, `rating`.
+- `FormFieldModel` + `min`, `max`, `unit`. Nama tipe asli disimpan dan dikirim balik bila tipenya tidak dikenal.
+- `field_type_info.dart` (baru): nama UI, ikon, deskripsi, dan tanda "bisa dipilih" per tipe. Menggantikan peta ikon/nama ganda di builder, `create_project_screen`, dan `project_detail_screen`.
+- `cloud_project_dialog` dan `project_template_service` memakai `fieldTypeFromName` (perbaikan `decimal`).
+- Payload sync project memuat `min`/`max`/`unit` dan nama tipe asli.
+- Switch yang wajib menangani tipe baru diberi perilaku sementara seperti teks.
 
 **Kriteria penerimaan**
-- [ ] Tile record ber-style memuat 5 properti style; record tanpa style tidak memuatnya.
-- [ ] Nilai style yang bukan tipe yang diharapkan tidak membuat pembuatan tile gagal.
-- [ ] Migrasi bisa dibalik ke fungsi versi 0020.
-- [ ] Key cache baru `tiles/project_{id}/s2/{z}/{x}/{y}.pbf` (group sama). `invalidate_tile_cache` tetap menghapus key lama maupun baru.
+- [ ] Round-trip JSON key baru. Tipe tak dikenal (mis. `signature`) berperilaku seperti teks, tetapi `toJson` tetap mengirim `signature`.
+- [ ] `decimal` tetap `decimal` lewat cloud project dan template.
+- [ ] Builder hanya menawarkan 7 tipe lama (nama + ikon dari daftar tipe). Layar detail project menampilkan nama dan ikon ke-12 tipe.
+- [ ] Payload push project memuat `min`/`max`/`unit` bila diisi.
 
-**Verifikasi**
-- [ ] Lokal:
-  - `"$PY" -m unittest mobile.tests_tile_style` (key cache, isi SQL migrasi dan reverse);
-  - cek graf migrasi offline (0022 → 0021);
-  - `manage.py check`.
-- [ ] CI: `mobile.tests_tile_style_db`. `_generate_tile_from_db` untuk record ber-style memuat `style_fill_color` dan `#FF9800`.
+**Verifikasi:** `flutter test` (test model + daftar tipe baru, semua lama hijau); `flutter analyze` sesuai baseline.
+**Dependensi:** tidak ada.
+**File:**
+- `lib/models/form_field_model.dart`, `lib/models/field_type_info.dart` (baru)
+- `lib/widgets/form_field_builder.dart`, `lib/widgets/dynamic_form.dart`
+- `lib/screens/project/create_project_screen.dart`, `project_detail_screen.dart`
+- `lib/widgets/project/cloud_project_dialog.dart`, `lib/services/project_template_service.dart`, `lib/services/sync_service.dart`
+- test
 
-**Dependensi:** tidak ada (kolom `style` sudah ada dari `d54d508`).
-**File:** `mobile/migrations/0022_geodata_tile_add_style.py`, `mobile/views.py`, `mobile/tests_tile_style.py`, `mobile/tests_tile_style_db.py`.
-**Ukuran:** S–M.
-
-### Checkpoint A — backend siap deploy
-- [ ] Semua test lokal backend hijau, `manage.py check` bersih, dan migrasi 0021 + 0022 konsisten (cek offline).
-- [ ] Test mobile T2 hijau; `flutter analyze` sesuai baseline.
-- [ ] (User) CI lulus: `tests_feature_style_db`, `tests_photo_download_db`, `tests_verification`, `tests_tile_style_db`.
-
-### Fase 2 — Mobile
-
-#### T4 — Editor ukuran point = ukuran di peta (terestria)
-**Deskripsi.** `StyleEditorFields` menerima batas dari pemanggil: rentang slider dan cara menghitung diameter point untuk pratinjau. Layers memakai batas lama (4–20, pratinjau lama). Bagian Style feature memakai 10–24, dan pratinjaunya memakai `featurePointDiameter`.
-
-**Kriteria penerimaan**
-- [ ] Form "Survey data" dan layar edit: slider ukuran point 10–24 (14 langkah); tiap langkah mengubah diameter marker di peta (20–48 dp).
-- [ ] Pratinjau point berdiameter sama dengan marker di peta.
-- [ ] Editor Layers: rentang, langkah, dan pratinjau tidak berubah (test regresi).
-- [ ] Muat di 360 dp tanpa overflow.
-
-**Verifikasi:** `flutter test test/widgets/style_editor_test.dart test/widgets/feature_style_section_test.dart`, `flutter test` penuh, `flutter analyze` (baseline).
-**Dependensi:** T2.
-**File:** `lib/widgets/style/style_editor.dart`, `lib/widgets/style/feature_style_section.dart`, `lib/screens/layers/layers_screen.dart`, `test/widgets/style_editor_test.dart`, `test/widgets/feature_style_section_test.dart`.
+Banyak file, tetapi perubahannya kecil (dipaksa oleh penambahan enum).
 **Ukuran:** M.
 
-#### T5 — Tap: yang kena langsung didahulukan (terestria)
-**Deskripsi.** Hit-test dua tingkat (Keputusan 4). `HitLine` membawa setengah tebal garis dari style feature.
+#### T3 — HP: helper nilai & aturan validasi bersama
+**Deskripsi.** `lib/utils/field_values.dart` (baru, murni):
+- pilihan ganda: gabung/pisah sesuai urutan opsi;
+- waktu dan tanggal-waktu: format/parse;
+- skala: parse;
+- cek rentang angka;
+- `displayValue(field, value)`: Yes/No, `4 / 5`, `35.5 cm`, `2026-10-01 07:15`.
+
+`formFieldIssues` memakai aturan yang sama dengan server.
 
 **Kriteria penerimaan**
-- [ ] Dua polygon bersebelahan (84 dp): tap di dalam A, 20 dp dari tepi bersama → hanya A. Pada grid 3×3, tap di dalam blok tengah tidak memunculkan daftar pilihan.
-- [ ] Tap tepat di point P1 dengan point lain 30 dp di sebelahnya → hanya P1. Tap di antara dua point (tidak tepat di salah satunya) → keduanya.
-- [ ] Polygon yang benar-benar bertumpuk (yang kecil di dalam yang besar) → keduanya, terkecil dulu (seperti sekarang).
-- [ ] Tap di luar semua polygon, ≤ 24 dp dari tepi salah satunya → polygon itu.
-- [ ] Tap di atas garis A dengan garis B 20 dp di sebelahnya → hanya A.
+- [ ] Tabel kasus T1 memberi hasil yang sama.
+- [ ] Pesan jelas: "must be between 0 and 200 cm", "has an option that is not in the list", "is not a valid time", "must be 1–5".
+- [ ] Test form lama tetap hijau.
 
-**Verifikasi:** `flutter test test/services/feature_hit_test_test.dart test/widgets/project_features_at_tap_test.dart`, `flutter test` penuh, `flutter analyze`.
-**Dependensi:** tidak ada.
-**File:** `lib/services/map/feature_hit_test.dart`, `lib/widgets/map/project_feature_layers.dart`, `test/services/feature_hit_test_test.dart`, `test/widgets/project_features_at_tap_test.dart`.
+**Verifikasi:** `flutter test test/utils/field_values_test.dart test/widgets/form_field_issues_test.dart`, lalu `flutter test` penuh dan `flutter analyze`.
+**Dependensi:** T2.
+**File:** `lib/utils/field_values.dart` (baru), `lib/widgets/dynamic_form.dart`, 2 file test (baru).
 **Ukuran:** S–M.
 
-#### T6 — Yang tergambar = yang bisa diketuk (terestria)
+#### T4 — HP: input teks panjang & skala 1–5
 **Deskripsi.**
-- Helper publik di `project_feature_layers.dart` untuk mengecek irisan bbox feature dengan area peta, dipakai bersama oleh hit-test dan culling.
-- `_buildMarkerCache` menghitung bbox tiap line/polygon sekali.
-- `_updateVisibleLayers` memakai helper itu, menggantikan aturan "ada titik sudut di area".
+- `textarea`: teks beberapa baris; pin tetap ada; tanpa tombol QR dan tanpa toggle huruf.
+- `rating`: 5 pilihan yang bisa diketuk; ketuk lagi untuk mengosongkan.
+- Keduanya dinyalakan di builder.
 
 **Kriteria penerimaan**
-- [ ] Polygon yang menutupi seluruh layar (semua titik sudut di luar area + buffer) tetap tergambar. Feature yang sepenuhnya di luar area tidak tergambar.
-- [ ] Line panjang yang melintasi layar dengan kedua ujung jauh tetap tergambar.
-- [ ] Point dan clustering tidak berubah.
-- [ ] Bbox tidak dihitung ulang setiap peta digeser; cukup saat data dimuat.
+- [ ] `textarea` menyimpan string berbaris banyak; `required` bekerja.
+- [ ] `rating` menyimpan bilangan bulat 1–5; dikosongkan → kosong; `required` bekerja.
+- [ ] Builder menawarkan "Long text" dan "Rating (1–5)"; muat di 360 dp.
 
-**Verifikasi:** test helper di `test/widgets/project_feature_layers_test.dart`, `flutter test` penuh, `flutter analyze`. Manual: zoom 18 di tengah blok besar → blok tetap tampil dan bisa diketuk.
-**Dependensi:** tidak ada.
-**File:** `lib/widgets/map/project_feature_layers.dart`, `lib/screens/data_collection/data_collection_screen.dart`, `test/widgets/project_feature_layers_test.dart`.
+**Verifikasi:** test widget input + builder; `flutter test`; `flutter analyze`.
+**Dependensi:** T3.
+**File:** `lib/widgets/dynamic_form.dart`, `lib/widgets/form_inputs/rating_input.dart` (baru), `lib/models/field_type_info.dart`, test.
+**Ukuran:** S–M.
+
+#### T5 — HP: pilihan ganda
+**Deskripsi.**
+- Input daftar centang; menyimpan `"A; B"` sesuai urutan opsi.
+- Editor opsi di builder dipakai bersama dropdown, dengan aturan: tanpa `;`, unik, tidak kosong.
+
+**Kriteria penerimaan**
+- [ ] Pilih B lalu A → tersimpan `"A; B"`; semua dilepas → kosong.
+- [ ] Nilai lama berisi opsi yang sudah tidak ada tetap tampil (ditandai) dan ditolak validasi.
+- [ ] Builder menolak opsi yang berisi `;` atau ganda.
+
+**Verifikasi:** test widget input + builder; `flutter test`; `flutter analyze`.
+**Dependensi:** T3.
+**File:** `lib/widgets/form_inputs/multi_choice_input.dart` (baru), `lib/widgets/dynamic_form.dart`, `lib/widgets/form_field_builder.dart`, `lib/models/field_type_info.dart`, test.
+**Ukuran:** M.
+
+#### T6 — HP: waktu & tanggal-waktu
+**Deskripsi.**
+- Pemilih jam (24 jam) → `HH:mm`.
+- Pemilih tanggal + jam → `YYYY-MM-DDTHH:mm:00.000`.
+- Tombol "Now" dan tombol hapus.
+- Keduanya dinyalakan di builder.
+
+**Kriteria penerimaan**
+- [ ] Format persis SPEC §3.1.
+- [ ] Nilai tersimpan yang tidak valid (mis. dari app lama) ditandai validasi.
+- [ ] Builder menawarkan "Time" dan "Date & time"; muat di 360 dp.
+
+**Verifikasi:** test widget; `flutter test`; `flutter analyze`.
+**Dependensi:** T3.
+**File:** `lib/widgets/form_inputs/date_time_inputs.dart` (baru), `lib/widgets/dynamic_form.dart`, `lib/models/field_type_info.dart`, test.
+**Ukuran:** M.
+
+#### T7 — HP: batas min/maks & satuan
+**Deskripsi.**
+- Builder: isian min, maks, dan satuan untuk angka/desimal (min ≤ maks).
+- Form: satuan tampil sebagai akhiran input. Nilai di luar batas memblokir simpan dengan pesan (lewat T3).
+
+**Kriteria penerimaan**
+- [ ] Builder menyimpan `min`/`max`/`unit` dan menolak min > maks.
+- [ ] Form menampilkan akhiran "cm".
+- [ ] 250 dengan maks 200 → diblokir; nilai di dalam batas → lolos.
+
+**Verifikasi:** test widget builder + form; `flutter test`; `flutter analyze`.
+**Dependensi:** T3.
+**File:** `lib/widgets/form_field_builder.dart`, `lib/widgets/dynamic_form.dart`, test.
 **Ukuran:** S.
 
-#### T7 — Hapus kode mati layer ikon line/polygon (terestria)
-**Deskripsi.** Hapus cabang `MarkerLayer(_visibleMarkers)` untuk line/polygon di `_buildExistingDataLayers` beserta komentar "tap targets"-nya. Sejak T11, marker hanya ada untuk point.
+#### T8 — HP: nilai default
+**Deskripsi.**
+- Builder: isian default per tipe, divalidasi dengan aturan field. Untuk tanggal/waktu/tanggal-waktu ada pilihan "Use the time the form opens" (`now`).
+- Form: default diterapkan hanya untuk record baru (`DynamicForm` mendapat parameter `applyDefaults`), dengan prioritas draft → pin → default.
+- "Save & next" menerapkan default lagi. Sheet Tracking Aktif menerapkannya; layar edit tidak.
 
 **Kriteria penerimaan**
-- [ ] Tidak ada perubahan perilaku; `flutter analyze` tanpa warning baru; test hijau.
+- [ ] SPEC §3.4 terpenuhi untuk semua tipe.
+- [ ] Test prioritas draft → pin → default dan token `now`.
+- [ ] Layar edit record tidak berubah.
 
-**Verifikasi:** `flutter test`, `flutter analyze`.
-**Dependensi:** T6 (file sama, supaya tidak konflik).
-**File:** `lib/screens/data_collection/data_collection_screen.dart`.
-**Ukuran:** XS.
+**Verifikasi:** test widget/unit; `flutter test`; `flutter analyze`.
+**Dependensi:** T4–T7 (input semua tipe sudah ada).
+**File:** `lib/widgets/form_field_builder.dart`, `lib/widgets/dynamic_form.dart`, `lib/utils/field_values.dart`, `lib/screens/data_collection/data_collection_screen.dart`, `lib/widgets/tracking/attribute_form_sheet.dart`, test.
+**Ukuran:** M.
 
-#### T8 — Style di sheet "Tracking Aktif" (terestria) — opsional
-**Deskripsi.** `AttributeFormSheet` (stop & save dari panel Tracking Aktif) menampilkan `FeatureStyleSection`, dan `buildGeoData` menerima `style`.
+#### T9 — HP: tipe baru di filter, ekspor, detail, lembar konflik
+**Deskripsi.**
+- Filter daftar data:
+  - teks panjang, waktu, tanggal-waktu: berisi teks;
+  - pilihan ganda: pilih satu opsi;
+  - skala: 1–5.
+- Ekspor GeoJSON/KML/SHP/CSV: nilai apa adanya.
+- Dialog detail record, lembar konflik, dan judul record memakai `displayValue`.
 
 **Kriteria penerimaan**
-- [ ] Sheet menampilkan bagian Style (saat tertutup: "Default").
-- [ ] Style diubah → record tersimpan membawa style. Tidak diubah → `null`.
+- [ ] Filter tiap tipe baru bekerja.
+- [ ] Atribut tipe baru ikut di ekspor.
+- [ ] Detail dan lembar konflik menampilkan nilai terformat.
+
+**Verifikasi:** test ekspor + tampilan; `flutter test`; `flutter analyze`.
+**Dependensi:** T3.
+**File:** `lib/screens/project/project_detail_screen.dart`, `lib/services/export/geo_export.dart`, `lib/widgets/sync/conflict_sheet.dart`, `lib/screens/data_collection/data_collection_screen.dart` (dialog detail), `lib/utils/record_title.dart`, test.
+**Ukuran:** M.
+
+### Checkpoint A — tipe field di server & HP
+- [ ] `flutter test` hijau, `flutter analyze` sesuai baseline; test lokal backend hijau.
+- [ ] (User, di HP)
+  - buat project dengan 5 tipe baru, min/maks/satuan, dan default; isi, simpan, sync;
+  - pull di HP kedua;
+  - field bertipe tak dikenal tidak berubah tipe saat project disimpan ulang.
+
+### Fase 2 — Tipe field: web
+
+#### T10 — Web: `fieldTypes.ts` (murni) + tipe data (gis-dashboard)
+**Deskripsi.**
+- Daftar 12 tipe (label, deskripsi).
+- Parse, format, dan validasi dengan aturan SPEC §3.3; pilihan ganda gabung/pisah; resolusi default (termasuk `now`); `displayValue`.
+- `types.ts`: union `FormField` 12 tipe + pengaturan (`options`, `min`, `max`, `unit`, `defaultValue`, `minPhotos`, `maxPhotos`); `Project` + `minAccuracy`, `uniqueFields` (opsional).
+
+**Kriteria penerimaan**
+- [ ] Test node memakai tabel kasus yang sama dengan T1/T3.
+- [ ] Format tampilan sesuai SPEC.
+- [ ] Tipe tak dikenal diperlakukan seperti teks.
+
+**Verifikasi:** `npm test`; `npx tsc --noEmit` = baseline.
+**Dependensi:** tidak ada (kontrak SPEC).
+**File:** `components/mobilesurveyproject/fieldTypes.ts` (baru), `fieldTypes.test.mjs` (baru), `types.ts`.
+**Ukuran:** S–M.
+
+#### T11 — Web: tampilan nilai terformat
+**Deskripsi.** Sel tabel data, `DataDetailModal`, dan popup peta menampilkan nilai lewat `displayValue` berdasarkan `formFields` project. Foto dikenali dari tipe field, dengan cadangan nilai berbentuk array untuk data lama.
+
+**Kriteria penerimaan**
+- [ ] Tampil: Yes/No, `4 / 5`, `35.5 cm`, `2026-10-01 07:15`; teks panjang mempertahankan baris baru.
+- [ ] Data lama dan field yang tidak dikenal tampil seperti sekarang.
+
+**Verifikasi:** `npm test`; `tsc`; lint per file dibanding HEAD; `next build`.
+**Dependensi:** T10.
+**File:** `ProjectDataTab.tsx`, `components/DataDetailModal.tsx`, `ProjectMapView.tsx` (tampilan popup), `ProjectDetailPanel.tsx` (meneruskan project bila perlu).
+**Ukuran:** M.
+
+#### T12 — Web: input sesuai tipe di Edit Attributes & popup peta
+**Deskripsi.** `components/FieldValueInput.tsx` (baru) menyediakan input untuk semua tipe:
+- min/maks/satuan, centang untuk pilihan ganda, boolean untuk checkbox;
+- skala, `time`, `datetime-local`, `textarea`.
+
+`EditFormModal` dan edit di popup peta memakainya, dengan validasi langsung dari `fieldTypes.ts`:
+- key yang tidak ada di `formFields` tetap pakai input teks;
+- foto tetap baca-saja (dikenali dari tipe).
+
+**Kriteria penerimaan**
+- [ ] Angka tersimpan sebagai angka, checkbox sebagai boolean, pilihan ganda sebagai `"A; B"`.
+- [ ] Nilai tidak valid menampilkan pesan dan memblokir simpan.
+- [ ] Edit field yang tidak disentuh tidak mengubah tipe nilainya.
+
+**Verifikasi:** `npm test`; `tsc`; lint; `next build`.
+**Dependensi:** T10, T11.
+**File:** `components/FieldValueInput.tsx` (baru), `ProjectDataTab.tsx`, `ProjectMapView.tsx`.
+**Ukuran:** M.
+
+### Checkpoint B — tipe field di web
+- [ ] `npm test`, `tsc` (baseline), lint, `next build` hijau.
+- [ ] (User, di browser) Tampilan dan edit atribut tipe lama dan baru, di tabel maupun popup peta.
+
+### Fase 3 — Aturan project
+
+#### T13 — Backend: pengaturan project + migrasi `0023` (gis-backend)
+**Deskripsi.**
+- Field baru: `Project.min_accuracy` (float, null), `Project.unique_fields` (JSON list), dan `GeoData.unique_key` (Char, null, indeks `(project, unique_key)`). Migrasi `0023` ditulis manual dan dicek offline.
+- `ProjectSerializer`:
+  - mapping camelCase/snake_case, respons camelCase;
+  - validasi rentang 0,01–500;
+  - `unique_fields` ⊆ label yang memenuhi syarat, maksimal 5.
+- Error validasi sudah dibalas 400 oleh `ProjectViewSet.create` (task keamanan); cukup pastikan pesan validasi baru ikut terkirim.
+
+**Kriteria penerimaan**
+- [ ] Round-trip pengaturan lewat API.
+- [ ] Nilai tidak valid → 400 dengan pesan per field.
+- [ ] Payload project lama (tanpa key baru) tidak berubah perilaku.
+- [ ] Migrasi konsisten (cek offline).
+
+**Verifikasi:** `"$PY" -m unittest mobile.tests_project_rules` + semua test lokal; `manage.py check`; cek migrasi offline; CI: `tests_project_rules_db`.
+**Dependensi:** tidak ada.
+**File:** `mobile/models.py`, `mobile/migrations/0023_project_rules.py`, `mobile/serializers.py`, `mobile/views.py`, `mobile/tests_project_rules.py` (baru), `mobile/tests_project_rules_db.py` (baru).
+**Ukuran:** M.
+
+#### T14 — Backend: aturan akurasi (422 `low_accuracy`)
+**Deskripsi.**
+- Helper murni `accuracy_violation(geometry_type, points, limit)`:
+  - point: akurasi titik;
+  - line/polygon: rata-rata titik dengan akurasi > 0; tanpa titik GPS → lolos.
+- Diterapkan sebelum simpan di `create`, per item di `bulk_sync`, dan di `partial_update` hanya bila `points` dikirim.
+- Respons sesuai SPEC §3.6, dicatat di sync log.
+
+**Kriteria penerimaan**
+- [ ] Point 7,4 m dengan batas 5 → 422; titik manual (0 atau null) → lolos.
+- [ ] Rata-rata mengabaikan titik akurasi 0/null.
+- [ ] `bulk_sync` menolak per item; `partial_update` tanpa `points` tidak dicek.
+- [ ] Project tanpa batas tidak terpengaruh.
+
+**Verifikasi:** test helper lokal + semua test lokal; `manage.py check`; CI: alur push nyata.
+**Dependensi:** T13.
+**File:** `mobile/validation.py`, `mobile/views.py`, `mobile/tests_project_rules.py`, `mobile/tests_project_rules_db.py`.
+**Ukuran:** M.
+
+#### T15 — Backend: aturan kombinasi unik (422 `duplicate`)
+**Deskripsi.**
+- Helper `unique_key(form_fields, unique_fields, form_data)` dengan normalisasi SPEC §3.7.
+- `GeoData.unique_key` diisi saat simpan (serializer create/update) bila project punya aturan. Dihitung ulang per batch saat `unique_fields` project berubah.
+- Cek di `create`, `bulk_sync`, dan `partial_update`, dalam transaksi dengan `select_for_update` project. Dilewati bila kunci sama dengan kunci tersimpan record itu.
+- Respons sesuai SPEC §3.7, termasuk `existing_id`.
+
+**Kriteria penerimaan**
+- [ ] Normalisasi: `"a1 "`=`"A1"`, `10`=`10.0`=`"10"`, spasi berulang.
+- [ ] Duplikat dari user lain ditolak; update record yang sama diterima.
+- [ ] Duplikat lama tetap bisa diedit bila kuncinya tidak berubah; mengubah kunci menjadi kunci record lain → ditolak.
+- [ ] Dua item berkunci sama dalam satu `bulk_sync` → item kedua ditolak.
+- [ ] Kunci terisi ulang saat aturan project diubah.
+
+**Verifikasi:** test lokal (helper + alur dengan mock) + semua test lokal; `manage.py check`; CI: alur DB.
+**Dependensi:** T13.
+**File:** `mobile/validation.py`, `mobile/serializers.py`, `mobile/views.py`, `mobile/tests_project_rules.py`, `mobile/tests_project_rules_db.py`.
+**Ukuran:** M–L. Bagian paling berisiko; dikerjakan teliti dengan test per kasus.
+
+#### T16 — HP: pengaturan project di model, DB v8, sync (terestria)
+**Deskripsi.**
+- `Project.minAccuracy` dan `uniqueFields` (JSON camelCase/snake_case).
+- DB v8: kolom baru di `projects`, migrasi idempoten dengan pola `missingColumns`.
+- Push project mengirim `min_accuracy`/`unique_fields`; pull membacanya.
+
+**Kriteria penerimaan**
+- [ ] Pemetaan baris v7 → v8 tanpa kehilangan data.
+- [ ] Round-trip JSON.
+- [ ] Payload push memuat pengaturan.
+
+**Verifikasi:** `flutter test` (pola `db_v7_test.dart`); `flutter analyze`.
+**Dependensi:** kontrak T13.
+**File:** `lib/models/project_model.dart`, `lib/services/database_service.dart`, `lib/services/sync_service.dart`, test.
+**Ukuran:** S–M.
+
+#### T17 — HP: "Project rules" di pembuat project
+**Deskripsi.** Bagian baru di `create_project_screen`:
+- **Minimum accuracy (m):** opsional, 0,01–500.
+- **Unique combination:** pilih field yang memenuhi syarat, berurutan, maksimal 5.
+  - Field yang dipilih otomatis wajib diisi.
+  - Mengganti label atau menghapus field ikut memperbarui kombinasi (berdasarkan id field).
+
+**Kriteria penerimaan**
+- [ ] Pengaturan tersimpan dan terkirim.
+- [ ] Field kunci tidak bisa dibuat opsional.
+- [ ] Rename/hapus field menjaga kombinasi tetap benar; muat di 360 dp.
+
+**Verifikasi:** test widget; `flutter test`; `flutter analyze`.
+**Dependensi:** T16.
+**File:** `lib/screens/project/create_project_screen.dart`, `lib/widgets/project/project_rules_section.dart` (baru), `lib/models/field_type_info.dart` (syarat field kunci), test.
+**Ukuran:** M.
+
+#### T18 — HP: akurasi — ambil titik & titik manual
+**Deskripsi.**
+- `lib/services/project_rules.dart` (baru, murni): keputusan ambil titik, rata-rata akurasi GPS, kunci unik (dipakai T19/T20).
+- Layar koleksi:
+  - tombol tambah titik dengan mode ikuti GPS → titik GPS (koordinat + akurasi + metadata fix);
+  - tanpa mode ikuti → manual (`accuracy: 0`); tap di mode gambar → 0.
+- Project point: ambil titik GPS dengan akurasi > batas, atau tanpa fix, ditolak dengan peringatan. Simpan record point yang titiknya > batas juga diblokir.
+- Banner GPS menampilkan batas project.
+- Editor geometri: vertex sisipan = 0; vertex dipindah mempertahankan akurasinya.
+- Semua tampilan akurasi memperlakukan 0 sebagai "placed manually".
+
+**Kriteria penerimaan**
+- [ ] Logika keputusan ambil titik teruji untuk semua kombinasi: ikut/tidak ikut, ada/tidak fix, di bawah/di atas batas, project tanpa batas.
+- [ ] Perilaku editor geometri teruji.
+- [ ] Project tanpa batas: alur ambil titik sama seperti sekarang, kecuali akurasi kini ikut tersimpan.
+
+**Verifikasi:** test unit `project_rules` + `GeometryEditSession`; `flutter test`; `flutter analyze`.
+**Dependensi:** T16.
+**File:** `lib/services/project_rules.dart` (baru), `lib/screens/data_collection/data_collection_screen.dart`, `lib/services/geometry_edit.dart`, `lib/screens/project/geometry_editor_screen.dart` (label manual), test.
+**Ukuran:** M.
+
+#### T19 — HP: akurasi — rata-rata line/polygon & peringatan
+**Deskripsi.**
+- Widget ringkasan akurasi: rata-rata dibanding batas, dengan peringatan bila melebihi. Tampil di form "Survey data", sheet Tracking Aktif, dan layar edit. Simpan tetap boleh.
+- Editor geometri menandai vertex di atas batas dan menampilkan rata-rata langsung.
+
+**Kriteria penerimaan**
+- [ ] Teks seperti "Average GPS accuracy 8.4 m — project limit 5 m". Tanpa titik GPS → tidak ada peringatan.
+- [ ] Menghapus vertex buruk langsung memperbarui rata-rata.
 - [ ] Muat di 360 dp.
 
-**Verifikasi:** `flutter test test/services/tracking/session_to_geodata_test.dart test/widgets/attribute_form_sheet_test.dart`, `flutter test` penuh, `flutter analyze`.
-**Dependensi:** tidak ada.
-**File:** `lib/widgets/tracking/attribute_form_sheet.dart`, `lib/services/tracking/session_to_geodata.dart`, `test/services/tracking/session_to_geodata_test.dart`, `test/widgets/attribute_form_sheet_test.dart` (baru).
-**Ukuran:** S.
-
-### Checkpoint B — mobile
-- [ ] `flutter test` hijau (714 + test baru); `flutter analyze` 0 error / 29 warning.
-- [ ] (User, di HP)
-  - tap pada blok bersebelahan langsung membuka detailnya;
-  - polygon bertumpuk memunculkan daftar pilihan;
-  - slider ukuran point terlihat efeknya, dan pratinjau sama dengan di peta;
-  - zoom dekat di tengah blok besar → blok tampil dan bisa diketuk;
-  - Style di sheet Tracking Aktif.
-
-### Fase 3 — Web dashboard
-
-#### T9 — Pilihan warna peta: Status verifikasi / Style feature (gis-dashboard)
-**Deskripsi.** Di peta data survei (`ProjectMapView`, mode project dan group): pilihan **Warna peta** dengan dua opsi, legenda sesuai mode, dan pilihan diingat per browser. Aturan warna mengikuti Keputusan 6.
-
-**Kriteria penerimaan**
-- [ ] Ganti mode langsung mengubah warna point/line/polygon tanpa memuat ulang halaman. Berlaku di mode vector tile maupun GeoJSON, project maupun group.
-- [ ] Mode Status sama persis dengan sekarang.
-- [ ] Mode Style: record ber-style tampil dengan warna, opacity, tebal, dan ukuran dari style-nya. Record tanpa style memakai default pabrik aplikasi.
-- [ ] Legenda menyebut mode aktif ("Warna: Status verifikasi" / "Warna: Style feature"). Di mode Style, legenda menampilkan contoh "Default (tanpa style)".
-- [ ] Filter verifikasi tetap bekerja di kedua mode; feature terpilih tetap merah.
-- [ ] Pilihan bertahan setelah reload. Bila localStorage tidak tersedia → Status.
-- [ ] URL tile memakai `sv=2`.
-
-**Verifikasi**
-- [ ] `npm test` dengan test baru `mapColorMode.test.mjs`:
-  - expression per mode dan per layer;
-  - nama properti sama dengan kolom tile T3;
-  - warna default dan ukuran point;
-  - baca/simpan pilihan.
-- [ ] `npx tsc --noEmit` sama dengan baseline (1 error lama); `next lint` per file tanpa masalah baru.
-- [ ] Manual di browser (setelah backend T3 ter-deploy di dev): project point/line/polygon dan group; ganti mode, reload, dan filter.
-
-**Dependensi:** T3 untuk mode vector tile (mode GeoJSON bisa jalan tanpa T3).
-**File:** `components/mobilesurveyproject/mapColorMode.ts` (baru), `components/mobilesurveyproject/mapColorMode.test.mjs` (baru), `components/mobilesurveyproject/components/MapColorLegend.tsx` (baru), `components/mobilesurveyproject/ProjectMapView.tsx`, `components/mobilesurveyproject/types.ts`.
+**Verifikasi:** test widget; `flutter test`; `flutter analyze`.
+**Dependensi:** T18.
+**File:** `lib/widgets/collection/accuracy_summary.dart` (baru), `lib/screens/data_collection/data_collection_screen.dart`, `lib/widgets/tracking/attribute_form_sheet.dart`, `lib/screens/project/edit_geo_data_screen.dart`, `lib/screens/project/geometry_editor_screen.dart`, test.
 **Ukuran:** M.
 
-### Checkpoint C — selesai
-- [ ] Di ketiga repo, semua test lokal hijau dan baseline analyze/tsc/lint tidak memburuk.
-- [ ] (User) Test DB backend lulus di CI; uji manual Checkpoint B dan T9 selesai.
+#### T20 — HP: cek kombinasi unik saat simpan
+**Deskripsi.**
+- `project_rules.uniqueKey` memakai normalisasi yang sama dengan server.
+- Cari duplikat di record lokal project.
+- Blokir simpan di form koleksi (record baru), sheet Tracking Aktif, dan layar edit (hanya bila kunci berubah). Pesannya sama dengan server.
+
+**Kriteria penerimaan**
+- [ ] `"a1 "` dan `"A1"` terdeteksi duplikat; `10` dan `10.0` juga.
+- [ ] Edit tanpa mengubah kunci tetap boleh.
+- [ ] Pesan menyebut nilai-nilai field kunci.
+
+**Verifikasi:** test unit + widget; `flutter test`; `flutter analyze`.
+**Dependensi:** T16, T18.
+**File:** `lib/services/project_rules.dart`, `lib/screens/data_collection/data_collection_screen.dart`, `lib/widgets/tracking/attribute_form_sheet.dart`, `lib/screens/project/edit_geo_data_screen.dart`, test.
+**Ukuran:** M.
+
+### Checkpoint C — aturan project
+- [ ] Semua test lokal hijau (HP + backend); migrasi `0023` konsisten.
+- [ ] (User) CI: `tests_project_rules_db` dan test DB lain.
+- [ ] (User, di HP, backend dev sudah memuat T13–T15)
+  - ambil point dengan akurasi buruk → ditolak;
+  - tracking dengan rata-rata buruk → peringatan → push ditolak → hapus titik buruk → sync berhasil;
+  - duplikat lokal diblokir, duplikat dari HP lain ditolak server.
+
+### Fase 4 — Builder project web interaktif
+
+#### T21 — Web: state & validasi builder (murni) (gis-dashboard)
+**Deskripsi.**
+- `builder/builderState.ts`: tambah, salin, hapus, pindah, dan ubah field. Kombinasi unik dijaga berdasarkan id field (rename/hapus ikut).
+- `builder/builderValidation.ts`:
+  - **error:** label kosong/ganda, aturan opsi, min > maks, panjang satuan, default tidak valid, aturan kombinasi unik, rentang akurasi;
+  - **peringatan:** rename, ganti tipe, atau hapus field pada project yang sudah punya data.
+
+**Kriteria penerimaan**
+- [ ] Test node untuk semua aturan dan operasi state.
+
+**Verifikasi:** `npm test`; `tsc`.
+**Dependensi:** T10.
+**File:** `builder/builderState.ts` (baru), `builder/builderValidation.ts` (baru), 2 test (baru).
+**Ukuran:** S–M.
+
+#### T22 — Web: builder kartu field di dialog project + "New project"
+**Deskripsi.**
+- `builder/ProjectBuilder.tsx` + `FieldCard.tsx` menggantikan daftar field baca-saja di dialog project `MobileSurveyDashboard.tsx`. Kartu bisa dilipat, disalin, dan dihapus; pengaturan sesuai tipe; error dan peringatan langsung tampil di kartu.
+- Tombol "New project": id dari `crypto.randomUUID()`; tipe geometri hanya bisa dipilih saat membuat.
+- Payload menyimpan urutan field.
+- `CreateEditDialog.tsx` dan ekspornya di `index.ts` dihapus.
+
+**Kriteria penerimaan**
+- [ ] Buat project baru dan edit form project yang ada berhasil (cek manual ke backend dev).
+- [ ] Error memblokir simpan; peringatan tidak.
+- [ ] Respons `applied: false` dari server (user bukan pembuat) tampil sebagai gagal, bukan "saved".
+- [ ] `tsc`, lint, dan `next build` hijau.
+
+**Verifikasi:** `npm test`; `tsc`; lint; `next build`; manual browser.
+**Dependensi:** T21, T12 (input default memakai `FieldValueInput`).
+**File:** `builder/ProjectBuilder.tsx` (baru), `builder/FieldCard.tsx` (baru), `MobileSurveyDashboard.tsx`, `CreateEditDialog.tsx` (hapus), `index.ts`.
+**Ukuran:** M–L.
+
+#### T23 — Web: drag & drop urutan
+**Deskripsi.**
+- `framer-motion` `Reorder.Group`/`Reorder.Item` dengan pegangan drag (`useDragControls`), supaya isian di kartu tetap bisa diklik dan diketik.
+- Tombol naik/turun untuk keyboard, dengan `aria-label`.
+
+**Kriteria penerimaan**
+- [ ] Seret dan tombol mengubah urutan; urutan tersimpan.
+- [ ] Bisa dipakai dengan keyboard.
+- [ ] Tidak ada dependency baru.
+
+**Verifikasi:** `npm test` (operasi pindah di T21); `tsc`; lint; `next build`; manual.
+**Dependensi:** T22.
+**File:** `builder/ProjectBuilder.tsx`, `builder/FieldCard.tsx`.
+**Ukuran:** S–M.
+
+#### T24 — Web: pratinjau form langsung
+**Deskripsi.**
+- `builder/FormPreview.tsx`: panel bergaya layar HP yang menampilkan field berurutan memakai `FieldValueInput`, dengan state lokal yang interaktif.
+- Menampilkan tanda wajib, satuan, default (termasuk `now`), dan pesan validasi.
+- Layar lebar: panel di samping. Layar sempit: tab "Preview".
+
+**Kriteria penerimaan**
+- [ ] Perubahan di builder langsung terlihat.
+- [ ] Mengisi pratinjau tidak mengubah project.
+
+**Verifikasi:** `tsc`; lint; `next build`; manual.
+**Dependensi:** T22, T12.
+**File:** `builder/FormPreview.tsx` (baru), `builder/ProjectBuilder.tsx`, `MobileSurveyDashboard.tsx` (tata letak).
+**Ukuran:** M.
+
+#### T25 — Web: aturan project di builder
+**Deskripsi.**
+- `builder/ProjectRulesSection.tsx`: isian akurasi minimum dan pemilih kombinasi unik (chip berurutan dari field yang memenuhi syarat, maksimal 5). Field yang dipilih otomatis wajib.
+- Payload dan muat edit memakai `minAccuracy`/`uniqueFields`.
+- Pesan 400 dari server tampil.
+
+**Kriteria penerimaan**
+- [ ] Pengaturan tersimpan dan termuat ulang.
+- [ ] Field yang dipilih jadi wajib; menghapus field mengeluarkannya dari kombinasi.
+- [ ] Error validasi tampil di builder.
+
+**Verifikasi:** `npm test`; `tsc`; lint; `next build`; manual dengan backend dev (T13).
+**Dependensi:** T22, T13.
+**File:** `builder/ProjectRulesSection.tsx` (baru), `builder/ProjectBuilder.tsx`, `MobileSurveyDashboard.tsx`, `types.ts`.
+**Ukuran:** M.
+
+### Checkpoint D — selesai
+- [ ] Ketiga repo: semua test lokal hijau; baseline analyze/`tsc`/lint tidak memburuk; `next build` berhasil.
+- [ ] (User) CI test DB backend lulus.
+- [ ] (User) Uji manual Checkpoint A–C dan builder web: buat project baru, seret urutan, pratinjau, aturan project, simpan, lalu pull di HP.
 - [ ] Urutan deploy di bawah dijalankan.
 
 ## Urutan deploy (oleh user)
-1. gis-backend `dev1`: `d54d508` + T1–T3 → CI hijau → deploy (migrasi `0021`, `0022`).
-2. gis-dashboard (T9), setelah backend.
-3. Rilis aplikasi mobile, setelah backend.
-
-## Perubahan SPEC (diterapkan di commit persiapan setelah plan disetujui)
-- §1 Keputusan: web dashboard menampilkan style lewat pilihan warna peta. Ekspor dan PDF tetap belum.
-- §3: `pointSize` 10–24; key asing diabaikan (5 key inti wajib); aturan verifikasi (perubahan style atau foto saja tidak me-reset verifikasi).
-- §7: test hit-test dua tingkat.
-- §9, kriteria baru:
-  - (12) perubahan style atau foto saja tidak mengubah verifikasi;
-  - (13) tap di dalam satu blok yang bersebelahan dengan blok lain langsung membuka detailnya;
-  - (14) peta web punya pilihan warna dengan legenda yang menyebut mode aktif.
-- §10: pertanyaan 2 (web dashboard) terjawab sebagian.
+1. gis-backend `dev1`: T1, T13–T15 (migrasi `0023`) → CI hijau → deploy.
+2. Rilis app (T2–T9, T16–T20) dan deploy dashboard (T10–T12, T21–T25), setelah backend.
+3. Pembuat project memakai app versi baru sebelum memakai tipe baru (SPEC §3.8).
 
 ## Risiko
-
 | Risiko | Dampak | Mitigasi |
 |---|---|---|
-| Perbandingan isi menganggap "sama" padahal isi berubah, sehingga verifikasi lama tetap berlaku | Tinggi | Field non-foto dibandingkan persis; format yang tidak dikenal dianggap berubah; test per kasus |
-| Perbandingan menganggap "berubah" padahal sama (format angka/tanggal berbeda), sehingga perbaikan tidak berefek | Sedang | Test dengan payload berbentuk kiriman HP sungguhan (push lalu kirim ulang); titik dibandingkan sebagai angka, bukan teks |
-| Fungsi tile rusak sehingga peta web kosong | Tinggi | Cast angka hanya bila bertipe number; test DB di CI; migrasi bisa dibalik |
-| Kontrak berubah setelah sempat dipakai | Sedang | Belum ada yang ter-deploy atau dirilis; T2 dikerjakan sebelum deploy; mobile men-clamp saat membaca |
-| `ProjectMapView.tsx` makin besar | Rendah | Logika di `mapColorMode.ts` dan `MapColorLegend.tsx`; file besar hanya wiring |
-| Hijau/oranye default aplikasi mirip warna status verified/unverified | Sedang | Judul legenda selalu menyebut mode; pilihan mode terlihat di peta |
-| Aturan tap berubah dari yang sudah dites | Rendah | Test untuk setiap kasus; uji di HP (Checkpoint B) |
+| Aturan unik salah menolak data sah (normalisasi beda HP vs server) | Tinggi | Tabel kasus normalisasi yang sama di test HP dan server; update tanpa ganti kunci tidak dicek |
+| Push bersamaan lolos sebagai duplikat | Tinggi | Transaksi + `select_for_update` project; kunci terindeks |
+| Hitung ulang `unique_key` lambat pada project besar | Sedang | Per batch; hanya saat aturan berubah |
+| Aturan akurasi menolak data project yang sekarang aktif | Sedang | Hanya berlaku bila `min_accuracy` diisi; titik manual/null lolos; pesan menjelaskan cara memperbaiki |
+| Arti akurasi 0 (manual) tertukar dengan "sangat akurat" | Sedang | Semua tampilan menulis "placed manually"; rata-rata hanya dari titik akurasi > 0 |
+| File besar makin besar | Sedang | Logika di file baru (`project_rules`, `field_values`, `form_inputs/`, `builder/`); file besar hanya wiring |
+| Aturan validasi HP/web/server tidak sama | Sedang | Satu tabel kasus diuji di ketiga stack |
+| App lama menurunkan tipe baru menjadi `text` | Sedang | Didokumentasikan (SPEC §3.8); versi baru mempertahankan nama tipe tak dikenal |
 
 ## Pertanyaan terbuka (default dipakai bila tidak dijawab)
-1. **T8 (Style di sheet Tracking Aktif).** Default: dikerjakan.
-2. **Ukuran point di web mode Style** = `pointSize × ⅔`. Default: ya.
-3. **Peta kecil di modal detail record** (`DataDetailMap`). Default: tetap memakai warna status.
-4. **Pilihan warna diingat per browser**, bukan per akun. Default: ya.
-5. **Test upgrade DB v6 → v7 di SQLite sungguhan** butuh dev dependency `sqflite_common_ffi`. Default: tidak (cek manual di HP).
+1. **Hapus `CreateEditDialog.tsx`** (builder lama yang tidak terpasang). Default: dihapus di T22.
+2. **Batas lebar layar untuk pratinjau di samping.** Default: ≥ 1100 px; di bawahnya jadi tab.
+3. **Pesan di HP saat rata-rata akurasi melebihi batas** — peringatan di form (bukan dialog). Default: ya.
 
 ## Baseline & perintah
-- **terestria:** `flutter test` 714 lulus; `flutter analyze` 0 error, 29 warning.
-- **gis-backend** (Git Bash). Unittest lokal: 64 lulus. Test `*_db` dan `tests_verification` hanya jalan di CI.
+- **terestria:** `flutter test` 735 lulus; `flutter analyze` 0 error, 29 warning.
+- **gis-backend** (Git Bash):
   ```
   PY="/c/Users/User/.conda/envs/django-env/python.exe"
   export PATH="/c/Users/User/.conda/envs/django-env/Library/bin:$PATH"
-  "$PY" -m unittest mobile.tests_feature_style mobile.tests_photo_download mobile.tests_push_rules mobile.tests_pull_filter  # + modul test baru
+  "$PY" -m unittest mobile.tests_feature_style mobile.tests_photo_download mobile.tests_push_rules \
+    mobile.tests_pull_filter mobile.tests_verification_keep mobile.tests_tile_style mobile.tests_validation  # + modul baru
   "$PY" manage.py check
   ```
-- **gis-dashboard:** `npm test` 19 lulus; `npx tsc --noEmit` 1 error lama (`pages/api/auth/[...nextauth].tsx:13`); `next lint` dibandingkan per file dengan HEAD.
+  Baseline: 99 lulus. Test `*_db` hanya jalan di CI.
+- **gis-dashboard:** `npm test` 29 lulus; `npx tsc --noEmit` 1 error lama; `next lint` dibanding per file dengan HEAD; `next build`.
