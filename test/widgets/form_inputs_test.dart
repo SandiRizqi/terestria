@@ -63,6 +63,50 @@ void main() {
     });
   });
 
+  group('pilihan ganda', () {
+    FormFieldModel hama({bool required = false}) => FormFieldModel(
+        id: 'h',
+        label: 'Hama',
+        type: FieldType.multiselect,
+        required: required,
+        options: const ['Ulat api', 'Tikus', 'Kumbang']);
+
+    testWidgets('centang beberapa → "A; B" sesuai urutan opsi; lepas semua → kosong',
+        (tester) async {
+      final h = await _pump(tester, [hama()]);
+      await tester.tap(find.text('Tikus'));
+      await tester.pump();
+      await tester.tap(find.text('Ulat api'));
+      await tester.pump();
+      expect(h.saved()['Hama'], 'Ulat api; Tikus');
+      await tester.tap(find.text('Tikus'));
+      await tester.pump();
+      await tester.tap(find.text('Ulat api'));
+      await tester.pump();
+      expect(h.saved()['Hama'], '');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('nilai lama di luar daftar tampil & ditolak; wajib kosong ditolak',
+        (tester) async {
+      final h = await _pump(tester, [
+        hama(),
+        FormFieldModel(
+            id: 'w',
+            label: 'Wajib',
+            type: FieldType.multiselect,
+            required: true,
+            options: const ['A']),
+      ], initial: {'Hama': 'Tikus; Babi'});
+      expect(find.textContaining('Babi'), findsOneWidget);
+      expect(h.formKey.currentState!.validate(), isFalse);
+      await tester.pump();
+      expect(find.text('Value has an option that is not in the list: Babi'),
+          findsOneWidget);
+      expect(find.text('This field is required'), findsOneWidget);
+    });
+  });
+
   group('skala 1–5', () {
     testWidgets('ketuk bintang → tersimpan angka; ketuk lagi → kosong',
         (tester) async {

@@ -57,6 +57,32 @@ void main() {
     expect(result()?.label, 'Kondisi');
   });
 
+  testWidgets('pilihan ganda: opsi wajib, tanpa ";" dan tanpa duplikat',
+      (tester) async {
+    final result = await _openDialog(tester);
+    await _pickType(tester, 'Multiple choice');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Field Label'), 'Hama');
+    final options = find.widgetWithText(TextFormField, 'Options (one per line)');
+
+    await tester.enterText(options, 'Ulat api\nTikus; Babi');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result(), isNull);
+    expect(find.textContaining('";"'), findsOneWidget);
+
+    await tester.enterText(options, 'Ulat api\nTikus\nulat api ');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result(), isNull);
+    expect(find.textContaining('twice'), findsOneWidget);
+
+    await tester.enterText(options, 'Ulat api\nTikus');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result()?.type, FieldType.multiselect);
+    expect(result()?.options, ['Ulat api', 'Tikus']);
+  });
+
   testWidgets('teks panjang bisa dipilih', (tester) async {
     final result = await _openDialog(tester);
     await _pickType(tester, 'Long text');

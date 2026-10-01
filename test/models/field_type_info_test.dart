@@ -27,6 +27,7 @@ void main() {
       FieldType.decimal,
       FieldType.date,
       FieldType.dropdown,
+      FieldType.multiselect,
       FieldType.checkbox,
       FieldType.rating,
       FieldType.photo,

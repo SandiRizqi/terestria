@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../models/field_type_info.dart';
 import '../models/form_field_model.dart';
 import '../theme/app_theme.dart';
+import '../utils/field_values.dart' show multiselectSeparator;
 
 class FormFieldBuilderDialog extends StatefulWidget {
   final FormFieldModel? field;
@@ -56,24 +57,42 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
     super.dispose();
   }
 
+  bool get _hasOptions =>
+      _selectedType == FieldType.dropdown ||
+      _selectedType == FieldType.multiselect;
+
+  /// Satu opsi per baris; baris kosong diabaikan, spasi di tepi dibuang.
+  List<String> get _options => [
+        for (final line in _optionsController.text.split('\n'))
+          if (line.trim().isNotEmpty) line.trim(),
+      ];
+
+  /// Opsi minimal satu dan unik (huruf besar/kecil diabaikan); opsi pilihan
+  /// ganda tanpa `;` karena `;` pemisah nilai yang tersimpan.
+  String? _optionsIssue() {
+    final options = _options;
+    if (options.isEmpty) return 'Please enter at least one option';
+    if (_selectedType == FieldType.multiselect) {
+      for (final option in options) {
+        if (option.contains(multiselectSeparator)) {
+          return 'Options cannot contain ";" — it separates the chosen '
+              'values ("$option")';
+        }
+      }
+    }
+    final seen = <String>{};
+    for (final option in options) {
+      if (!seen.add(option.toLowerCase())) {
+        return '"$option" is listed twice (letter case is ignored)';
+      }
+    }
+    return null;
+  }
+
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
-    List<String>? options;
-    if (_selectedType == FieldType.dropdown) {
-      options = _optionsController.text
-          .split('\n')
-          .where((s) => s.trim().isNotEmpty)
-          .toList();
-      
-      if (options.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Dropdown must have at least one option')),
-        );
-        return;
-      }
-    }
-
+    final options = _hasOptions ? _options : null;
     final original = widget.field;
     final sameType = original != null && original.type == _selectedType;
     final isNumeric =
@@ -209,23 +228,18 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
               ],
               const SizedBox(height: AppTheme.spacingMedium),
 
-              // Options (only for dropdown)
-              if (_selectedType == FieldType.dropdown) ...[
+              // Opsi: dropdown & pilihan ganda
+              if (_hasOptions) ...[
                 TextFormField(
                   controller: _optionsController,
                   decoration: const InputDecoration(
                     labelText: 'Options (one per line)',
                     border: OutlineInputBorder(),
                     hintText: 'Option 1\nOption 2\nOption 3',
+                    errorMaxLines: 3,
                   ),
                   maxLines: 5,
-                  validator: (value) {
-                    if (_selectedType == FieldType.dropdown &&
-                        (value == null || value.isEmpty)) {
-                      return 'Please enter at least one option';
-                    }
-                    return null;
-                  },
+                  validator: (_) => _optionsIssue(),
                 ),
                 const SizedBox(height: AppTheme.spacingMedium),
               ],

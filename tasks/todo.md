@@ -9,7 +9,7 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 - [x] T2: model field (5 tipe baru, min/max/unit, nama tipe asli dipertahankan), daftar tipe tunggal (`field_type_info.dart`), perbaikan `decimal` (cloud/template), payload sync (`toSyncJson`). Builder kini juga mempertahankan `defaultValue` saat field diedit.
 - [x] T3: `field_values.dart` (parse/format/validasi/tampilan per tipe) + `formFieldIssues` memakai `fieldValueIssue` — tabel kasus sama dengan server.
 - [x] T4: input teks panjang (banyak baris, tanpa QR/toggle huruf) & skala 1–5 (`RatingInput`, ketuk lagi = kosong) + builder; dropdown tipe di builder `isExpanded` (label panjang tidak meluber di 360 dp).
-- [ ] T5: input pilihan ganda `"A; B"` (+ editor opsi tanpa `;`).
+- [x] T5: input pilihan ganda `"A; B"` (`MultiChoiceInput`; nilai lama di luar daftar tetap tampil & ditandai) + editor opsi bersama dropdown: minimal 1, unik (huruf besar/kecil diabaikan; dropdown dengan opsi ganda dulu bisa crash), tanpa `;` untuk pilihan ganda. Opsi kini disimpan tanpa spasi di tepi.
 - [ ] T6: input waktu & tanggal-waktu.
 - [ ] T7: min/maks + satuan (builder + form).
 - [ ] T8: nilai default (record baru saja; draft → pin → default; `now`).
