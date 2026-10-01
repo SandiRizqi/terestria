@@ -5,7 +5,7 @@ Repo: `gis-backend` @ `dev1` (T1–T3) · `terestria` @ `main` (T2, T4–T8) · 
 Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend unittest lokal 64 · dashboard `npm test` 19, `tsc` 1 error lama.
 
 ## Fase 1 — Backend (sebelum deploy `d54d508`)
-- [ ] T1 (kritis): verifikasi hanya di-reset bila isian form non-foto atau koordinat titik berubah; foto dan style tidak dicek; `updated_at` tetap naik.
+- [x] T1 (kritis, gis-backend `ec74e6f`): verifikasi hanya di-reset bila isian form non-foto atau koordinat titik berubah; foto dan style tidak dicek; `updated_at` tetap naik. Test lokal +13 (`tests_verification_keep`), test DB +2 (CI).
 - [ ] T2: kontrak style — `pointSize` 10–24, key asing diabaikan (backend `clean_style` + mobile `feature_style.dart` + `docs/sync-push-contract.md`).
 - [ ] T3: tile MVT membawa 5 properti style (migrasi `0022`) + segmen versi `s2` di key cache tile.
 

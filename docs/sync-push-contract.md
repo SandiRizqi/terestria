@@ -33,6 +33,9 @@ App menampilkan `message` untuk `error_code` yang dikenali (bukan pesan generik 
 3. Project nonaktif hanya menolak **data** (geodata); sinkron metadata project tidak terpengaruh.
 4. `bulk_sync`: item konflik / project nonaktif masuk `errors[]` dengan `error_code` yang sama
    (konflik juga membawa `data`); item lain tetap diproses.
+5. Verifikasi manual (dashboard) hanya di-reset bila **isi** record berubah: isian form non-foto
+   atau koordinat titik. Push yang hanya mengubah style atau foto, atau mengirim ulang data yang
+   sama, mempertahankan verifikasi (gis-backend `validation.ingest_content_changed`).
 
 ## 4. Style per feature (`style`)
 
