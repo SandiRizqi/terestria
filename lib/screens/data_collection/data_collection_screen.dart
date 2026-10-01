@@ -48,6 +48,7 @@ import '../../services/layer_service.dart';
 import '../../services/collection_draft_service.dart';
 import '../../services/device_health_service.dart';
 import '../../services/geometry_validation.dart';
+import '../../utils/record_title.dart';
 import '../../utils/ui_feedback.dart';
 import '../../widgets/readiness/daily_readiness_check.dart';
 import '../readiness/field_readiness_screen.dart';
@@ -2673,7 +2674,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 3,
-                    child: Text(entry.value.toString(),
+                    child: Text(
+                        recordValueText(entry.key, entry.value, widget.project),
                         style: const TextStyle(fontSize: 13)),
                   ),
                 ],

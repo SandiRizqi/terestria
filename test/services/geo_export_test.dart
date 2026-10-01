@@ -178,6 +178,54 @@ void main() {
       expect(row[5], endsWith('Z'));
     });
 
+    test('tipe field baru: nilai apa adanya, nama kolom = label (tanpa satuan)',
+        () {
+      final project = _project(GeometryType.point, fields: [
+        FormFieldModel(id: 'n', label: 'Catatan', type: FieldType.textarea),
+        FormFieldModel(
+            id: 'h',
+            label: 'Hama',
+            type: FieldType.multiselect,
+            options: const ['Ulat api', 'Tikus']),
+        FormFieldModel(id: 'j', label: 'Jam', type: FieldType.time),
+        FormFieldModel(id: 'w', label: 'Waktu', type: FieldType.datetime),
+        FormFieldModel(id: 'k', label: 'Kondisi', type: FieldType.rating),
+        FormFieldModel(
+            id: 'd', label: 'Diameter', type: FieldType.decimal, unit: 'cm'),
+      ]);
+      final form = {
+        'Catatan': 'Baris 1\nBaris 2',
+        'Hama': 'Ulat api; Tikus',
+        'Jam': '07:15',
+        'Waktu': '2026-10-01T07:15:00.000',
+        'Kondisi': 4,
+        'Diameter': 35.5,
+      };
+      final records = [
+        _data('a', [_p(106.8, -6.2)], form: form),
+        // Pilihan ganda berupa daftar (data lama/web) → digabung "; ".
+        _data('b', [_p(106.8, -6.2)], form: {
+          'Hama': ['Ulat api', 'Tikus']
+        }),
+      ];
+
+      final csv = GeoExport.csv(project, records);
+      final header = csv.split('\n').first;
+      expect(header, endsWith(',Catatan,Hama,Jam,Waktu,Kondisi,Diameter'));
+      expect(
+          csv,
+          contains(',surveyor,"Baris 1\nBaris 2",Ulat api; Tikus,07:15,'
+              '2026-10-01T07:15:00.000,4,35.5\n'));
+      expect(csv, contains(',surveyor,,Ulat api; Tikus,,,,\n'));
+
+      final geo = jsonDecode(GeoExport.geoJson(project, records).encode())
+          as Map<String, dynamic>;
+      final props = (geo['features'] as List).first['properties'] as Map;
+      for (final e in form.entries) {
+        expect(props[e.key], e.value, reason: e.key);
+      }
+    });
+
     test('angka negatif tidak diberi awalan', () {
       expect(GeoExport.csvEscape('-6.25'), '-6.25');
       expect(GeoExport.csvEscape(-6.25), '-6.25');

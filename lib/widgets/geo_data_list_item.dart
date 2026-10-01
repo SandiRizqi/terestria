@@ -228,7 +228,7 @@ class GeoDataListItem extends StatelessWidget {
                             ),
                             Expanded(
                               child: Text(
-                                _formatFormValue(entry.value),
+                                _formatFormValue(entry.key, entry.value),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: Color(0xFF1F2937),
@@ -447,7 +447,12 @@ class GeoDataListItem extends StatelessWidget {
         .length;
   }
 
-  String _formatFormValue(dynamic value) {
+  /// Isian field project: terformat sesuai tipenya (`4 / 5`, `35.5 cm`,
+  /// Yes/No, …). Isian lain: teks tanggal diringkas, selain itu apa adanya.
+  String _formatFormValue(String fieldName, dynamic value) {
+    if (projectField(fieldName, project) != null) {
+      return recordValueText(fieldName, value, project);
+    }
     if (value == null) return '';
 
     // Jika sudah DateTime langsung format

@@ -13,6 +13,7 @@ import '../../services/storage_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/pull_preflight.dart';
+import 'widgets/filter_option_chips.dart';
 import 'widgets/pull_filter_sheet.dart';
 import '../data_collection/data_collection_screen.dart';
 import 'edit_geo_data_screen.dart';
@@ -26,6 +27,8 @@ import '../../services/project_template_service.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/field_values.dart';
+import '../../utils/record_title.dart';
 import '../../utils/ui_feedback.dart';
 import '../../services/export/geo_export.dart';
 import '../../services/photo_sync_service.dart';
@@ -201,63 +204,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           }
         }
 
-        // ── 3. Per-field filters ──
+        // ── 3. Per-field filters (aturan per tipe: fieldFilterMatches) ──
         for (final entry in _fieldFilters.entries) {
-          final fieldKey = entry.key;
-          final filterValue = entry.value;
-
-          // Nilai kosong/null = abaikan filter ini
-          if (filterValue == null) continue;
-          if (filterValue is String && filterValue.isEmpty) continue;
-
-          final rawValue = data.formData[fieldKey];
-
-          // Cari field definition untuk tahu tipenya
           final fieldDef = _currentProject.formFields
-              .where((f) => f.label == fieldKey)
+              .where((f) => f.label == entry.key)
               .firstOrNull;
-
           if (fieldDef == null) continue;
-
-          switch (fieldDef.type) {
-            case FieldType.text:
-            case FieldType.number:
-            case FieldType.decimal:
-            case FieldType.textarea:
-            case FieldType.multiselect:
-            case FieldType.time:
-            case FieldType.datetime:
-            case FieldType.rating:
-              // Contains (case-insensitive)
-              if (!rawValue.toString().toLowerCase().contains(
-                    filterValue.toString().toLowerCase())) {
-                return false;
-              }
-              break;
-
-            case FieldType.dropdown:
-              // Exact match
-              if (rawValue.toString() != filterValue.toString()) return false;
-              break;
-
-            case FieldType.checkbox:
-              // filterValue: 'true' | 'false' | '' (semua)
-              if (filterValue.toString().isNotEmpty) {
-                final expected = filterValue.toString() == 'true';
-                final actual = rawValue == true ||
-                    rawValue.toString().toLowerCase() == 'true';
-                if (actual != expected) return false;
-              }
-              break;
-
-            case FieldType.date:
-              // Exact date string match
-              if (rawValue.toString() != filterValue.toString()) return false;
-              break;
-
-            case FieldType.photo:
-              // Photo tidak difilter
-              break;
+          if (!fieldFilterMatches(
+              fieldDef, data.formData[entry.key], entry.value)) {
+            return false;
           }
         }
 
@@ -1785,12 +1740,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     DateTimeRange? localDateFilter = _dateFilter;
     final Map<String, dynamic> localFieldFilters = Map.from(_fieldFilters);
 
-    // Controller untuk text/number/decimal fields
+    // Controller untuk field yang difilter dengan teks
     final Map<String, TextEditingController> textControllers = {};
     for (final field in _currentProject.formFields) {
-      if (field.type == FieldType.text ||
-          field.type == FieldType.number ||
-          field.type == FieldType.decimal) {
+      if (fieldFilterKind(field.type) == FieldFilterKind.text) {
         textControllers[field.label] = TextEditingController(
           text: localFieldFilters[field.label]?.toString() ?? '',
         );
@@ -1945,7 +1898,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           // ── Per-field filters ──
                           ...() {
                             final filterableFields = _currentProject.formFields
-                                .where((f) => f.type != FieldType.photo)
+                                .where((f) =>
+                                    fieldFilterKind(f.type) != FieldFilterKind.none)
                                 .toList();
 
                             if (filterableFields.isEmpty) return <Widget>[];
@@ -1961,15 +1915,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                   ),
                                   const SizedBox(height: 10),
 
-                                  // UI berdasarkan tipe field
-                                  if (field.type == FieldType.text ||
-                                      field.type == FieldType.number ||
-                                      field.type == FieldType.decimal)
+                                  // UI berdasarkan jenis filter tipe field
+                                  if (fieldFilterKind(field.type) ==
+                                      FieldFilterKind.text)
                                     TextField(
                                       controller: textControllers[field.label],
-                                      keyboardType: field.type == FieldType.text
-                                          ? TextInputType.text
-                                          : const TextInputType.numberWithOptions(decimal: true),
+                                      keyboardType: field.type == FieldType.number ||
+                                              field.type == FieldType.decimal
+                                          ? const TextInputType.numberWithOptions(decimal: true)
+                                          : TextInputType.text,
                                       onChanged: (v) => localFieldFilters[field.label] = v,
                                       decoration: InputDecoration(
                                         hintText: 'Search in "${field.label}"…',
@@ -2006,53 +1960,37 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                       ),
                                     )
 
-                                  else if (field.type == FieldType.dropdown &&
-                                      field.options != null &&
-                                      field.options!.isNotEmpty)
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: field.options!.map((option) {
-                                        final isSelected =
-                                            localFieldFilters[field.label] == option;
-                                        return GestureDetector(
-                                          onTap: () {
-                                            setSheetState(() {
-                                              if (isSelected) {
-                                                localFieldFilters.remove(field.label);
-                                              } else {
-                                                localFieldFilters[field.label] = option;
-                                              }
-                                            });
-                                          },
-                                          child: AnimatedContainer(
-                                            duration: const Duration(milliseconds: 150),
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 14, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              color: isSelected
-                                                  ? AppTheme.primaryGreen
-                                                  : Colors.grey.shade100,
-                                              borderRadius: BorderRadius.circular(20),
-                                              border: Border.all(
-                                                color: isSelected
-                                                    ? AppTheme.primaryGreen
-                                                    : Colors.grey.shade300,
-                                              ),
-                                            ),
-                                            child: Text(
-                                              option,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w500,
-                                                color: isSelected
-                                                    ? Colors.white
-                                                    : AppTheme.textPrimary,
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
+                                  else if (fieldFilterKind(field.type) ==
+                                          FieldFilterKind.choice &&
+                                      (field.options ?? const []).isNotEmpty)
+                                    // Dropdown: sama persis; pilihan ganda:
+                                    // record yang memuat opsi ini.
+                                    FilterOptionChips(
+                                      values: field.options!,
+                                      selected: localFieldFilters[field.label]
+                                          ?.toString(),
+                                      onChanged: (v) => setSheetState(() {
+                                        if (v == null) {
+                                          localFieldFilters.remove(field.label);
+                                        } else {
+                                          localFieldFilters[field.label] = v;
+                                        }
+                                      }),
+                                    )
+
+                                  else if (field.type == FieldType.rating)
+                                    FilterOptionChips(
+                                      values: const ['1', '2', '3', '4', '5'],
+                                      labelOf: (v) => '$v ★',
+                                      selected: localFieldFilters[field.label]
+                                          ?.toString(),
+                                      onChanged: (v) => setSheetState(() {
+                                        if (v == null) {
+                                          localFieldFilters.remove(field.label);
+                                        } else {
+                                          localFieldFilters[field.label] = v;
+                                        }
+                                      }),
                                     )
 
                                   else if (field.type == FieldType.checkbox)
@@ -3069,7 +3007,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 Expanded(
                                   flex: 3,
                                   child: Text(
-                                    entry.value.toString(),
+                                    recordValueText(
+                                        entry.key, entry.value, _currentProject),
                                     style: const TextStyle(
                                       fontSize: 13,
                                       color: Color(0xFF1F2937),

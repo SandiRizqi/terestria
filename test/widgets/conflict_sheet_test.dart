@@ -73,6 +73,100 @@ void main() {
     ]);
   });
 
+  group('tipe field baru', () {
+    final typed = Project(
+      id: 'pA',
+      name: 'Blok A',
+      description: '',
+      geometryType: GeometryType.point,
+      formFields: [
+        FormFieldModel(id: 'k', label: 'Kondisi', type: FieldType.rating),
+        FormFieldModel(
+            id: 'h',
+            label: 'Hama',
+            type: FieldType.multiselect,
+            options: const ['Ulat api', 'Tikus']),
+        FormFieldModel(
+            id: 'd', label: 'Diameter', type: FieldType.decimal, unit: 'cm'),
+        FormFieldModel(id: 'w', label: 'Waktu', type: FieldType.datetime),
+        FormFieldModel(id: 'c', label: 'Catatan', type: FieldType.textarea),
+      ],
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    GeoData record(Map<String, dynamic> form) => GeoData(
+          id: 'g1',
+          projectId: 'pA',
+          formData: form,
+          points: [_pt(106.8)],
+          createdAt: DateTime(2026, 9, 1),
+          updatedAt: DateTime(2026, 9, 30),
+        );
+
+    test('perbedaan ditampilkan terformat', () {
+      final changes = conflictChangeSummary(
+        record({
+          'Kondisi': 4,
+          'Diameter': 35.5,
+          'Waktu': '2026-10-01T07:15:00.000',
+          'Catatan': 'Baris 1\nBaris 2',
+        }),
+        record({
+          'Kondisi': 5,
+          'Diameter': 36,
+          'Waktu': '2026-10-01T08:00:00.000',
+          'Catatan': 'Baris 1\nBaris 3',
+        }),
+        typed,
+      );
+      expect(changes, [
+        'Kondisi: "4 / 5" → "5 / 5"',
+        'Diameter: "35.5 cm" → "36 cm"',
+        'Waktu: "2026-10-01 07:15" → "2026-10-01 08:00"',
+        'Catatan: "Baris 1 Baris 2" → "Baris 1 Baris 3"',
+      ]);
+    });
+
+    test('bentuk simpan berbeda tetapi nilainya sama → bukan perbedaan', () {
+      final changes = conflictChangeSummary(
+        record({'Kondisi': 4, 'Hama': 'Ulat api; Tikus', 'Diameter': 36}),
+        record({
+          'Kondisi': '4',
+          'Hama': ['Ulat api', 'Tikus'],
+          'Diameter': 36.0,
+        }),
+        typed,
+      );
+      expect(changes, isEmpty);
+    });
+
+    testWidgets('judul kartu memakai nilai terformat', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ConflictResolutionSheet(
+            project: typed,
+            entries: [
+              ConflictEntry(
+                conflict: SyncConflict(
+                  geoDataId: 'g1',
+                  projectId: 'pA',
+                  serverJson: _serverJson('g1'),
+                  detectedAt: DateTime(2026, 9, 30, 10),
+                ),
+                local: record({'Kondisi': 4}),
+              ),
+            ],
+            keepMine: (_) async => SyncResult(success: true, message: 'ok'),
+            useServer: (_) async => SyncResult(success: true, message: 'ok'),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('4 / 5'), findsOneWidget);
+    });
+  });
+
   testWidgets('banner menyebut jumlah & membuka penyelesaian', (tester) async {
     var opened = 0;
     await tester.pumpWidget(MaterialApp(

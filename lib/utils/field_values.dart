@@ -327,6 +327,80 @@ String displayFieldValue(FormFieldModel field, Object? value) {
     case FieldType.textarea:
     case FieldType.time:
     case FieldType.dropdown:
-      return value.toString();
+      return value is List ? value.join(', ') : value.toString();
+  }
+}
+
+/// Cara memfilter field di daftar data (panel filter detail project).
+enum FieldFilterKind {
+  /// Berisi teks yang diketik (tak peka huruf besar/kecil).
+  text,
+
+  /// Pilih satu opsi: dropdown = sama persis, pilihan ganda = memuat opsi.
+  choice,
+
+  /// Pilih 1–5.
+  rating,
+
+  /// Yes / No.
+  checkbox,
+
+  /// Pilih tanggal (hari yang sama).
+  date,
+
+  /// Tidak bisa difilter (foto).
+  none,
+}
+
+FieldFilterKind fieldFilterKind(FieldType type) {
+  switch (type) {
+    case FieldType.text:
+    case FieldType.textarea:
+    case FieldType.number:
+    case FieldType.decimal:
+    case FieldType.time:
+    case FieldType.datetime:
+      return FieldFilterKind.text;
+    case FieldType.dropdown:
+    case FieldType.multiselect:
+      return FieldFilterKind.choice;
+    case FieldType.rating:
+      return FieldFilterKind.rating;
+    case FieldType.checkbox:
+      return FieldFilterKind.checkbox;
+    case FieldType.date:
+      return FieldFilterKind.date;
+    case FieldType.photo:
+      return FieldFilterKind.none;
+  }
+}
+
+/// Apakah [value] sebuah record lolos [filter] field-nya. Filter kosong
+/// selalu lolos. Bentuk [filter] per [fieldFilterKind]: teks bebas, opsi,
+/// `'1'`–`'5'`, `'true'`/`'false'`, atau tanggal `YYYY-MM-DD`.
+bool fieldFilterMatches(FormFieldModel field, Object? value, Object? filter) {
+  final f = filter?.toString().trim() ?? '';
+  if (f.isEmpty) return true;
+  switch (fieldFilterKind(field.type)) {
+    case FieldFilterKind.text:
+      if (_isBlank(value)) return false;
+      final q = f.toLowerCase();
+      // Nilai tersimpan atau tampilannya ("2026-10-01 07:15", "35.5 cm").
+      return value.toString().toLowerCase().contains(q) ||
+          displayFieldValue(field, value).toLowerCase().contains(q);
+    case FieldFilterKind.choice:
+      return field.type == FieldType.multiselect
+          ? multiselectParts(value).contains(f)
+          : value?.toString() == f;
+    case FieldFilterKind.rating:
+      final r = ratingValue(value);
+      return r != null && r == int.tryParse(f);
+    case FieldFilterKind.checkbox:
+      return _isChecked(value) == (f == 'true');
+    case FieldFilterKind.date:
+      if (_isBlank(value)) return false;
+      return displayFieldValue(field, value) == displayFieldValue(field, f);
+    case FieldFilterKind.none:
+      return true;
   }
 }
