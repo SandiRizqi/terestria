@@ -3046,22 +3046,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         break;
 
       case GeometryType.line:
-        // 1 PolylineLayer + 1 MarkerLayer (tap targets)
+        // 1 PolylineLayer; dipilih dengan tap langsung (_onMapTap).
         if (_visiblePolylines.isNotEmpty) {
           layers.add(PolylineLayer(polylines: _visiblePolylines));
-        }
-        if (_visibleMarkers.isNotEmpty) {
-          layers.add(MarkerLayer(markers: _visibleMarkers));
         }
         break;
 
       case GeometryType.polygon:
-        // 1 PolygonLayer + 1 MarkerLayer (tap targets)
+        // 1 PolygonLayer; dipilih dengan tap langsung (_onMapTap).
         if (_visiblePolygons.isNotEmpty) {
           layers.add(PolygonLayer(polygons: _visiblePolygons));
-        }
-        if (_visibleMarkers.isNotEmpty) {
-          layers.add(MarkerLayer(markers: _visibleMarkers));
         }
         break;
     }
