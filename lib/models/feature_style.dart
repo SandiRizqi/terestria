@@ -9,8 +9,8 @@ import 'settings/app_settings.dart';
 /// style default dari Settings (lihat [defaultFeatureStyle]).
 ///
 /// Format JSON (DB lokal, payload sync, backend `validation.clean_style`):
-/// warna `#RRGGBB` (tanpa alpha — opacity terpisah) + angka dalam rentang
-/// slider editor:
+/// warna `#RRGGBB` (tanpa alpha — opacity terpisah) + angka dalam rentang di
+/// bawah. Key lain diabaikan saat dibaca (backend juga mengabaikannya):
 ///   {"fillColor": "#FF9800", "fillOpacity": 0.3, "strokeColor": "#E65100",
 ///    "strokeWidth": 2.0, "pointSize": 12.0}
 
@@ -18,8 +18,12 @@ const double featureMinOpacity = 0.05;
 const double featureMaxOpacity = 1.0;
 const double featureMinStrokeWidth = 0.5;
 const double featureMaxStrokeWidth = 10.0;
-const double featureMinPointSize = 4.0;
-const double featureMaxPointSize = 20.0;
+
+/// Ukuran point 10–24 = diameter marker 20–48 dp di peta (lihat
+/// `featurePointDiameter`), jadi setiap nilai terlihat bedanya dan semua nilai
+/// Settings (8–24) muat.
+const double featureMinPointSize = 10.0;
+const double featureMaxPointSize = 24.0;
 
 final _hexColor = RegExp(r'^#[0-9A-Fa-f]{6}$');
 

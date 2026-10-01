@@ -53,8 +53,10 @@ Tampilan satu record di peta (sama dengan editor Layers). Server: kolom `GeoData
 }
 ```
 
-- Tepat 5 key. Warna `#RRGGBB` (opacity terpisah); rentang: `fillOpacity` 0.05–1,
-  `strokeWidth` 0.5–10, `pointSize` 4–20 (mobile men-clamp sebelum kirim).
+- 5 key inti wajib; key lain **diabaikan** (dibuang server, diabaikan mobile), supaya versi
+  app berikutnya bisa menambah properti. Warna `#RRGGBB` (opacity terpisah); rentang:
+  `fillOpacity` 0.05–1, `strokeWidth` 0.5–10, `pointSize` 10–24 (= diameter marker 20–48 dp).
+  Mobile men-clamp sebelum kirim dan saat membaca.
 - Pemakaian per geometri: point = `fillColor`+`fillOpacity`, `pointSize`; line =
   `strokeColor`+`fillOpacity`, `strokeWidth`; polygon = isi `fillColor`+`fillOpacity`, garis
   tepi `strokeColor`, `strokeWidth`.
@@ -64,6 +66,7 @@ Tampilan satu record di peta (sama dengan editor Layers). Server: kolom `GeoData
 | Push dengan objek valid | Disimpan (hex dinormalisasi huruf besar). |
 | Push dengan `null` | Style dihapus → ikut default aplikasi. |
 | Push **tanpa** key `style` (app lama, edit dari web dashboard) | Style tersimpan **dipertahankan**. |
-| Push dengan style tidak valid | Key dibuang: record **tetap diterima**, style tersimpan tidak tertimpa. |
+| Push dengan style tidak valid (key inti hilang, tipe salah, di luar rentang) | Key dibuang: record **tetap diterima**, style tersimpan tidak tertimpa. |
+| Push dengan key asing di dalam style | Key asing dibuang, 5 key inti disimpan. |
 | Pull / respons 409 | `to_mobile_json` selalu menyertakan `style` (null bila tidak ada). |
 | Pull dari backend lama (key tidak ada) | Mobile mempertahankan style lokal; `null` → dihapus; objek → dipakai. |

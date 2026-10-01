@@ -72,12 +72,24 @@ void main() {
       })!;
       expect(read.fillOpacity, 0.05);
       expect(read.strokeWidth, 10);
-      expect(read.pointSize, 4);
+      expect(read.pointSize, 10);
 
       final sent =
           featureStyleToJson(_style.copyWith(fillOpacity: 2, pointSize: 50))!;
       expect(sent['fillOpacity'], 1.0);
-      expect(sent['pointSize'], 20.0);
+      expect(sent['pointSize'], 24.0);
+    });
+
+    test('ukuran point 10–24 = diameter marker 20–48 dp; semua nilai Settings '
+        '(8–24) muat', () {
+      expect((featureMinPointSize, featureMaxPointSize), (10.0, 24.0));
+      LayerStyle fromSettings(double size) => clampFeatureStyle(
+          defaultFeatureStyle(
+              GeometryType.point, AppSettings(pointSize: size)));
+      // Settings maksimum: mengganti warna saja tidak mengecilkan point.
+      expect(fromSettings(24).pointSize, 24);
+      // Settings 8 tampil 20 dp, sama dengan 10.
+      expect(fromSettings(8).pointSize, 10);
     });
 
     test('warna ber-alpha: alpha dibuang (opacity terpisah)', () {

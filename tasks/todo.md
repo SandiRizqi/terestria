@@ -6,7 +6,7 @@ Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend 
 
 ## Fase 1 — Backend (sebelum deploy `d54d508`)
 - [x] T1 (kritis, gis-backend `ec74e6f`): verifikasi hanya di-reset bila isian form non-foto atau koordinat titik berubah; foto dan style tidak dicek; `updated_at` tetap naik. Test lokal +13 (`tests_verification_keep`), test DB +2 (CI).
-- [ ] T2: kontrak style — `pointSize` 10–24, key asing diabaikan (backend `clean_style` + mobile `feature_style.dart` + `docs/sync-push-contract.md`).
+- [x] T2 (gis-backend `c4873f4`): kontrak style — `pointSize` 10–24, key asing diabaikan (backend `clean_style` + mobile `feature_style.dart` + `docs/sync-push-contract.md`). Slider ukuran point editor Layers tetap 4–20; rentang editor feature menyusul di T4.
 - [ ] T3: tile MVT membawa 5 properti style (migrasi `0022`) + segmen versi `s2` di key cache tile.
 
 ### Checkpoint A

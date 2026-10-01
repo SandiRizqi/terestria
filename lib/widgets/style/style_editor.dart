@@ -142,9 +142,10 @@ class StyleEditorFields extends StatelessWidget {
           const StyleSectionLabel('Point Size'),
           const SizedBox(height: 4),
           _SliderRow(
-            value: style.pointSize,
-            min: featureMinPointSize,
-            max: featureMaxPointSize,
+            // Rentang editor Layers (layer impor).
+            value: style.pointSize.clamp(4.0, 20.0).toDouble(),
+            min: 4.0,
+            max: 20.0,
             divisions: 16,
             label: style.pointSize.toStringAsFixed(0),
             onChanged: (v) => onChanged(style.copyWith(pointSize: v)),
