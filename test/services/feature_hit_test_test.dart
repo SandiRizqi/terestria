@@ -65,15 +65,28 @@ void main() {
           ['kecil', 'besar']);
     });
 
-    test('point → line → polygon; sesama jenis dari yang terdekat', () {
+    test('sama-sama kena langsung: point → line → polygon; sesama jenis dari '
+        'yang terdekat', () {
       final shapes = [
         const HitPolygon('area', ring: _square),
-        const HitLine('garis-jauh', points: [Offset(0, 70), Offset(100, 70)]),
-        const HitLine('garis-dekat', points: [Offset(0, 55), Offset(100, 55)]),
+        const HitLine('garis-jauh',
+            points: [Offset(0, 54), Offset(100, 54)], halfWidth: 2),
+        const HitLine('garis-dekat',
+            points: [Offset(0, 52), Offset(100, 52)], halfWidth: 2),
         const HitPoint('titik', center: Offset(52, 50), radius: 8),
       ];
       expect(hitFeatures(const Offset(50, 50), shapes, tolerance: 24),
           ['titik', 'garis-dekat', 'garis-jauh', 'area']);
+    });
+
+    test('sama-sama hanya dalam toleransi: urutan sama', () {
+      final shapes = [
+        const HitPolygon('area', ring: _square), // tepi bawah y=100
+        const HitLine('garis', points: [Offset(0, 135), Offset(100, 135)]),
+        const HitPoint('titik', center: Offset(50, 140), radius: 8),
+      ];
+      expect(hitFeatures(const Offset(50, 120), shapes, tolerance: 24),
+          ['titik', 'garis', 'area']);
     });
 
     test('jarak sama → urutan masukan dipertahankan (stabil)', () {
@@ -83,6 +96,74 @@ void main() {
       ];
       expect(hitFeatures(const Offset(50, 50), shapes, tolerance: 24),
           ['satu', 'dua']);
+    });
+  });
+
+  group('dua tingkat: yang kena langsung didahulukan', () {
+    List<Offset> square(double x0, double y0, double size) => [
+          Offset(x0, y0),
+          Offset(x0 + size, y0),
+          Offset(x0 + size, y0 + size),
+          Offset(x0, y0 + size),
+        ];
+
+    test('polygon bersebelahan: tap di dalam A dekat tepi bersama → hanya A',
+        () {
+      final shapes = [
+        HitPolygon('A', ring: square(0, 0, 84)),
+        HitPolygon('B', ring: square(84, 0, 84)), // berbagi tepi x = 84
+      ];
+      expect(hitFeatures(const Offset(64, 42), shapes), ['A']);
+      expect(hitFeatures(const Offset(104, 42), shapes), ['B']);
+    });
+
+    test('grid 3×3 blok 84 dp: tap di dalam blok tengah tidak pernah '
+        'memunculkan daftar pilihan', () {
+      final grid = [
+        for (var r = 0; r < 3; r++)
+          for (var c = 0; c < 3; c++)
+            HitPolygon('$r$c', ring: square(c * 84.0, r * 84.0, 84)),
+      ];
+      for (var x = 84.5; x < 168; x += 4) {
+        for (var y = 84.5; y < 168; y += 4) {
+          expect(hitFeatures(Offset(x, y), grid), ['11'], reason: '($x, $y)');
+        }
+      }
+    });
+
+    test('celah sempit di luar dua polygon → keduanya (dalam toleransi)', () {
+      final shapes = [
+        HitPolygon('kiri', ring: square(0, 0, 100)),
+        HitPolygon('kanan', ring: square(130, 0, 100)),
+      ];
+      expect(hitFeatures(const Offset(115, 50), shapes), ['kiri', 'kanan']);
+    });
+
+    test('point: tap tepat di P1, P2 30 dp di sebelahnya → hanya P1; di antara '
+        'keduanya → keduanya', () {
+      final shapes = [
+        const HitPoint('P1', center: Offset(0, 0), radius: 12),
+        const HitPoint('P2', center: Offset(30, 0), radius: 12),
+      ];
+      expect(hitFeatures(const Offset(0, 0), shapes), ['P1']);
+      expect(hitFeatures(const Offset(15, 0), shapes), ['P1', 'P2']);
+    });
+
+    test('line: tap di atas garis A, garis B 20 dp di sebelahnya → hanya A', () {
+      final shapes = [
+        const HitLine('A', points: [Offset(0, 0), Offset(100, 0)], halfWidth: 1.5),
+        const HitLine('B', points: [Offset(0, 20), Offset(100, 20)], halfWidth: 1.5),
+      ];
+      expect(hitFeatures(const Offset(50, 2), shapes), ['A']);
+      expect(hitFeatures(const Offset(50, 10), shapes), ['A', 'B']);
+    });
+
+    test('garis tebal: kena langsung sampai setengah tebal + 4 dp', () {
+      final shapes = [
+        const HitLine('tebal', points: [Offset(0, 0), Offset(100, 0)], halfWidth: 5),
+        const HitLine('tipis', points: [Offset(0, 20), Offset(100, 20)]),
+      ];
+      expect(hitFeatures(const Offset(50, 8), shapes), ['tebal']);
     });
   });
 
@@ -118,9 +199,11 @@ void main() {
       expect(point, isA<HitPoint<GeoData>>());
       expect((point! as HitPoint<GeoData>).radius, 12);
 
-      final line = hitShapeFor(geo(3), GeometryType.line, project, pointRadius: 12);
+      final line = hitShapeFor(geo(3), GeometryType.line, project,
+          pointRadius: 12, lineHalfWidth: 2);
       expect((line! as HitLine<GeoData>).points,
           const [Offset(0, 0), Offset(10, 10), Offset(40, 20)]);
+      expect((line as HitLine<GeoData>).halfWidth, 2);
 
       expect(hitShapeFor(geo(3), GeometryType.polygon, project, pointRadius: 12),
           isA<HitPolygon<GeoData>>());

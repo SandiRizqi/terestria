@@ -84,8 +84,9 @@ Marker featurePointMarker(
 }
 
 /// Feature project yang kena tap di [tap] (select langsung, tanpa ikon info
-/// di tengah feature). Urutan hasil sesuai [hitFeatures]: point terdekat →
-/// line terdekat → polygon terkecil.
+/// di tengah feature). Aturan & urutan sesuai [hitFeatures]: yang kena
+/// langsung didahulukan (radius marker dan tebal garis dari style feature);
+/// point terdekat → line terdekat → polygon terkecil.
 ///
 /// - [toScreen]: proyeksi kamera peta (LatLng → piksel layar, termasuk
 ///   rotasi) — tap & feature diproyeksikan dengan fungsi yang sama.
@@ -112,6 +113,7 @@ List<GeoData> projectFeaturesAtTap({
       type,
       (p) => toScreen(LatLng(p.latitude, p.longitude)),
       pointRadius: featurePointDiameter(style) / 2,
+      lineHalfWidth: style.strokeWidth / 2,
     );
     if (shape != null) shapes.add(shape);
   }

@@ -94,6 +94,37 @@ void main() {
     expect(_ids(hits), ['dekat', 'jauh']);
   });
 
+  test('line: tebal garis style dipakai untuk "kena langsung"', () {
+    GeoData line(String id, double lat, {LayerStyle? style}) => GeoData(
+          id: id,
+          projectId: 'p',
+          formData: const {},
+          points: [
+            GeoPoint(latitude: lat, longitude: -0.05, timestamp: DateTime.utc(2026)),
+            GeoPoint(latitude: lat, longitude: 0.05, timestamp: DateTime.utc(2026)),
+          ],
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          style: style,
+        );
+    const thick = LayerStyle(
+      fillColor: Color(0xFF000000),
+      fillOpacity: 1,
+      strokeColor: Color(0xFF000000),
+      strokeWidth: 10, // setengah tebal 5 → kena langsung ≤ 9 px
+      pointSize: 12,
+    );
+    // Tap 8 px dari garis tebal, 12 px dari garis tipis (default 3).
+    final hits = projectFeaturesAtTap(
+      tap: const LatLng(0.008, 0),
+      features: [line('tebal', 0, style: thick), line('tipis', 0.02)],
+      type: GeometryType.line,
+      settings: _settings,
+      toScreen: _toScreen,
+    );
+    expect(_ids(hits), ['tebal']);
+  });
+
   test('radius marker point mengikuti ukuran style feature', () {
     const big = LayerStyle(
       fillColor: Color(0xFF000000),

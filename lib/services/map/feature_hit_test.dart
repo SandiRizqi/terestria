@@ -7,9 +7,20 @@ import '../../models/project_model.dart';
 /// Hit-test tap langsung pada feature di peta — fungsi murni di ruang piksel
 /// layar (bebas zoom & rotasi: bentuk sudah diproyeksikan oleh pemanggil).
 ///
+/// Dua tingkat: feature yang **kena langsung** (tap di dalam lingkaran marker,
+/// di atas garis, atau di dalam polygon) didahulukan; toleransi hanya dipakai
+/// bila tidak ada yang kena langsung. Jadi tap di dalam satu blok tidak ikut
+/// "mengenai" blok sebelahnya, dan daftar pilihan hanya muncul untuk feature
+/// yang benar-benar bertumpuk (atau tap yang sama dekatnya ke beberapa
+/// feature).
+///
 /// Toleransi dalam piksel logis; default 24 dp ≈ setengah target sentuh
 /// 48 dp, agar line tipis & tepi polygon tetap mudah diketuk.
 const double defaultHitTolerance = 24;
+
+/// Kelonggaran "kena langsung" untuk line di luar setengah tebal garisnya
+/// (ketidaktepatan jari).
+const double directLineSlop = 4;
 
 /// Bentuk feature dalam koordinat layar, membawa [value] yang dikembalikan
 /// bila kena.
@@ -18,53 +29,72 @@ sealed class HitShape<T> {
   const HitShape(this.value);
 }
 
-/// Marker point: kena bila jarak ke [center] ≤ [radius] + toleransi.
+/// Marker point: kena langsung bila jarak ke [center] ≤ [radius]; dalam
+/// toleransi bila ≤ [radius] + toleransi.
 class HitPoint<T> extends HitShape<T> {
   final Offset center;
   final double radius;
   const HitPoint(super.value, {required this.center, required this.radius});
 }
 
-/// Line: kena bila jarak ke salah satu segmen ≤ toleransi.
+/// Line: kena langsung bila jarak ke segmen terdekat ≤ [halfWidth] +
+/// [directLineSlop]; dalam toleransi bila ≤ [halfWidth] + toleransi.
 class HitLine<T> extends HitShape<T> {
   final List<Offset> points;
-  const HitLine(super.value, {required this.points});
+
+  /// Setengah tebal garis yang digambar.
+  final double halfWidth;
+  const HitLine(super.value, {required this.points, this.halfWidth = 0});
 }
 
-/// Polygon: kena bila tap di dalam area atau ≤ toleransi dari garis tepi.
+/// Polygon: kena langsung bila tap di dalam area; dalam toleransi bila di
+/// luar tetapi ≤ toleransi dari garis tepi.
 class HitPolygon<T> extends HitShape<T> {
   final List<Offset> ring;
   const HitPolygon(super.value, {required this.ring});
 }
 
-/// Feature yang kena tap di [tap], berurutan: point (terdekat) → line
-/// (terdekat) → polygon (terkecil). Nilai sama → urutan masukan (stabil).
-/// Bentuk rusak (line < 2 titik, polygon < 3 titik) diabaikan.
+/// Feature yang kena tap di [tap]: yang kena langsung bila ada, selain itu
+/// yang dalam toleransi. Di dalam tingkat yang sama berurutan: point
+/// (terdekat) → line (terdekat) → polygon (terkecil); nilai sama → urutan
+/// masukan (stabil). Bentuk rusak (line < 2 titik, polygon < 3 titik)
+/// diabaikan.
 List<T> hitFeatures<T>(
   Offset tap,
   Iterable<HitShape<T>> shapes, {
   double tolerance = defaultHitTolerance,
 }) {
-  final hits = <_Hit<T>>[];
+  final direct = <_Hit<T>>[];
+  final near = <_Hit<T>>[];
   var order = 0;
   for (final shape in shapes) {
     final index = order++;
     switch (shape) {
       case HitPoint<T>(:final center, :final radius):
         final d = (tap - center).distance;
-        if (d <= radius + tolerance) hits.add(_Hit(shape.value, 0, d, index));
-      case HitLine<T>(:final points):
+        if (d <= radius) {
+          direct.add(_Hit(shape.value, 0, d, index));
+        } else if (d <= radius + tolerance) {
+          near.add(_Hit(shape.value, 0, d, index));
+        }
+      case HitLine<T>(:final points, :final halfWidth):
         if (points.length < 2) continue;
         final d = _distanceToPath(tap, points, closed: false);
-        if (d <= tolerance) hits.add(_Hit(shape.value, 1, d, index));
+        if (d <= halfWidth + directLineSlop) {
+          direct.add(_Hit(shape.value, 1, d, index));
+        } else if (d <= halfWidth + tolerance) {
+          near.add(_Hit(shape.value, 1, d, index));
+        }
       case HitPolygon<T>(:final ring):
         if (ring.length < 3) continue;
-        if (_contains(ring, tap) ||
-            _distanceToPath(tap, ring, closed: true) <= tolerance) {
-          hits.add(_Hit(shape.value, 2, _area(ring), index));
+        if (_contains(ring, tap)) {
+          direct.add(_Hit(shape.value, 2, _area(ring), index));
+        } else if (_distanceToPath(tap, ring, closed: true) <= tolerance) {
+          near.add(_Hit(shape.value, 2, _area(ring), index));
         }
     }
   }
+  final hits = direct.isNotEmpty ? direct : near;
   hits.sort((a, b) {
     final byKind = a.kind.compareTo(b.kind);
     if (byKind != 0) return byKind;
@@ -81,6 +111,7 @@ HitShape<GeoData>? hitShapeFor(
   GeometryType type,
   Offset Function(GeoPoint point) project, {
   required double pointRadius,
+  double lineHalfWidth = 0,
 }) {
   final pts = data.points;
   switch (type) {
@@ -89,7 +120,8 @@ HitShape<GeoData>? hitShapeFor(
       return HitPoint(data, center: project(pts.first), radius: pointRadius);
     case GeometryType.line:
       if (pts.length < 2) return null;
-      return HitLine(data, points: [for (final p in pts) project(p)]);
+      return HitLine(data,
+          points: [for (final p in pts) project(p)], halfWidth: lineHalfWidth);
     case GeometryType.polygon:
       if (pts.length < 3) return null;
       return HitPolygon(data, ring: [for (final p in pts) project(p)]);
