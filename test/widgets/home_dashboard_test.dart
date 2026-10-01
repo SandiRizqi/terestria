@@ -80,8 +80,9 @@ void main() {
     });
   }
 
-  testWidgets('kartu status: siap + antrean sync (offline → tombol mati)',
-      (tester) async {
+  testWidgets(
+      'kartu status: GPS belum diuji → "No problems found" + antrean sync '
+      '(offline → tombol mati)', (tester) async {
     _phone(tester);
     var readinessOpened = 0;
     await tester.pumpWidget(MaterialApp(
@@ -91,13 +92,16 @@ void main() {
             onOpenProject: (_) {},
             onOpenReadiness: () => readinessOpened++,
             collect: () async => _inputs(unsynced: 12, photos: 30),
+            lastGpsTest: () => null,
           ),
         ]),
       ),
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ready for the field'), findsOneWidget);
+    expect(find.text('Ready for the field'), findsNothing);
+    expect(find.text('No problems found'), findsOneWidget);
+    expect(find.text('Tap to test GPS signal'), findsOneWidget);
     expect(find.text('12 records · 30 photos waiting'), findsOneWidget);
     expect(find.text('Offline — your data is safe on this phone'),
         findsOneWidget);
@@ -105,9 +109,31 @@ void main() {
         find.widgetWithText(FilledButton, 'Sync now'));
     expect(sync.onPressed, isNull, reason: 'offline');
 
-    await tester.tap(find.text('Ready for the field'));
+    await tester.tap(find.text('No problems found'));
     expect(readinessOpened, 1);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('kartu status: uji GPS lengkap terakhir lolos → "Ready for the '
+      'field"', (tester) async {
+    _phone(tester);
+    final tested = gpsTestResultOf(_inputs(
+        fix: GeoPoint(
+            latitude: -6.2, longitude: 106.8, accuracy: 3.2, timestamp: _now)))!;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: HomeStatusSection(
+          onOpenProject: (_) {},
+          onOpenReadiness: () {},
+          collect: () async => _inputs(),
+          lastGpsTest: () => tested,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Ready for the field'), findsOneWidget);
+    expect(find.text('Permissions, GPS, battery and storage look good'),
+        findsOneWidget);
   });
 
   test('status auto-sync gagal menyebut alasan pertama', () {
@@ -135,6 +161,7 @@ void main() {
           onOpenProject: (_) {},
           onOpenReadiness: () {},
           collect: () async => _inputs(battery: false),
+          lastGpsTest: () => null,
         ),
       ),
     ));

@@ -148,6 +148,107 @@ void main() {
     expect(startBlockingItems(items).map((i) => i.id), ['battery']);
   });
 
+  group('ringkasan beranda (tanpa uji GPS di beranda)', () {
+    // Cek cepat beranda: GPS tidak diuji, belum ada fix.
+    ReadinessInputs quick({
+      OfflineCoverage offline = OfflineCoverage.noLocation,
+      int unsynced = 0,
+      bool? battery = true,
+      LocationAccess access = LocationAccess.whileInUse,
+    }) =>
+        _inputs(
+            gpsTested: false,
+            offline: offline,
+            unsynced: unsynced,
+            battery: battery,
+            access: access);
+
+    GpsTestResult lastTest({double acc = 4, Duration ago = const Duration(minutes: 5)}) {
+      final at = _now.subtract(ago);
+      return gpsTestResultOf(ReadinessInputs(
+        isAndroid: true,
+        isIOS: false,
+        now: at,
+        locationServiceOn: true,
+        locationAccess: LocationAccess.whileInUse,
+        lastFix: GeoPoint(
+            latitude: -6.2, longitude: 106.8, accuracy: acc, timestamp: at),
+        gpsTested: true,
+      ))!;
+    }
+
+    test('GPS belum diuji → jujur: "No problems found", ketuk untuk uji', () {
+      final s = homeReadinessSummary(quick());
+      expect(s.level, ReadinessLevel.ok);
+      expect(s.gpsTested, isFalse);
+      expect(s.title, 'No problems found');
+      expect(s.subtitle, 'Tap to test GPS signal');
+    });
+
+    test('uji GPS lengkap terakhir lolos & masih berlaku → "Ready for the field"',
+        () {
+      final s = homeReadinessSummary(quick(), lastGpsTest: lastTest());
+      expect(s.gpsTested, isTrue);
+      expect(s.title, 'Ready for the field');
+    });
+
+    test('uji GPS sudah lewat masa berlaku → kembali "No problems found"', () {
+      final s = homeReadinessSummary(quick(),
+          lastGpsTest: lastTest(ago: readinessHomeMaxAge + const Duration(minutes: 1)));
+      expect(s.gpsTested, isFalse);
+      expect(s.title, 'No problems found');
+    });
+
+    test('hasil uji GPS yang lemah ikut dihitung di beranda', () {
+      final s = homeReadinessSummary(quick(), lastGpsTest: lastTest(acc: 15));
+      expect(s.level, ReadinessLevel.warning);
+      expect(s.title, '1 item needs attention');
+      expect(s.subtitle, 'GPS signal');
+    });
+
+    test('peta offline belum diunduh (dari posisi yang ada) → perlu perhatian',
+        () {
+      final s = homeReadinessSummary(quick(offline: OfflineCoverage.missing));
+      expect(s.level, ReadinessLevel.warning);
+      expect(s.title, '1 item needs attention');
+      expect(s.subtitle, 'Offline map');
+    });
+
+    test('data belum sync punya kartu sendiri, tidak dihitung di sini', () {
+      final s = homeReadinessSummary(quick(unsynced: 5), lastGpsTest: lastTest());
+      expect(s.title, 'Ready for the field');
+    });
+
+    test('masalah tetap merah walau GPS belum diuji', () {
+      final s = homeReadinessSummary(
+          quick(access: LocationAccess.deniedForever, battery: false));
+      expect(s.level, ReadinessLevel.problem);
+      expect(s.title, '1 problem before the field');
+      expect(s.subtitle, 'Location access · Battery optimization');
+    });
+
+    test('hasil uji GPS hanya ada bila GPS benar-benar diuji', () {
+      expect(gpsTestResultOf(_inputs(gpsTested: false, fix: _fix())), isNull);
+      final r = gpsTestResultOf(_inputs(fix: _fix()))!;
+      expect(r.at, _now);
+      expect(r.item.id, 'gps_fix');
+      expect(r.fix?.accuracy, 4);
+      // Diuji tapi tak dapat fix → tetap tercatat (peringatan).
+      final none = gpsTestResultOf(_inputs())!;
+      expect(none.item.level, ReadinessLevel.warning);
+      expect(none.fix, isNull);
+    });
+
+    test('posisi untuk cek peta: yang terbaru dan masih berlaku', () {
+      final old = _fix(age: readinessHomeMaxAge + const Duration(seconds: 1));
+      final mid = _fix(age: const Duration(minutes: 10));
+      final fresh = _fix(age: const Duration(minutes: 1));
+      expect(freshestFix([mid, null, fresh], _now, readinessHomeMaxAge), fresh);
+      expect(freshestFix([old, null], _now, readinessHomeMaxAge), isNull);
+      expect(freshestFix(const [], _now, readinessHomeMaxAge), isNull);
+    });
+  });
+
   test('tileForLatLon', () {
     // Monas, Jakarta pada zoom 15.
     final t = tileForLatLon(-6.1754, 106.8272, 15);

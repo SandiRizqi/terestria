@@ -476,6 +476,116 @@ List<ReadinessItem> evaluateReadiness(ReadinessInputs i) {
       warnings: items.where((i) => i.level == ReadinessLevel.warning).length,
     );
 
+/// Hasil uji GPS lengkap terakhir (layar checklist): butir "GPS signal" saat
+/// itu dan fix-nya. Beranda tidak menguji GPS, jadi memakai hasil ini.
+class GpsTestResult {
+  final DateTime at;
+  final ReadinessItem item;
+  final GeoPoint? fix;
+
+  const GpsTestResult({required this.at, required this.item, this.fix});
+}
+
+/// Hasil uji GPS dari [inputs], atau null bila GPS tidak diuji.
+GpsTestResult? gpsTestResultOf(ReadinessInputs inputs) {
+  if (!inputs.gpsTested) return null;
+  final item =
+      evaluateReadiness(inputs).where((i) => i.id == 'gps_fix').firstOrNull;
+  if (item == null) return null;
+  return GpsTestResult(at: inputs.now, item: item, fix: inputs.lastFix);
+}
+
+/// Batas umur hasil yang dipakai ulang di beranda: uji GPS terakhir dan posisi
+/// untuk cek peta offline. Lebih tua → dianggap belum dicek.
+const Duration readinessHomeMaxAge = Duration(minutes: 30);
+
+/// Fix terbaru di [fixes] yang umurnya ≤ [maxAge], atau null.
+GeoPoint? freshestFix(
+    Iterable<GeoPoint?> fixes, DateTime now, Duration maxAge) {
+  GeoPoint? best;
+  for (final f in fixes) {
+    if (f == null || now.difference(f.timestamp) > maxAge) continue;
+    if (best == null || f.timestamp.isAfter(best.timestamp)) best = f;
+  }
+  return best;
+}
+
+/// Ringkasan kartu kesiapan di beranda.
+class HomeReadinessSummary {
+  /// [ReadinessLevel.ok], [ReadinessLevel.warning], atau
+  /// [ReadinessLevel.problem].
+  final ReadinessLevel level;
+  final String title;
+  final String subtitle;
+
+  /// Sinyal GPS sudah diuji (uji lengkap yang masih berlaku).
+  final bool gpsTested;
+
+  const HomeReadinessSummary({
+    required this.level,
+    required this.title,
+    required this.subtitle,
+    required this.gpsTested,
+  });
+}
+
+/// Ringkasan beranda dari cek cepat [quick] (tanpa uji GPS) dan uji GPS
+/// lengkap terakhir [lastGpsTest] bila masih berlaku ([readinessHomeMaxAge]).
+/// "Ready for the field" hanya bila GPS sudah diuji dan semuanya lolos;
+/// tanpa uji GPS yang berlaku, judul hijau = "No problems found". Data belum
+/// sync tidak dihitung (punya kartu sendiri).
+HomeReadinessSummary homeReadinessSummary(ReadinessInputs quick,
+    {GpsTestResult? lastGpsTest}) {
+  var items = evaluateReadiness(quick);
+  final valid = lastGpsTest != null &&
+      quick.now.difference(lastGpsTest.at) <= readinessHomeMaxAge;
+  // Butir GPS hanya ada bila izin lokasi & GPS menyala.
+  final gpsTested = valid && items.any((i) => i.id == 'gps_fix');
+  if (gpsTested) {
+    items = [for (final i in items) i.id == 'gps_fix' ? lastGpsTest.item : i];
+  }
+  final attention = items
+      .where((i) =>
+          i.level == ReadinessLevel.problem ||
+          i.level == ReadinessLevel.warning)
+      .where((i) => i.id != 'pending_sync')
+      .toList();
+  final problems =
+      attention.where((i) => i.level == ReadinessLevel.problem).length;
+  final warnings = attention.length - problems;
+  final names = attention.take(3).map((i) => i.title).join(' · ');
+  if (problems > 0) {
+    return HomeReadinessSummary(
+      level: ReadinessLevel.problem,
+      title: '$problems problem${problems == 1 ? '' : 's'} before the field',
+      subtitle: names,
+      gpsTested: gpsTested,
+    );
+  }
+  if (warnings > 0) {
+    return HomeReadinessSummary(
+      level: ReadinessLevel.warning,
+      title: '$warnings ${warnings == 1 ? 'item needs' : 'items need'} '
+          'attention',
+      subtitle: names,
+      gpsTested: gpsTested,
+    );
+  }
+  return gpsTested
+      ? const HomeReadinessSummary(
+          level: ReadinessLevel.ok,
+          title: 'Ready for the field',
+          subtitle: 'Permissions, GPS, battery and storage look good',
+          gpsTested: true,
+        )
+      : const HomeReadinessSummary(
+          level: ReadinessLevel.ok,
+          title: 'No problems found',
+          subtitle: 'Tap to test GPS signal',
+          gpsTested: false,
+        );
+}
+
 /// Tile slippy-map (x, y) untuk [lat]/[lon] pada zoom [z].
 ({int x, int y}) tileForLatLon(double lat, double lon, int z) {
   final n = 1 << z;
