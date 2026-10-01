@@ -25,10 +25,10 @@ Baseline: `flutter test` 714, `flutter analyze` 0 error / 29 warning · backend 
 - [ ] (User, di HP) blok bersebelahan, polygon bertumpuk, slider ukuran point + pratinjau, zoom di dalam blok besar, Style di Tracking Aktif.
 
 ## Fase 3 — Web dashboard
-- [ ] T9: pilihan "Warna peta" (Status verifikasi / Style feature) + legenda mode aktif + diingat per browser; `sv=2` di URL tile.
+- [x] T9 (gis-dashboard `6fb96e8`): pilihan "Warna peta" (Status verifikasi / Style feature) + legenda mode aktif + diingat per browser; `sv=2` di URL tile. `mapColorMode.ts` (+10 test node), `MapColorLegend.tsx`.
 
 ### Checkpoint C
-- [ ] Test lokal ketiga repo hijau; baseline analyze/tsc/lint tidak memburuk.
+- [x] Test lokal ketiga repo hijau: backend unittest 86, `flutter test` 735, dashboard `npm test` 29. Baseline tidak memburuk: `flutter analyze` 0 error / 29 warning, `tsc` 1 error lama, lint `ProjectMapView.tsx` sama dengan HEAD (6 warning lama), `next build` berhasil.
 - [ ] (User) Uji manual T9 di browser setelah backend T3 ter-deploy di dev.
 - [ ] (User) Deploy berurutan: backend (`d54d508` + T1–T3) → dashboard (T9) → rilis app.
 
