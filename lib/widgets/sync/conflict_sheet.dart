@@ -5,6 +5,7 @@ import '../../models/geo_data_model.dart';
 import '../../models/project_model.dart';
 import '../../models/sync_conflict.dart';
 import '../../services/sync_service.dart';
+import '../../utils/field_values.dart';
 
 /// Satu record berkonflik + versinya di HP (null bila sudah tak ada di HP).
 class ConflictEntry {
@@ -26,10 +27,9 @@ List<String> conflictChangeSummary(
       photoFields.add(field);
       continue;
     }
-    final a = mine.formData[field.label], b = server.formData[field.label];
-    if (_display(a) != _display(b)) {
-      changes.add('${field.label}: ${_quote(a)} → ${_quote(b)}');
-    }
+    final a = _display(field, mine.formData[field.label]);
+    final b = _display(field, server.formData[field.label]);
+    if (a != b) changes.add('${field.label}: ${_quote(a)} → ${_quote(b)}');
   }
   if (mine.points.length != server.points.length) {
     changes.add('Points: ${mine.points.length} → ${server.points.length}');
@@ -44,16 +44,16 @@ List<String> conflictChangeSummary(
   return changes;
 }
 
-String _display(Object? v) {
-  if (v == null) return '';
-  if (v is List) return v.join(', ');
-  return v.toString().trim();
-}
+/// Nilai terformat ([displayFieldValue]); bentuk simpan yang berbeda untuk
+/// nilai yang sama (4 / "4", 36 / 36.0) tidak dianggap perbedaan.
+String _display(FormFieldModel field, Object? v) =>
+    displayFieldValue(field, v).trim();
 
-String _quote(Object? v) {
-  final s = _display(v);
+/// Satu baris: baris baru teks panjang jadi spasi, maks 30 karakter.
+String _quote(String s) {
   if (s.isEmpty) return '(empty)';
-  return '"${s.length > 30 ? '${s.substring(0, 30)}…' : s}"';
+  final line = s.replaceAll(RegExp(r'\s*\n\s*'), ' ');
+  return '"${line.length > 30 ? '${line.substring(0, 30)}…' : line}"';
 }
 
 int _photoCount(Object? v) {
@@ -191,7 +191,7 @@ class _ConflictResolutionSheetState extends State<ConflictResolutionSheet> {
     if (record != null) {
       for (final field in widget.project.formFields) {
         if (field.type == FieldType.photo) continue;
-        final value = _display(record.formData[field.label]);
+        final value = _display(field, record.formData[field.label]);
         if (value.isNotEmpty) {
           return value.length > 40 ? '${value.substring(0, 40)}…' : value;
         }

@@ -137,6 +137,106 @@ void main() {
       expect(displayFieldValue(_field(FieldType.datetime), 'besok'), 'besok');
       expect(displayFieldValue(_field(FieldType.rating), 'bagus'), 'bagus');
     });
+
+    test('daftar di field teks digabung koma (mis. dari web)', () {
+      expect(displayFieldValue(_field(FieldType.text), ['a', 'b']), 'a, b');
+    });
+  });
+
+  group('filter daftar data', () {
+    test('jenis filter per tipe', () {
+      for (final t in [
+        FieldType.text,
+        FieldType.textarea,
+        FieldType.number,
+        FieldType.decimal,
+        FieldType.time,
+        FieldType.datetime,
+      ]) {
+        expect(fieldFilterKind(t), FieldFilterKind.text, reason: t.name);
+      }
+      expect(fieldFilterKind(FieldType.dropdown), FieldFilterKind.choice);
+      expect(fieldFilterKind(FieldType.multiselect), FieldFilterKind.choice);
+      expect(fieldFilterKind(FieldType.rating), FieldFilterKind.rating);
+      expect(fieldFilterKind(FieldType.checkbox), FieldFilterKind.checkbox);
+      expect(fieldFilterKind(FieldType.date), FieldFilterKind.date);
+      expect(fieldFilterKind(FieldType.photo), FieldFilterKind.none);
+    });
+
+    test('filter kosong tidak menyaring', () {
+      expect(fieldFilterMatches(_field(FieldType.text), 'x', null), isTrue);
+      expect(fieldFilterMatches(_field(FieldType.text), 'x', '  '), isTrue);
+      expect(fieldFilterMatches(_field(FieldType.rating), null, ''), isTrue);
+    });
+
+    test('teks panjang, waktu, tanggal-waktu: berisi teks (tak peka huruf)', () {
+      final note = _field(FieldType.textarea);
+      expect(fieldFilterMatches(note, 'Daun\nkuning di blok', 'KUNING'), isTrue);
+      expect(fieldFilterMatches(note, 'Daun hijau', 'kuning'), isFalse);
+      expect(fieldFilterMatches(note, null, 'nu'), isFalse,
+          reason: 'kosong bukan teks "null"');
+
+      expect(fieldFilterMatches(_field(FieldType.time), '07:15', '07'), isTrue);
+      expect(fieldFilterMatches(_field(FieldType.time), '07:15', '08'), isFalse);
+
+      // Cocok dengan nilai tersimpan maupun tampilan "2026-10-01 07:15".
+      final dt = _field(FieldType.datetime);
+      expect(fieldFilterMatches(dt, '2026-10-01T07:15:00.000', '2026-10-01 07'), isTrue);
+      expect(fieldFilterMatches(dt, '2026-10-01T07:15:00.000', '2026-10-01T07'), isTrue);
+      expect(fieldFilterMatches(dt, '2026-10-01T07:15:00.000', '2026-10-02'), isFalse);
+    });
+
+    test('angka: berisi teks pada nilai atau tampilan', () {
+      final d = _field(FieldType.decimal, unit: 'cm');
+      expect(fieldFilterMatches(d, 35.0, '35'), isTrue);
+      expect(fieldFilterMatches(d, 35.5, '35.5 cm'), isTrue);
+      expect(fieldFilterMatches(d, 12, '35'), isFalse);
+    });
+
+    test('pilihan ganda: record yang memuat opsi itu', () {
+      final m = _field(FieldType.multiselect, options: _opts);
+      expect(fieldFilterMatches(m, 'Ulat api; Tikus', 'Tikus'), isTrue);
+      expect(fieldFilterMatches(m, ['Tikus'], 'Tikus'), isTrue);
+      expect(fieldFilterMatches(m, 'Ulat api', 'Tikus'), isFalse);
+      expect(fieldFilterMatches(m, 'Tikus besar', 'Tikus'), isFalse,
+          reason: 'per opsi, bukan potongan teks');
+      expect(fieldFilterMatches(m, null, 'Tikus'), isFalse);
+    });
+
+    test('dropdown: sama persis', () {
+      final d = _field(FieldType.dropdown, options: _opts);
+      expect(fieldFilterMatches(d, 'Tikus', 'Tikus'), isTrue);
+      expect(fieldFilterMatches(d, 'Tikus besar', 'Tikus'), isFalse);
+    });
+
+    test('skala: nilai 1–5 sama (angka atau teks angka)', () {
+      final r = _field(FieldType.rating);
+      expect(fieldFilterMatches(r, 4, '4'), isTrue);
+      expect(fieldFilterMatches(r, '4', '4'), isTrue);
+      expect(fieldFilterMatches(r, 4.0, '4'), isTrue);
+      expect(fieldFilterMatches(r, 3, '4'), isFalse);
+      expect(fieldFilterMatches(r, null, '4'), isFalse);
+    });
+
+    test('checkbox: Yes/No', () {
+      final c = _field(FieldType.checkbox);
+      expect(fieldFilterMatches(c, true, 'true'), isTrue);
+      expect(fieldFilterMatches(c, 'true', 'true'), isTrue);
+      expect(fieldFilterMatches(c, false, 'true'), isFalse);
+      expect(fieldFilterMatches(c, null, 'false'), isTrue);
+    });
+
+    test('tanggal: hari yang sama (nilai tersimpan berjam 00:00)', () {
+      final d = _field(FieldType.date);
+      expect(fieldFilterMatches(d, '2026-10-01T00:00:00.000', '2026-10-01'), isTrue);
+      expect(fieldFilterMatches(d, '2026-10-01', '2026-10-01'), isTrue);
+      expect(fieldFilterMatches(d, '2026-10-02T00:00:00.000', '2026-10-01'), isFalse);
+      expect(fieldFilterMatches(d, null, '2026-10-01'), isFalse);
+    });
+
+    test('foto tidak difilter', () {
+      expect(fieldFilterMatches(_field(FieldType.photo), const [], 'x'), isTrue);
+    });
   });
 
   group('nilai default (SPEC §3.4)', () {
