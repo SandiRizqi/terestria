@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:intl/intl.dart';
 
 import 'form_field_model.dart';
@@ -21,6 +23,29 @@ GeometryType geometryTypeFromName(Object? name) {
   }
 }
 
+/// Batas akurasi project dari JSON/DB; selain angka positif → null (tanpa
+/// aturan).
+double? parseMinAccuracy(Object? value) {
+  final d = parseDouble(value);
+  return d != null && d.isFinite && d > 0 ? d : null;
+}
+
+/// Label field kombinasi unik dari JSON (daftar) atau teks JSON (kolom DB);
+/// bentuk lain/rusak → [] (tanpa aturan).
+List<String> parseUniqueFields(Object? value) {
+  var decoded = value;
+  if (decoded is String) {
+    try {
+      decoded = jsonDecode(decoded);
+    } catch (_) {
+      return const [];
+    }
+  }
+  return decoded is List
+      ? [for (final e in decoded) if (e != null) e.toString()]
+      : const [];
+}
+
 class Project {
   final String id;
   final String name;
@@ -35,6 +60,12 @@ class Project {
   final String? createdBy; // username yang membuat project
   final List<String> collectors; // daftar username collectors/collaborators
 
+  /// Batas akurasi GPS (meter); null = tanpa aturan (SPEC §3.6).
+  final double? minAccuracy;
+
+  /// Label field kombinasi unik, berurutan; kosong = tanpa aturan (SPEC §3.7).
+  final List<String> uniqueFields;
+
   Project({
     required this.id,
     required this.name,
@@ -48,6 +79,8 @@ class Project {
     this.createdBy,
     this.geoDataCount,
     this.collectors = const [],
+    this.minAccuracy,
+    this.uniqueFields = const [],
   });
 
   Map<String, dynamic> toJson() {
@@ -64,6 +97,8 @@ class Project {
       'createdBy': createdBy,
       'geoDataCount': geoDataCount,
       'collectors': collectors,
+      'minAccuracy': minAccuracy,
+      'uniqueFields': uniqueFields,
     };
   }
 
@@ -101,6 +136,8 @@ class Project {
       collectors: collectorsData is List
           ? collectorsData.map((e) => e.toString()).toList()
           : const [],
+      minAccuracy: parseMinAccuracy(json['minAccuracy'] ?? json['min_accuracy']),
+      uniqueFields: parseUniqueFields(json['uniqueFields'] ?? json['unique_fields']),
     );
   }
 
@@ -125,6 +162,9 @@ class Project {
     DateTime? syncedAt,
     String? createdBy,
     List<String>? collectors,
+    double? minAccuracy,
+    bool clearMinAccuracy = false,
+    List<String>? uniqueFields,
   }) {
     return Project(
       id: id,
@@ -138,6 +178,9 @@ class Project {
       syncedAt: syncedAt ?? this.syncedAt,
       createdBy: createdBy ?? this.createdBy,
       collectors: collectors ?? this.collectors,
+      minAccuracy:
+          clearMinAccuracy ? null : (minAccuracy ?? this.minAccuracy),
+      uniqueFields: uniqueFields ?? this.uniqueFields,
     );
   }
 }

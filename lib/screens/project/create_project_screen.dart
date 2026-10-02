@@ -113,6 +113,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         createdAt: widget.project?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
         createdBy: createdBy,
+        // Aturan project (mis. dari web) ikut dipertahankan saat diedit.
+        minAccuracy: widget.project?.minAccuracy,
+        uniqueFields: widget.project?.uniqueFields ?? const [],
       );
 
       await _storageService.saveProject(project);

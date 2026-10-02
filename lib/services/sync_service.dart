@@ -382,10 +382,9 @@ class SyncService {
   Future<SyncResult> syncProject(Project project) =>
       runExclusive(() => _syncProject(project));
 
-  Future<SyncResult> _syncProject(Project project) async {
-    try {
-      // Prepare project data untuk dikirim
-      final Map<String, dynamic> payload = {
+  /// Payload push project (`POST /projects/`, snake_case).
+  @visibleForTesting
+  static Map<String, dynamic> projectPayload(Project project) => {
         'id': project.id,
         'name': project.name,
         'description': project.description,
@@ -393,10 +392,17 @@ class SyncService {
         // Tipe asli (termasuk yang tak dikenal app ini), default, min/maks,
         // dan satuan ikut terkirim.
         'form_fields': [for (final field in project.formFields) field.toSyncJson()],
+        // Aturan project (SPEC §3.5); null / [] = tanpa aturan.
+        'min_accuracy': project.minAccuracy,
+        'unique_fields': project.uniqueFields,
         'created_at': project.createdAt.toUtc().toIso8601String(),
         'updated_at': project.updatedAt.toUtc().toIso8601String(),
         'synced_at': DateTime.now().toUtc().toIso8601String(),
       };
+
+  Future<SyncResult> _syncProject(Project project) async {
+    try {
+      final Map<String, dynamic> payload = projectPayload(project);
 
       // Gunakan ApiService yang sudah include token
       final response = await _apiService.post(
@@ -1421,6 +1427,9 @@ class SyncService {
       collectors: collectors is List
           ? collectors.map((e) => e.toString()).toList()
           : const [],
+      minAccuracy: parseMinAccuracy(json['min_accuracy'] ?? json['minAccuracy']),
+      uniqueFields:
+          parseUniqueFields(json['unique_fields'] ?? json['uniqueFields']),
     );
   }
 

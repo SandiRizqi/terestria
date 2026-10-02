@@ -49,6 +49,8 @@ class CloudProjectService {
                     updatedAt: project.updatedAt,
                     dataCount: project.geoDataCount ?? 0,
                     collectors: project.collectors,
+                    minAccuracy: project.minAccuracy,
+                    uniqueFields: project.uniqueFields,
                     formFields: project.formFields.map((field) {
                       return FormFieldData(
                         label: field.label,

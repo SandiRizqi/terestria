@@ -27,8 +27,8 @@ GeoData _geo({LayerStyle? style}) => GeoData(
     );
 
 void main() {
-  test('versi DB naik ke 7', () {
-    expect(DatabaseService.schemaVersion, 7);
+  test('versi DB minimal 7', () {
+    expect(DatabaseService.schemaVersion, greaterThanOrEqualTo(7));
   });
 
   test('migrasi v7 idempoten: kolom style hanya ditambah bila belum ada', () {

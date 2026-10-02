@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/cloud_project_model.dart';
 import '../../models/project_model.dart';
-import '../../models/form_field_model.dart' as field_model;
 import '../../services/cloud_project_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
@@ -172,22 +171,8 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
           continue;
         }
         
-        // Convert CloudProject ke Project.
-        // Project dari cloud sudah ada di server → tandai SUDAH synced,
-        // supaya geodata-nya bisa langsung di-push.
-        final project = Project(
-          id: cloudProject.id,
-          name: cloudProject.name,
-          description: cloudProject.description,
-          geometryType: _parseGeometryType(cloudProject.geometryType),
-          formFields: _convertFormFields(cloudProject.formFields),
-          createdAt: cloudProject.createdAt,
-          updatedAt: cloudProject.updatedAt,
-          createdBy: cloudProject.createdBy,
-          collectors: cloudProject.collectors,
-          isSynced: true,
-          syncedAt: DateTime.now(),
-        );
+        // Ditandai SUDAH synced; aturan project ikut tersimpan.
+        final project = cloudProject.toProject();
         
         await _storageService.saveProject(project);
         addedCount++;
@@ -211,22 +196,6 @@ class _CloudProjectDialogState extends State<CloudProjectDialog> {
       }
     }
   }
-
-  GeometryType _parseGeometryType(String type) {
-    switch (type.toLowerCase()) {
-      case 'point':
-        return GeometryType.point;
-      case 'line':
-        return GeometryType.line;
-      case 'polygon':
-        return GeometryType.polygon;
-      default:
-        return GeometryType.point;
-    }
-  }
-
-  List<field_model.FormFieldModel> _convertFormFields(List<FormFieldData> cloudFields) =>
-      [for (final field in cloudFields) field.toFormFieldModel()];
 
   Widget _buildCollectorsRow(List<String> collectors, bool isGrayed) {
     const maxVisible = 2;

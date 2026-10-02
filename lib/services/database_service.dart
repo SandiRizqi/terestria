@@ -25,7 +25,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 7;
+  static const int _databaseVersion = 8;
 
   /// Versi skema DB (dicantumkan di info log diagnostik).
   static const int schemaVersion = _databaseVersion;
@@ -99,7 +99,9 @@ class DatabaseService {
         isSynced INTEGER DEFAULT 0,
         syncedAt INTEGER,
         createdBy TEXT,
-        collectors TEXT DEFAULT '[]'
+        collectors TEXT DEFAULT '[]',
+        minAccuracy REAL,
+        uniqueFields TEXT DEFAULT '[]'
       )
     ''');
 
@@ -286,30 +288,44 @@ class DatabaseService {
         await db.execute('ALTER TABLE geo_data ADD COLUMN style TEXT');
       }
     }
+
+    if (oldVersion < 8) {
+      // Aturan project: batas akurasi & kombinasi unik (null / '[]' = tanpa
+      // aturan). Hanya MENAMBAH kolom — data lama utuh.
+      final info = await db.rawQuery('PRAGMA table_info(projects)');
+      const types = {'minAccuracy': 'REAL', 'uniqueFields': "TEXT DEFAULT '[]'"};
+      for (final column in missingColumns(info, types.keys)) {
+        await db.execute(
+            'ALTER TABLE projects ADD COLUMN $column ${types[column]}');
+      }
+    }
   }
 
   // ==================== PROJECT OPERATIONS ====================
 
+  /// Baris tabel `projects` untuk [project].
+  static Map<String, Object?> projectToRow(Project project) => {
+        'id': project.id,
+        'name': project.name,
+        'description': project.description,
+        'geometryType': project.geometryType.toString().split('.').last,
+        'formFields':
+            jsonEncode(project.formFields.map((f) => f.toJson()).toList()),
+        'createdAt': project.createdAt.millisecondsSinceEpoch,
+        'updatedAt': project.updatedAt.millisecondsSinceEpoch,
+        'isSynced': project.isSynced ? 1 : 0,
+        'syncedAt': project.syncedAt?.millisecondsSinceEpoch,
+        'createdBy': project.createdBy,
+        'collectors': jsonEncode(project.collectors),
+        'minAccuracy': project.minAccuracy,
+        'uniqueFields': jsonEncode(project.uniqueFields),
+      };
+
   Future<void> saveProject(Project project) async {
     final db = await database;
-    
-    final projectMap = {
-      'id': project.id,
-      'name': project.name,
-      'description': project.description,
-      'geometryType': project.geometryType.toString().split('.').last,
-      'formFields': jsonEncode(project.formFields.map((f) => f.toJson()).toList()),
-      'createdAt': project.createdAt.millisecondsSinceEpoch,
-      'updatedAt': project.updatedAt.millisecondsSinceEpoch,
-      'isSynced': project.isSynced ? 1 : 0,
-      'syncedAt': project.syncedAt?.millisecondsSinceEpoch,
-      'createdBy': project.createdBy,
-      'collectors': jsonEncode(project.collectors),
-    };
-
     await db.insert(
       'projects',
-      projectMap,
+      projectToRow(project),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -321,7 +337,7 @@ class DatabaseService {
       orderBy: 'updatedAt DESC',
     );
 
-    return _mapRows(maps, _projectFromMap, 'project');
+    return _mapRows(maps, projectFromRow, 'project');
   }
 
   Future<Project?> getProjectById(String id) async {
@@ -334,7 +350,7 @@ class DatabaseService {
     );
 
     if (maps.isEmpty) return null;
-    return _projectFromMap(maps.first);
+    return projectFromRow(maps.first);
   }
 
   Future<void> deleteProject(String projectId) async {
@@ -378,7 +394,7 @@ class DatabaseService {
       orderBy: 'updatedAt DESC',
     );
 
-    return _mapRows(maps, _projectFromMap, 'project');
+    return _mapRows(maps, projectFromRow, 'project');
   }
 
   Future<int> getUnsyncedProjectCount() async {
@@ -688,7 +704,8 @@ class DatabaseService {
     return out;
   }
 
-  Project _projectFromMap(Map<String, dynamic> map) {
+  /// Project dari baris tabel `projects` (juga baris lama tanpa kolom aturan).
+  static Project projectFromRow(Map<String, dynamic> map) {
     final formFieldsList = jsonDecode(map['formFields']) as List;
 
     // Parse collectors: stored as JSON string, fallback ke empty list
@@ -721,6 +738,8 @@ class DatabaseService {
           : null,
       createdBy: map['createdBy'],
       collectors: collectors,
+      minAccuracy: parseMinAccuracy(map['minAccuracy']),
+      uniqueFields: parseUniqueFields(map['uniqueFields']),
     );
   }
 

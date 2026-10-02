@@ -1,4 +1,5 @@
 import 'form_field_model.dart';
+import 'project_model.dart';
 
 /// Model untuk project dari cloud/server
 class CloudProject {
@@ -13,6 +14,10 @@ class CloudProject {
   final List<FormFieldData> formFields;
   final List<String> collectors; // Daftar username collectors/collaborators
 
+  /// Aturan project (SPEC §3.5): batas akurasi (m) & kombinasi unik.
+  final double? minAccuracy;
+  final List<String> uniqueFields;
+
   CloudProject({
     required this.id,
     required this.name,
@@ -24,6 +29,8 @@ class CloudProject {
     this.dataCount = 0,
     required this.formFields,
     this.collectors = const [],
+    this.minAccuracy,
+    this.uniqueFields = const [],
   });
 
   factory CloudProject.fromJson(Map<String, dynamic> json) {
@@ -44,8 +51,29 @@ class CloudProject {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      minAccuracy: parseMinAccuracy(json['min_accuracy'] ?? json['minAccuracy']),
+      uniqueFields:
+          parseUniqueFields(json['unique_fields'] ?? json['uniqueFields']),
     );
   }
+
+  /// Project untuk HP. Project ini sudah ada di server → ditandai SUDAH
+  /// sync, supaya geodata-nya bisa langsung di-push.
+  Project toProject({DateTime? now}) => Project(
+        id: id,
+        name: name,
+        description: description,
+        geometryType: geometryTypeFromName(geometryType),
+        formFields: [for (final field in formFields) field.toFormFieldModel()],
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        createdBy: createdBy,
+        collectors: collectors,
+        isSynced: true,
+        syncedAt: now ?? DateTime.now(),
+        minAccuracy: minAccuracy,
+        uniqueFields: uniqueFields,
+      );
 }
 
 class FormFieldData {
