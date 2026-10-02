@@ -112,6 +112,35 @@ void main() {
     });
   });
 
+  group('ringkasan akurasi (form, sheet, layar edit, editor)', () {
+    test('line/polygon: rata-rata dibanding batas', () {
+      final over = accuracySummary(GeometryType.line, [_p(9), _p(7.8), _p(0)], 5)!;
+      expect(over.text, 'Average GPS accuracy 8.4 m — project limit 5 m');
+      expect(over.over, isTrue);
+      final ok = accuracySummary(GeometryType.polygon, [_p(3), _p(4)], 5)!;
+      expect(ok.text, 'Average GPS accuracy 3.5 m — project limit 5 m');
+      expect(ok.over, isFalse);
+    });
+
+    test('point: akurasi titiknya', () {
+      expect(accuracySummary(GeometryType.point, [_p(7.4)], 5)!.text,
+          'GPS accuracy 7.4 m — project limit 5 m');
+    });
+
+    test('tanpa titik GPS atau tanpa batas → tidak ada ringkasan', () {
+      expect(accuracySummary(GeometryType.line, [_p(0), _p(null)], 5), isNull);
+      expect(accuracySummary(GeometryType.line, [_p(9)], null), isNull);
+      expect(accuracySummary(GeometryType.line, const [], 5), isNull);
+    });
+
+    test('vertex di atas batas', () {
+      expect(isAboveLimit(_p(7), 5), isTrue);
+      expect(isAboveLimit(_p(5), 5), isFalse);
+      expect(isAboveLimit(_p(0), 5), isFalse);
+      expect(isAboveLimit(_p(7), null), isFalse);
+    });
+  });
+
   test('titik manual: akurasi 0 atau tanpa akurasi', () {
     expect(_p(0).isManual, isTrue);
     expect(_p(null).isManual, isTrue);

@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
 import '../dynamic_form.dart';
+import '../collection/accuracy_summary.dart';
 import '../style/feature_style_section.dart';
 
 /// Tampilkan form atribut sebagai bottom sheet modal untuk menyimpan satu sesi
@@ -168,6 +169,11 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
                     key: _formKey,
                     child: Column(
                       children: [
+                        AccuracySummary(
+                          geometryType: widget.project.geometryType,
+                          points: widget.points,
+                          limit: widget.project.minAccuracy,
+                        ),
                         RequiredFieldsProgress(
                           fields: widget.project.formFields,
                           data: _formData,

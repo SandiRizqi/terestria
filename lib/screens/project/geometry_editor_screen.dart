@@ -12,6 +12,7 @@ import '../../models/project_model.dart';
 import '../../services/basemap/pdf_overlay_controller.dart';
 import '../../services/basemap_service.dart';
 import '../../services/geometry_edit.dart';
+import '../../services/project_rules.dart';
 import '../../services/geometry_validation.dart';
 import '../../services/location_service_v2.dart';
 import '../../theme/app_theme.dart';
@@ -31,12 +32,17 @@ class GeometryEditorScreen extends StatefulWidget {
   /// Untuk test: jangan muat tile/basemap dari jaringan/disk.
   final bool showBasemap;
 
+  /// Batas akurasi project (m): vertex di atas batas ditandai dan rata-rata
+  /// akurasi tampil langsung. Null = tanpa aturan.
+  final double? minAccuracy;
+
   const GeometryEditorScreen({
     super.key,
     required this.type,
     required this.points,
     this.title,
     this.showBasemap = true,
+    this.minAccuracy,
   });
 
   @override
@@ -329,6 +335,8 @@ class _GeometryEditorScreenState extends State<GeometryEditorScreen> {
 
   Marker _vertexMarker(int i, LatLng at, {required bool selected}) {
     final numbered = selected || _session.length <= _numberedLimit;
+    final tooInaccurate =
+        isAboveLimit(_session.points[i], widget.minAccuracy);
     final size = selected ? 36.0 : (numbered ? 26.0 : 12.0);
     return Marker(
       point: at,
@@ -343,7 +351,9 @@ class _GeometryEditorScreenState extends State<GeometryEditorScreen> {
             height: size,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: selected ? Colors.orange.shade800 : AppTheme.primaryColor,
+              color: selected
+                  ? Colors.orange.shade800
+                  : (tooInaccurate ? Colors.red.shade700 : AppTheme.primaryColor),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: const [
@@ -420,6 +430,23 @@ class _GeometryEditorScreenState extends State<GeometryEditorScreen> {
                     ),
                 ],
               ),
+              if (accuracySummary(
+                      widget.type, _session.points, widget.minAccuracy)
+                  case final info?)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    info.text,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: info.over
+                          ? Colors.red.shade700
+                          : Colors.green.shade700,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               Row(
                 children: [

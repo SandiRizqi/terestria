@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
 import '../../widgets/dynamic_form.dart';
+import '../../widgets/collection/accuracy_summary.dart';
 import '../../widgets/map/tools/measure_math.dart';
 import '../../widgets/style/feature_style_section.dart';
 import 'geometry_editor_screen.dart';
@@ -68,6 +69,7 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
         builder: (_) => GeometryEditorScreen(
           type: widget.project.geometryType,
           points: _points,
+          minAccuracy: widget.project.minAccuracy,
         ),
       ),
     );
@@ -312,6 +314,11 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
                       ),
                     ),
 
+                    AccuracySummary(
+                      geometryType: widget.project.geometryType,
+                      points: _points,
+                      limit: widget.project.minAccuracy,
+                    ),
                     RequiredFieldsProgress(
                       fields: widget.project.formFields,
                       data: _formData,

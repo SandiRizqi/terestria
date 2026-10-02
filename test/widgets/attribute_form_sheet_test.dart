@@ -37,7 +37,8 @@ class _Storage implements StorageService {
       super.noSuchMethod(invocation);
 }
 
-Future<_Storage> _openSheet(WidgetTester tester, {Project? project}) async {
+Future<_Storage> _openSheet(WidgetTester tester,
+    {Project? project, List<GeoPoint>? points}) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -52,7 +53,7 @@ Future<_Storage> _openSheet(WidgetTester tester, {Project? project}) async {
               isScrollControlled: true,
               builder: (_) => AttributeFormSheet(
                 project: project ?? _project,
-                points: _points,
+                points: points ?? _points,
                 username: 'surveyor',
                 storageService: storage,
               ),
@@ -117,6 +118,29 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(storage.saved.single.formData['Kondisi'], 3);
+  });
+
+  testWidgets('project berbatas akurasi: ringkasan rata-rata tampil, simpan tetap boleh',
+      (tester) async {
+    final project = Project(
+      id: 'pC',
+      name: 'Blok C',
+      description: '',
+      geometryType: GeometryType.polygon,
+      formFields: const [],
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+      minAccuracy: 5,
+    );
+    final storage = await _openSheet(tester, project: project, points: [
+      GeoPoint(latitude: -6.200, longitude: 106.800, accuracy: 9, timestamp: DateTime.utc(2026)),
+      GeoPoint(latitude: -6.200, longitude: 106.801, accuracy: 7.8, timestamp: DateTime.utc(2026)),
+      GeoPoint(latitude: -6.201, longitude: 106.801, accuracy: 0, timestamp: DateTime.utc(2026)),
+    ]);
+    expect(find.text('Average GPS accuracy 8.4 m — project limit 5 m'), findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(storage.saved, hasLength(1));
   });
 
   testWidgets('tanpa mengubah style → tersimpan dengan style null (default)',

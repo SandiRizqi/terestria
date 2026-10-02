@@ -160,6 +160,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('editor berbatas akurasi: rata-rata langsung, hapus vertex buruk',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final points = [
+      _m(0, 0, acc: 3),
+      _m(20, 0, acc: 3),
+      _m(20, 20, acc: 3),
+      _m(0, 20, acc: 20),
+      _m(-5, 10, acc: 0),
+    ];
+    await tester.pumpWidget(MaterialApp(
+      home: GeometryEditorScreen(
+        type: GeometryType.polygon,
+        points: points,
+        minAccuracy: 5,
+        showBasemap: false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Average GPS accuracy 7.3 m — project limit 5 m'), findsOneWidget);
+
+    // Pilih titik 4 (±20 m) lalu hapus.
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byTooltip('Next point'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.textContaining('Point 4 of 5'), findsOneWidget);
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Average GPS accuracy 3 m — project limit 5 m'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('editor: keluar dengan perubahan → konfirmasi buang',
       (tester) async {
     tester.view.physicalSize = const Size(400, 800);

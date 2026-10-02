@@ -130,3 +130,32 @@ PointCapture decidePointCapture({
   }
   return GpsPointCapture(fix);
 }
+
+/// Ringkasan akurasi record dibanding batas project.
+class AccuracySummaryInfo {
+  final String text;
+  final bool over;
+  const AccuracySummaryInfo(this.text, this.over);
+}
+
+/// Ringkasan untuk form "Survey data", sheet Tracking Aktif, layar edit, dan
+/// editor geometri, mis. "Average GPS accuracy 8.4 m — project limit 5 m".
+/// Null bila project tanpa batas atau record tanpa titik GPS.
+AccuracySummaryInfo? accuracySummary(
+    GeometryType type, List<GeoPoint> points, double? limit) {
+  if (limit == null || limit <= 0 || points.isEmpty) return null;
+  final isPoint = type == GeometryType.point;
+  final value = isPoint ? gpsAccuracy(points.first) : averageGpsAccuracy(points);
+  if (value == null) return null;
+  final over = value > limit;
+  final label = isPoint ? 'GPS accuracy' : 'Average GPS accuracy';
+  return AccuracySummaryInfo(
+    '$label ${formatAccuracy(value, limit: over ? limit : null)} m — '
+    'project limit ${formatNumber(limit)} m',
+    over,
+  );
+}
+
+/// Titik GPS yang akurasinya di atas batas (ditandai di editor geometri).
+bool isAboveLimit(GeoPoint point, double? limit) =>
+    limit != null && (gpsAccuracy(point) ?? 0) > limit;

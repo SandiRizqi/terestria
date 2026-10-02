@@ -53,6 +53,7 @@ import '../../utils/ui_feedback.dart';
 import '../../widgets/readiness/daily_readiness_check.dart';
 import '../readiness/field_readiness_screen.dart';
 import '../../widgets/collection/gps_status_banners.dart';
+import '../../widgets/collection/accuracy_summary.dart';
 import '../../services/project_rules.dart';
 import '../../widgets/map/feature_pick_sheet.dart';
 import '../../widgets/map/project_feature_layers.dart';
@@ -2936,6 +2937,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                         child: ListView(
                           padding: const EdgeInsets.all(AppTheme.spacingMedium),
                           children: [
+                            AccuracySummary(
+                              geometryType: widget.project.geometryType,
+                              points: _collectedPoints,
+                              limit: widget.project.minAccuracy,
+                            ),
                             RequiredFieldsProgress(
                               fields: widget.project.formFields,
                               data: _formData,
