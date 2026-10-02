@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geoform_app/models/form_field_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
 import 'package:geoform_app/services/project_rules.dart';
@@ -138,6 +139,85 @@ void main() {
       expect(isAboveLimit(_p(5), 5), isFalse);
       expect(isAboveLimit(_p(0), 5), isFalse);
       expect(isAboveLimit(_p(7), null), isFalse);
+    });
+  });
+
+  group('kombinasi unik (normalisasi sama dengan server)', () {
+    FormFieldModel f(String label, FieldType type) =>
+        FormFieldModel(id: label, label: label, type: type);
+    final fields = [
+      f('WERKS', FieldType.text),
+      f('BLOCK_NAME', FieldType.dropdown),
+      f('NO_TPH', FieldType.number),
+      f('Kondisi', FieldType.rating),
+      f('Panen', FieldType.checkbox),
+      f('Catatan', FieldType.text),
+    ];
+    Project project(List<String> unique) => Project(
+          id: 'P1',
+          name: 'Sensus TPH',
+          description: '',
+          geometryType: GeometryType.point,
+          formFields: fields,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          uniqueFields: unique,
+        );
+    final key = project(['WERKS', 'BLOCK_NAME', 'NO_TPH']);
+    GeoData record(String id, Map<String, dynamic> data) => GeoData(
+          id: id,
+          projectId: 'P1',
+          formData: data,
+          points: const [],
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+
+    test('nilai kunci (kasus yang sama dengan test server)', () {
+      expect(uniqueKeyValues(key, {'WERKS': ' a1 ', 'BLOCK_NAME': 'B  07', 'NO_TPH': '12'}),
+          ['a1', 'b 07', '12']);
+      expect(uniqueKeyValues(key, {'WERKS': 'A1', 'BLOCK_NAME': 'b 07', 'NO_TPH': 12.0}),
+          ['a1', 'b 07', '12']);
+      expect(
+          uniqueKeyValues(project(['Kondisi', 'Panen', 'NO_TPH']),
+              {'Kondisi': '4', 'Panen': 'true', 'NO_TPH': 10.5}),
+          ['4', 'true', '10.5']);
+      expect(uniqueKeyValues(project(['Panen']), {'Panen': false}), ['false']);
+      expect(uniqueKeyValues(project(['NO_TPH']), {'NO_TPH': ' Dua  Belas '}),
+          ['dua belas']);
+      // Koma bukan desimal di server → dibandingkan sebagai teks.
+      expect(uniqueKeyValues(project(['NO_TPH']), {'NO_TPH': '10,5'}), ['10,5']);
+    });
+
+    test('field kunci kosong atau project tanpa aturan → tidak dicek', () {
+      expect(uniqueKeyValues(key, {'WERKS': 'A1', 'NO_TPH': 12}), isNull);
+      expect(uniqueKeyValues(key, {'WERKS': 'A1', 'BLOCK_NAME': ' ', 'NO_TPH': 12}), isNull);
+      expect(uniqueKeyValues(project(const []), {'WERKS': 'A1'}), isNull);
+    });
+
+    test('duplikat dicari di record lokal lain; record sendiri dikecualikan', () {
+      final records = [
+        record('g1', {'WERKS': 'A1', 'BLOCK_NAME': 'B07', 'NO_TPH': 10}),
+        record('g2', {'WERKS': 'A2', 'BLOCK_NAME': 'B07', 'NO_TPH': 10}),
+      ];
+      final data = {'WERKS': 'a1 ', 'BLOCK_NAME': 'b07', 'NO_TPH': '10.0'};
+      expect(findDuplicate(key, data, records)?.id, 'g1');
+      expect(findDuplicate(key, data, records, excludeId: 'g1'), isNull);
+      expect(findDuplicate(key, {'WERKS': 'A3', 'BLOCK_NAME': 'B07', 'NO_TPH': 10}, records),
+          isNull);
+      expect(findDuplicate(project(const []), data, records), isNull);
+    });
+
+    test('pesan sama dengan server', () {
+      expect(duplicateMessage(key, {'WERKS': 'A1 ', 'BLOCK_NAME': 'B07', 'NO_TPH': 12.0}),
+          'WERKS=A1, BLOCK_NAME=B07, NO_TPH=12 already exists in this project.');
+    });
+
+    test('kunci berubah? (layar edit hanya mengecek bila berubah)', () {
+      expect(uniqueKeyChanged(key, {'WERKS': 'A1', 'BLOCK_NAME': 'B07', 'NO_TPH': 12},
+          {'WERKS': 'a1', 'BLOCK_NAME': 'B07', 'NO_TPH': '12', 'Catatan': 'x'}), isFalse);
+      expect(uniqueKeyChanged(key, {'WERKS': 'A1', 'BLOCK_NAME': 'B07', 'NO_TPH': 12},
+          {'WERKS': 'A2', 'BLOCK_NAME': 'B07', 'NO_TPH': 12}), isTrue);
     });
   });
 

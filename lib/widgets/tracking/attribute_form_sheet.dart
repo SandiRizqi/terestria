@@ -8,6 +8,7 @@ import '../../models/project_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/storage_service.dart';
+import '../../services/project_rules.dart';
 import '../../services/tracking/session_to_geodata.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/app_logger.dart';
@@ -96,6 +97,18 @@ class _AttributeFormSheetState extends State<AttributeFormSheet> {
         warning: true,
       );
       return;
+    }
+
+    // Kombinasi unik: record lokal lain dengan kunci sama → diblokir
+    // (pesan sama dengan server).
+    if (widget.project.uniqueFields.isNotEmpty) {
+      final records = await _storage.loadGeoData(widget.project.id);
+      if (!mounted) return;
+      if (findDuplicate(widget.project, _formData, records) != null) {
+        showInfoFeedback(context, duplicateMessage(widget.project, _formData),
+            warning: true, duration: const Duration(seconds: 5));
+        return;
+      }
     }
 
     setState(() => _saving = true);

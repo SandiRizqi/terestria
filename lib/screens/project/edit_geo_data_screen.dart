@@ -6,6 +6,7 @@ import '../../models/geo_data_model.dart';
 import '../../models/layer_model.dart';
 import '../../models/project_model.dart';
 import '../../services/geometry_edit.dart';
+import '../../services/project_rules.dart';
 import '../../services/photo_sync_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/storage_service.dart';
@@ -100,6 +101,20 @@ class _EditGeoDataScreenState extends State<EditGeoDataScreen> {
           'This ${widget.project.geometryType.name} needs at least $minPoints points.',
           warning: true);
       return;
+    }
+
+    // Kombinasi unik: dicek hanya bila edit mengubah kuncinya (duplikat lama
+    // tetap bisa diedit).
+    if (uniqueKeyChanged(widget.project, widget.geoData.formData, _formData)) {
+      final records = await _storageService.loadGeoData(widget.project.id);
+      if (!mounted) return;
+      if (findDuplicate(widget.project, _formData, records,
+              excludeId: widget.geoData.id) !=
+          null) {
+        showInfoFeedback(context, duplicateMessage(widget.project, _formData),
+            warning: true, duration: const Duration(seconds: 5));
+        return;
+      }
     }
 
     setState(() => _isSaving = true);

@@ -2148,6 +2148,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       return false;
     }
 
+    // Kombinasi unik: record lokal lain dengan kunci sama → diblokir (pesan
+    // sama dengan server).
+    if (findDuplicate(widget.project, _formData, _existingData) != null) {
+      showInfoFeedback(context, duplicateMessage(widget.project, _formData),
+          warning: true, duration: const Duration(seconds: 5));
+      return false;
+    }
+
     setState(() => _isSaving = true);
 
     try {

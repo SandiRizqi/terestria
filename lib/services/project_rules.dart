@@ -1,6 +1,7 @@
+import '../models/form_field_model.dart';
 import '../models/geo_data_model.dart';
 import '../models/project_model.dart';
-import '../utils/field_values.dart' show formatNumber;
+import '../utils/field_values.dart' show formatNumber, multiselectParts;
 
 // Aturan project di HP (SPEC §3.6–3.7). Murni (tanpa Flutter). Rumus
 // akurasi sama dengan server (gis-backend `validation.accuracy_violation`):
@@ -159,3 +160,108 @@ AccuracySummaryInfo? accuracySummary(
 /// Titik GPS yang akurasinya di atas batas (ditandai di editor geometri).
 bool isAboveLimit(GeoPoint point, double? limit) =>
     limit != null && (gpsAccuracy(point) ?? 0) > limit;
+
+
+// ─── Kombinasi unik (SPEC §3.7) ────────────────────────────────────────────
+// Normalisasi HARUS sama dengan server (gis-backend `validation._key_parts`):
+// - angka/desimal/skala: sebagai angka (10 = 10.0 = "10"; koma bukan desimal);
+// - checkbox: true/false;
+// - selain itu: trim, spasi berulang jadi satu, tanpa beda huruf besar/kecil.
+
+final _whitespace = RegExp(r'\s+');
+
+bool _isCheckedKey(Object value) {
+  if (value == true) return true;
+  final s = value.toString().trim().toLowerCase();
+  return s == 'true' || s == '1';
+}
+
+/// Angka seperti Python `float(str.strip())` di server (koma tidak diterima).
+double? _keyNumber(Object value) {
+  if (value is bool) return null;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString().trim());
+}
+
+/// (nilai kunci, nilai tampilan) satu field, atau null bila kosong.
+(String, String)? _keyPart(FieldType? type, Object? value) {
+  if (value == null) return null;
+  Object v = value;
+  if (v is List) v = multiselectParts(v).join('; ');
+  if (v is String && v.trim().isEmpty) return null;
+  if (type == FieldType.checkbox) {
+    final text = _isCheckedKey(v) ? 'true' : 'false';
+    return (text, text);
+  }
+  if (type == FieldType.number ||
+      type == FieldType.decimal ||
+      type == FieldType.rating) {
+    final n = _keyNumber(v);
+    if (n != null && n.isFinite) {
+      final text = formatNumber(n);
+      return (text, text);
+    }
+  }
+  final shown = v.toString().trim().replaceAll(_whitespace, ' ');
+  return (shown.toLowerCase(), shown);
+}
+
+List<(String, (String, String))>? _uniqueKeyParts(
+    Project project, Map<String, dynamic> formData) {
+  if (project.uniqueFields.isEmpty) return null;
+  final types = {for (final f in project.formFields) f.label: f.type};
+  final parts = <(String, (String, String))>[];
+  for (final label in project.uniqueFields) {
+    final part = _keyPart(types[label], formData[label]);
+    if (part == null) return null;
+    parts.add((label, part));
+  }
+  return parts;
+}
+
+/// Nilai kunci kombinasi unik ternormalisasi (urut `uniqueFields`), atau
+/// null bila project tanpa aturan atau ada field kunci yang kosong.
+List<String>? uniqueKeyValues(Project project, Map<String, dynamic> formData) =>
+    _uniqueKeyParts(project, formData)?.map((e) => e.$2.$1).toList();
+
+bool _sameKey(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// Record lokal lain di project dengan kunci yang sama, atau null.
+GeoData? findDuplicate(
+  Project project,
+  Map<String, dynamic> formData,
+  Iterable<GeoData> records, {
+  String? excludeId,
+}) {
+  final key = uniqueKeyValues(project, formData);
+  if (key == null) return null;
+  for (final record in records) {
+    if (record.id == excludeId || record.projectId != project.id) continue;
+    final other = uniqueKeyValues(project, record.formData);
+    if (other != null && _sameKey(key, other)) return record;
+  }
+  return null;
+}
+
+/// Pesan duplikat — sama dengan server (422 `duplicate`).
+String duplicateMessage(Project project, Map<String, dynamic> formData) {
+  final parts = _uniqueKeyParts(project, formData) ?? const [];
+  final listed = parts.map((e) => '${e.$1}=${e.$2.$2}').join(', ');
+  return '$listed already exists in this project.';
+}
+
+/// Edit mengubah kunci kombinasi unik? (Edit yang tidak mengubahnya tidak
+/// dicek, jadi duplikat lama tetap bisa diedit.)
+bool uniqueKeyChanged(Project project, Map<String, dynamic> before,
+    Map<String, dynamic> after) {
+  final a = uniqueKeyValues(project, before);
+  final b = uniqueKeyValues(project, after);
+  if (a == null || b == null) return a != b;
+  return !_sameKey(a, b);
+}
