@@ -38,8 +38,10 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 - [x] T19: `accuracySummary`/`isAboveLimit` (murni) + widget `AccuracySummary` ("Average GPS accuracy 8.4 m — project limit 5 m"; melebihi batas → peringatan "server will reject…", simpan tetap boleh; tanpa titik GPS / tanpa batas → tidak tampil) di form "Survey data", sheet Tracking Aktif, dan layar edit. Editor geometri: parameter `minAccuracy`, vertex di atas batas merah, rata-rata langsung di toolbar (hapus vertex buruk langsung memperbarui).
 - [x] T20: `uniqueKeyValues`/`findDuplicate`/`duplicateMessage`/`uniqueKeyChanged` di `project_rules.dart` dengan normalisasi sama dengan server (angka seperti `float()` Python — koma bukan desimal; checkbox `true`/`1`; selain itu trim, spasi diciutkan, huruf kecil; kasus uji sama dengan test server). Simpan diblokir bila record lokal lain di project berkunci sama: form koleksi (`_existingData`), sheet Tracking Aktif, dan layar edit (hanya bila kunci berubah; record sendiri dikecualikan). Pesan sama dengan server ("WERKS=A1, NO_TPH=12 already exists in this project."). Beda kecil yang diketahui: `casefold` Python vs `toLowerCase` Dart (mis. "ß"), format eksponen angka sangat kecil/besar.
 
+- [x] Tambahan (gis-dashboard `61c4b58`): edit atribut/geometri dari web yang ditolak aturan project (422 `duplicate`/`low_accuracy`) kini menampilkan pesan server, bukan "Failed to update form data".
+
 ### Checkpoint C
-- [ ] Test lokal hijau; migrasi `0023` konsisten (cek offline).
+- [x] Test lokal hijau; migrasi `0023` konsisten (cek offline) — 2 Okt: HP 913 test, analyze 0 error / 29 warning; backend 161 OK, tidak ada migrasi tertunda.
 - [ ] (User) CI: `tests_project_rules_db` dan test DB lain.
 - [ ] (User, di HP) point akurasi buruk ditolak; tracking rata-rata buruk → push ditolak → hapus titik → sync berhasil; duplikat lokal diblokir, duplikat dari HP lain ditolak server.
 
