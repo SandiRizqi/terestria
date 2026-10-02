@@ -6,6 +6,8 @@ import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/connectivity_service.dart';
+import '../../utils/field_values.dart' show formatNumber;
+import '../../widgets/project/project_rules_section.dart';
 import '../../widgets/form_field_builder.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:async';
@@ -34,6 +36,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   late TextEditingController _descriptionController;
   GeometryType _selectedGeometry = GeometryType.point;
   List<FormFieldModel> _formFields = [];
+  // Aturan project: akurasi minimum & id field kombinasi unik (urut).
+  late final TextEditingController _minAccuracyController;
+  List<String> _uniqueFieldIds = [];
   bool _isSaving = false;
   bool _isOnline = false;
   StreamSubscription<bool>? _connectivitySubscription;
@@ -44,9 +49,14 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     _nameController = TextEditingController(text: widget.project?.name ?? '');
     _descriptionController = TextEditingController(text: widget.project?.description ?? '');
     
+    final minAccuracy = widget.project?.minAccuracy;
+    _minAccuracyController = TextEditingController(
+        text: minAccuracy == null ? '' : formatNumber(minAccuracy));
     if (widget.project != null) {
       _selectedGeometry = widget.project!.geometryType;
       _formFields = List.from(widget.project!.formFields);
+      _uniqueFieldIds =
+          uniqueFieldIdsFromLabels(_formFields, widget.project!.uniqueFields);
     } else {
       // Untuk project baru, tambahkan field "Name" secara default
       _formFields = [
@@ -78,6 +88,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _minAccuracyController.dispose();
     _connectivitySubscription?.cancel();
     super.dispose();
   }
@@ -104,18 +115,19 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         createdBy = user?.username;
       }
 
+      final keyIds = validUniqueFieldIds(_formFields, _uniqueFieldIds);
       final project = Project(
         id: widget.project?.id ?? _uuid.v4(),
         name: _nameController.text,
         description: _descriptionController.text,
         geometryType: _selectedGeometry,
-        formFields: _formFields,
+        // Field kombinasi unik selalu wajib diisi.
+        formFields: withRequiredKeyFields(_formFields, keyIds),
         createdAt: widget.project?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
         createdBy: createdBy,
-        // Aturan project (mis. dari web) ikut dipertahankan saat diedit.
-        minAccuracy: widget.project?.minAccuracy,
-        uniqueFields: widget.project?.uniqueFields ?? const [],
+        minAccuracy: minAccuracyFromInput(_minAccuracyController.text),
+        uniqueFields: uniqueFieldLabels(_formFields, keyIds),
       );
 
       await _storageService.saveProject(project);
@@ -360,12 +372,16 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
       builder: (context) => FormFieldBuilderDialog(
         field: _formFields[index],
         existingFields: _formFields, // Pass existing fields untuk validasi
+        lockRequired: _uniqueFieldIds.contains(_formFields[index].id),
       ),
     );
 
     if (field != null) {
       setState(() {
         _formFields[index] = field;
+        // Ganti nama ikut otomatis (dilacak lewat id); tipe yang tak lagi
+        // memenuhi syarat keluar dari kombinasi.
+        _uniqueFieldIds = validUniqueFieldIds(_formFields, _uniqueFieldIds);
       });
     }
   }
@@ -373,6 +389,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   void _deleteFormField(int index) {
     setState(() {
       _formFields.removeAt(index);
+      _uniqueFieldIds = validUniqueFieldIds(_formFields, _uniqueFieldIds);
     });
   }
 
@@ -474,36 +491,41 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                         ),
                         if (widget.project != null) ...[
                           const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: Colors.orange.withOpacity(0.3),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
                               ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.lock,
-                                  size: 14,
-                                  color: Colors.orange[700],
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.orange.withOpacity(0.3),
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Cannot be changed',
-                                  style: TextStyle(
-                                    fontSize: 11,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.lock,
+                                    size: 14,
                                     color: Colors.orange[700],
-                                    fontWeight: FontWeight.w500,
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      'Cannot be changed',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.orange[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -631,6 +653,22 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 20),
+
+            // Project rules: akurasi minimum & kombinasi unik
+            Container(
+              decoration: AppTheme.getCardDecoration,
+              padding: const EdgeInsets.all(20),
+              child: ProjectRulesSection(
+                minAccuracyController: _minAccuracyController,
+                fields: _formFields,
+                uniqueFieldIds: _uniqueFieldIds,
+                onUniqueFieldIdsChanged: (ids) => setState(() {
+                  _uniqueFieldIds = ids;
+                  _formFields = withRequiredKeyFields(_formFields, ids);
+                }),
+              ),
+            ),
           ],
         ),
       ),
@@ -742,7 +780,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         ),
         title: Text(field.label, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
-          '${fieldTypeDisplayName(field)}${field.required ? ' • Required' : ''}',
+          '${fieldTypeDisplayName(field)}${field.required ? ' • Required' : ''}'
+          '${_uniqueFieldIds.contains(field.id) ? ' • Unique key' : ''}',
           style: TextStyle(color: Colors.grey[600], fontSize: 13),
         ),
         trailing: widget.project != null

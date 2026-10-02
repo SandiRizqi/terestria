@@ -303,6 +303,42 @@ void main() {
     });
   });
 
+  testWidgets('field kunci kombinasi unik tidak bisa dibuat opsional',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    FormFieldModel? result;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () async => result = await showDialog<FormFieldModel>(
+                context: context,
+                builder: (_) => FormFieldBuilderDialog(
+                  field: FormFieldModel(id: 'k', label: 'WERKS', type: FieldType.text),
+                  lockRequired: true,
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final tile = tester.widget<CheckboxListTile>(
+        find.widgetWithText(CheckboxListTile, 'Required Field'));
+    expect(tile.value, isTrue);
+    expect(tile.onChanged, isNull);
+    expect(find.textContaining('unique combination'), findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result?.required, isTrue);
+  });
+
   testWidgets('teks panjang bisa dipilih', (tester) async {
     final result = await _openDialog(tester);
     await _pickType(tester, 'Long text');

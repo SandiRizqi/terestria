@@ -16,10 +16,14 @@ class FormFieldBuilderDialog extends StatefulWidget {
   final FormFieldModel? field;
   final List<FormFieldModel>? existingFields; // untuk cek field photo yang sudah ada
 
+  /// Field bagian kombinasi unik project: selalu wajib diisi.
+  final bool lockRequired;
+
   const FormFieldBuilderDialog({
     Key? key, 
     this.field,
     this.existingFields,
+    this.lockRequired = false,
   }) : super(key: key);
 
   @override
@@ -49,7 +53,7 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
     if (widget.field != null) {
       _labelController.text = widget.field!.label;
       _selectedType = widget.field!.type;
-      _isRequired = widget.field!.required;
+      _isRequired = widget.field!.required || widget.lockRequired;
       _minPhotos = widget.field!.minPhotos ?? 0;
       _maxPhotos = widget.field!.maxPhotos ?? 1;
       if (widget.field!.options != null) {
@@ -133,7 +137,7 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
       id: _id,
       label: _labelController.text,
       type: _selectedType,
-      required: _isRequired,
+      required: _isRequired || widget.lockRequired,
       options: _hasOptions ? _options : null,
       minPhotos: _selectedType == FieldType.photo ? _minPhotos : null,
       maxPhotos: _selectedType == FieldType.photo ? _maxPhotos : null,
@@ -451,10 +455,15 @@ class _FormFieldBuilderDialogState extends State<FormFieldBuilderDialog> {
               // Required checkbox
               CheckboxListTile(
                 title: const Text('Required Field'),
-                value: _isRequired,
-                onChanged: (value) {
-                  setState(() => _isRequired = value ?? false);
-                },
+                subtitle: widget.lockRequired
+                    ? const Text('Part of the unique combination')
+                    : null,
+                value: _isRequired || widget.lockRequired,
+                onChanged: widget.lockRequired
+                    ? null
+                    : (value) {
+                        setState(() => _isRequired = value ?? false);
+                      },
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
               ),

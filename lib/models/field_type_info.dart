@@ -38,6 +38,11 @@ const List<FieldTypeInfo> fieldTypeInfos = [
 FieldTypeInfo fieldTypeInfo(FieldType type) =>
     fieldTypeInfos.firstWhere((info) => info.type == type);
 
+/// Bisa jadi bagian kombinasi unik project: bukan foto dan bukan teks panjang
+/// (SPEC §3.5; tipe tak dikenal diperlakukan seperti teks).
+bool canBeUniqueKey(FormFieldModel field) =>
+    field.type != FieldType.photo && field.type != FieldType.textarea;
+
 /// Nama tipe untuk ditampilkan; tipe tak dikenal menyebut nama aslinya.
 String fieldTypeDisplayName(FormFieldModel field) => field.isUnknownType
     ? '${field.unknownTypeName} (not supported in this app version)'

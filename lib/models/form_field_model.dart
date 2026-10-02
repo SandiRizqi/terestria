@@ -56,6 +56,22 @@ class FormFieldModel {
   /// Nama tipe yang disimpan/dikirim: nama asli bila tipe tak dikenal.
   String get typeName => unknownTypeName ?? type.name;
 
+  /// Salinan dengan [required] yang diberikan.
+  FormFieldModel withRequired(bool required) => FormFieldModel(
+        id: id,
+        label: label,
+        type: type,
+        required: required,
+        options: options,
+        defaultValue: defaultValue,
+        maxPhotos: maxPhotos,
+        minPhotos: minPhotos,
+        min: min,
+        max: max,
+        unit: unit,
+        unknownTypeName: unknownTypeName,
+      );
+
   bool get isUnknownType => unknownTypeName != null;
 
   Map<String, dynamic> toJson() {
