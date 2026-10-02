@@ -21,11 +21,11 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 
 ## Fase 2 — Tipe field: web
 - [x] T10 (gis-dashboard `ef02e41`): `fieldTypes.ts` (murni) — 12 tipe + label, parse/format angka/jam/tanggal-jam, pilihan ganda, validasi dengan pesan sama dengan HP, default (`now`), `displayValue`; tipe tak dikenal = teks. `types.ts`: 12 tipe + pengaturan field, `Project.minAccuracy`/`uniqueFields`. `npm test` 29 → 69 (tabel kasus bersama server/HP), `tsc` baseline.
-- [ ] T11: tampilan nilai terformat (tabel, detail, popup).
-- [ ] T12: `FieldValueInput` di Edit Attributes & popup peta.
+- [x] T11 (gis-dashboard `2dabde1`): tabel (ringkasan & baris terbuka), `DataDetailModal`, popup peta, dan pratinjau pencarian peta menampilkan nilai lewat definisi field (`entryText`): Yes/No, `4 / 5`, `35.5 cm`, `2026-10-01 07:15`, `"A; B"`; teks panjang mempertahankan baris baru. Foto dikenali dari tipe (`isPhotoEntry`); kunci tanpa definisi tetap seperti dulu (daftar = foto). Isian kosong tidak lagi tampil "null".
+- [x] T12 (gis-dashboard `2fe06d0`): `components/FieldValueInput.tsx` (`FieldValueInput` + `AttributeFields`) dipakai Edit Attributes di tabel & popup peta: angka (+satuan, koma/titik → number), teks panjang, date/time/datetime-local (format app), dropdown, centang pilihan ganda (`"A; B"`), checkbox (boolean), bintang 1–5; foto baca-saja; kunci tanpa definisi = input teks. Urutan field form (juga yang belum ada di record), lalu kunci lain. Masalah isian (`formIssues`, pesan sama dengan HP) memblokir simpan; foto tidak dicek. Nilai yang tidak disentuh tidak berubah. `npm test` 75.
 
 ### Checkpoint B
-- [ ] `npm test`, `tsc` (baseline), lint, `next build` hijau.
+- [x] `npm test`, `tsc` (baseline), lint, `next build` hijau (2 Okt: 75 test; `tsc` 1 error lama; lint per file sama dengan HEAD; build berhasil).
 - [ ] (User, di browser) tampilan & edit atribut tipe lama dan baru.
 
 ## Fase 3 — Aturan project
