@@ -273,7 +273,7 @@ class _GeometryEditorScreenState extends State<GeometryEditorScreen> {
                   style: const TextStyle(fontFeatures: [
                     FontFeature.tabularFigures(),
                   ])),
-              subtitle: Text(p.accuracy == null
+              subtitle: Text(p.isManual
                   ? 'Placed manually'
                   : 'GPS ±${p.accuracy!.toStringAsFixed(1)} m'
                       '${p.fixQuality == null ? '' : ' · ${p.fixQuality!.toUpperCase()}'}'),
@@ -372,7 +372,7 @@ class _GeometryEditorScreenState extends State<GeometryEditorScreen> {
         : isPoint
             ? 'Move the map so the crosshair is on the correct spot'
             : 'Point ${sel + 1} of ${_session.length}'
-                '${p?.accuracy == null ? ' · placed manually' : ' · GPS ±${p!.accuracy!.toStringAsFixed(1)} m'}';
+                '${p == null || p.isManual ? ' · placed manually' : ' · GPS ±${p.accuracy!.toStringAsFixed(1)} m'}';
     final button = ButtonStyle(
       minimumSize: WidgetStateProperty.all(const Size(0, 50)),
     );

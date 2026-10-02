@@ -53,6 +53,7 @@ import '../../utils/ui_feedback.dart';
 import '../../widgets/readiness/daily_readiness_check.dart';
 import '../readiness/field_readiness_screen.dart';
 import '../../widgets/collection/gps_status_banners.dart';
+import '../../services/project_rules.dart';
 import '../../widgets/map/feature_pick_sheet.dart';
 import '../../widgets/map/project_feature_layers.dart';
 import '../../widgets/style/feature_style_section.dart';
@@ -1951,32 +1952,54 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       return;
     }
 
-    // Titik di crosshair (tengah peta) — tombol "My Location" memusatkan peta
-    // ke posisi GPS bila titik harus di posisi sekarang.
-    final center = _mapController.camera.center;
-    _appendPoint(GeoPoint(
-      latitude: center.latitude,
-      longitude: center.longitude,
-      timestamp: DateTime.now(),
-    ));
-    HapticFeedback.selectionClick();
-
-    // Peringatkan (tanpa memblok) bila fix GPS saat ini di bawah syarat
-    // kualitas yang dipilih — jangan diam-diam menyimpan titik bermutu rendah.
-    final loc = _currentLocation;
-    if (loc != null && !_locationService.pointMeetsCurrentRequirement(loc)) {
-      showInfoFeedback(
-          context,
-          'Point added at the crosshair. GPS quality is below the '
-          '"${_locationService.currentFixQuality.name}" requirement '
-          '(±${loc.accuracy?.toStringAsFixed(1) ?? '?'} m).',
-          warning: true);
-      return;
+    // Asal titik (SPEC §3.6): mode ikuti GPS → titik dari fix GPS (dengan
+    // akurasi, dicek terhadap batas project point); crosshair digeser manual
+    // → titik manual berakurasi 0.
+    final capture = decidePointCapture(
+      followGps: _followMe,
+      fix: _currentLocation,
+      geometryType: widget.project.geometryType,
+      minAccuracy: widget.project.minAccuracy,
+      now: DateTime.now(),
+    );
+    switch (capture) {
+      case RejectedPointCapture(:final message):
+        HapticFeedback.heavyImpact();
+        showInfoFeedback(context, message,
+            warning: true, duration: const Duration(seconds: 4));
+        return;
+      case GpsPointCapture(:final point):
+        _appendPoint(point);
+        HapticFeedback.selectionClick();
+        // Peringatkan (tanpa memblok) bila fix di bawah syarat kualitas yang
+        // dipilih — jangan diam-diam menyimpan titik bermutu rendah.
+        if (!_locationService.pointMeetsCurrentRequirement(point)) {
+          showInfoFeedback(
+              context,
+              'Point added from GPS. GPS quality is below the '
+              '"${_locationService.currentFixQuality.name}" requirement '
+              '(±${point.accuracy?.toStringAsFixed(1) ?? '?'} m).',
+              warning: true);
+          return;
+        }
+        showInfoFeedback(
+            context,
+            'Point ${_collectedPoints.length} added from GPS '
+            '(±${point.accuracy?.toStringAsFixed(1) ?? '?'} m)',
+            duration: const Duration(seconds: 1));
+      case ManualPointCapture():
+        final center = _mapController.camera.center;
+        _appendPoint(GeoPoint(
+          latitude: center.latitude,
+          longitude: center.longitude,
+          timestamp: DateTime.now(),
+          accuracy: 0,
+        ));
+        HapticFeedback.selectionClick();
+        showInfoFeedback(context,
+            'Point ${_collectedPoints.length} placed manually at the crosshair',
+            duration: const Duration(seconds: 1));
     }
-
-    showInfoFeedback(context,
-        'Point ${_collectedPoints.length} added at the crosshair',
-        duration: const Duration(seconds: 1));
   }
 
   bool _canSaveData() {
@@ -2114,6 +2137,16 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       return false;
     }
 
+    // Project point dengan batas akurasi: titik di atas batas tidak disimpan
+    // (server juga menolaknya). Line/polygon hanya diberi peringatan.
+    final accuracy = accuracyViolation(widget.project.geometryType,
+        _collectedPoints, widget.project.minAccuracy);
+    if (accuracy != null && accuracy.measure == AccuracyMeasure.point) {
+      showInfoFeedback(context, accuracyViolationText(accuracy),
+          warning: true, duration: const Duration(seconds: 5));
+      return false;
+    }
+
     setState(() => _isSaving = true);
 
     try {
@@ -2203,6 +2236,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         latitude: point.latitude,
         longitude: point.longitude,
         timestamp: DateTime.now(),
+        accuracy: 0, // titik manual
       ));
       HapticFeedback.selectionClick();
       return;
@@ -3819,6 +3853,8 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     final accText = acc == null
         ? '± — m'
         : '±${acc < 1 ? acc.toStringAsFixed(2) : acc.toStringAsFixed(1)} m';
+    final limit = widget.project.minAccuracy;
+    final overLimit = limit != null && acc != null && acc > limit;
 
     final drawing = _collectionMode == CollectionMode.drawing;
     final statusText = drawing
@@ -3950,6 +3986,17 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
               ],
             ),
 
+            if (limit != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                projectLimitText(limit, acc),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: overLimit ? FontWeight.w700 : FontWeight.w500,
+                  color: overLimit ? Colors.red.shade700 : Colors.blueGrey.shade600,
+                ),
+              ),
+            ],
             // Drawing mode hint
             if (drawing) ...[
               const SizedBox(height: 4),

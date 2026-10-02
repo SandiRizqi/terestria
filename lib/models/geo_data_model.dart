@@ -89,6 +89,10 @@ class GeoPoint {
     );
   }
 
+  /// Titik manual (crosshair, mode gambar, vertex sisipan): akurasi 0, atau
+  /// tanpa akurasi (data lama / edit web). Tidak dinilai aturan akurasi.
+  bool get isManual => accuracy == null || accuracy! <= 0;
+
   GeoPoint copyWith({
     double? latitude,
     double? longitude,

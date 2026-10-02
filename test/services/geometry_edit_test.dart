@@ -41,14 +41,15 @@ void main() {
       expect(line.selected, 3);
     });
 
-    test('pindah → dirty, vertex jadi manual; undo → kembali', () {
+    test('pindah → dirty, akurasi asal dipertahankan; undo → kembali', () {
       final s = GeometryEditSession(GeometryType.polygon, square);
       s.select(1);
       final target = _m(25, 2);
       expect(s.moveSelectedTo(target.latitude, target.longitude, at: _t),
           isTrue);
       expect(s.isDirty, isTrue);
-      expect(s.points[1].accuracy, isNull, reason: 'titik manual');
+      // SPEC Asumsi 7: memindah tidak "memperbaiki" akurasi titik buruk.
+      expect(s.points[1].accuracy, 3);
       expect(s.original[1].accuracy, 3, reason: 'asli tak berubah');
       expect(s.undo(), isTrue);
       expect(s.isDirty, isFalse);
@@ -63,6 +64,7 @@ void main() {
       expect(s.length, 5);
       expect(s.selected, 2);
       expect(s.points[2].latitude, mid.latitude);
+      expect(s.points[2].accuracy, 0, reason: 'vertex sisipan = titik manual');
 
       expect(s.deleteSelected(), isTrue);
       expect(s.length, 4);
@@ -139,11 +141,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Move here'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('placed manually'), findsOneWidget);
+    expect(find.textContaining('GPS ±3.0 m'), findsOneWidget);
 
     await tester.tap(find.text('Insert'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Point 3 of 5'), findsOneWidget);
+    expect(find.textContaining('placed manually'), findsOneWidget);
 
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();

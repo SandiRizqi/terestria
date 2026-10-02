@@ -7,9 +7,10 @@ import '../models/project_model.dart';
 /// ulang di lokasi): pilih vertex → pindahkan ke crosshair, sisipkan vertex
 /// baru setelahnya, atau hapus. Setiap langkah bisa di-undo.
 ///
-/// Vertex yang dipindah/disisipkan adalah titik manual (seperti titik
-/// crosshair di layar koleksi): tanpa akurasi GPS, kualitas fix, atau
-/// altitude.
+/// Vertex sisipan adalah titik manual (akurasi 0, seperti titik crosshair di
+/// layar koleksi). Vertex yang dipindah mempertahankan akurasi GPS asalnya
+/// (SPEC Asumsi 7: rata-rata akurasi hanya membaik dengan menghapus titik
+/// buruk atau mengambil ulang), tanpa kualitas fix atau altitude lama.
 class GeometryEditSession {
   GeometryEditSession(this.type, List<GeoPoint> original)
       : original = List.unmodifiable(original),
@@ -64,7 +65,7 @@ class GeometryEditSession {
   }
 
   static GeoPoint _manual(double lat, double lon, DateTime at) =>
-      GeoPoint(latitude: lat, longitude: lon, timestamp: at);
+      GeoPoint(latitude: lat, longitude: lon, timestamp: at, accuracy: 0);
 
   void select(int? index) {
     if (index != null && (index < 0 || index >= _points.length)) return;
@@ -99,7 +100,12 @@ class GeometryEditSession {
     final p = _points[i];
     if (p.latitude == lat && p.longitude == lon) return false;
     _checkpoint();
-    _points[i] = _manual(lat, lon, at ?? DateTime.now());
+    _points[i] = GeoPoint(
+      latitude: lat,
+      longitude: lon,
+      timestamp: at ?? DateTime.now(),
+      accuracy: p.accuracy,
+    );
     return true;
   }
 
