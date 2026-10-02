@@ -29,7 +29,7 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 - [ ] (User, di browser) tampilan & edit atribut tipe lama dan baru.
 
 ## Fase 3 — Aturan project
-- [ ] T13 (backend): `min_accuracy`, `unique_fields`, `GeoData.unique_key`, migrasi `0023`, serializer, 400 untuk error validasi.
+- [x] T13 (gis-backend `8a6c096`): `Project.min_accuracy` (0,01–500 m, null = tanpa aturan), `Project.unique_fields` (≤ 5 label, bukan foto/teks panjang), `GeoData.unique_key` = SHA-256 kunci ternormalisasi (panjang tetap, aman untuk indeks) + indeks parsial `(project, unique_key)`; migrasi `0023` manual, cek offline: tidak ada migrasi tertunda. Serializer: camelCase/snake_case, respons camelCase, 400 dengan pesan per field; `unique_fields` hanya dicek bila dikirim (app lama yang mengubah form tidak ditolak, aturan tersimpan dibiarkan). Test lokal +15 (`tests_project_rules`), CI: `tests_project_rules_db`.
 - [ ] T14 (backend): aturan akurasi → 422 `low_accuracy`.
 - [ ] T15 (backend): aturan kombinasi unik → 422 `duplicate` (transaksi + kunci project).
 - [ ] T16: `Project.minAccuracy`/`uniqueFields`, DB v8, push/pull.
