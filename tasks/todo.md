@@ -16,11 +16,11 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 - [x] T9: filter daftar data per tipe lewat `fieldFilterKind`/`fieldFilterMatches` (murni, di `field_values.dart`): teks panjang, waktu, tanggal-waktu, dan angka = berisi teks (nilai tersimpan atau tampilannya, mis. "2026-10-01 07:15"); pilihan ganda = pilih satu opsi (record yang memuat opsi itu); skala = chip 1–5. Chip filter jadi `FilterOptionChips` (dipakai dropdown, pilihan ganda, skala). Ekspor GeoJSON/CSV sudah membawa nilai apa adanya, kini dikunci test (app hanya punya ekspor GeoJSON/CSV; KML/SHP hanya impor layer). Dialog detail (detail project & layar koleksi), baris pratinjau di daftar data, judul record, dan lembar konflik memakai `displayFieldValue` lewat `recordValueText`; konflik tidak lagi melaporkan beda bentuk simpan (4 / "4", 36 / 36.0). Perbaikan kecil: filter tanggal dulu tidak pernah cocok (nilai tersimpan berakhiran `T00:00:00.000`); judul record tanpa field non-foto tidak lagi menampilkan isi daftar foto; isian kosong tidak lagi tampil/cocok sebagai "null".
 
 ### Checkpoint A
-- [ ] Test lokal HP + backend hijau; analyze sesuai baseline.
+- [x] Test lokal HP + backend hijau; analyze sesuai baseline (2 Okt: HP 857 test, analyze 0 error / 29 warning; backend 121 OK, `manage.py check` bersih).
 - [ ] (User, di HP) project dengan tipe baru: isi, simpan, sync, pull di HP kedua; tipe tak dikenal tidak berubah.
 
 ## Fase 2 — Tipe field: web
-- [ ] T10: `fieldTypes.ts` (murni) + `types.ts`.
+- [x] T10 (gis-dashboard `ef02e41`): `fieldTypes.ts` (murni) — 12 tipe + label, parse/format angka/jam/tanggal-jam, pilihan ganda, validasi dengan pesan sama dengan HP, default (`now`), `displayValue`; tipe tak dikenal = teks. `types.ts`: 12 tipe + pengaturan field, `Project.minAccuracy`/`uniqueFields`. `npm test` 29 → 69 (tabel kasus bersama server/HP), `tsc` baseline.
 - [ ] T11: tampilan nilai terformat (tabel, detail, popup).
 - [ ] T12: `FieldValueInput` di Edit Attributes & popup peta.
 
