@@ -46,7 +46,7 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
 - [ ] (User, di HP) point akurasi buruk ditolak; tracking rata-rata buruk → push ditolak → hapus titik → sync berhasil; duplikat lokal diblokir, duplikat dari HP lain ditolak server.
 
 ## Fase 4 — Builder project web
-- [ ] T21: `builderState.ts` + `builderValidation.ts` (murni, teruji).
+- [x] T21 (gis-dashboard `a2d7490`): `builder/builderState.ts` (tambah/salin/hapus/pindah/ubah field; ganti tipe membuang pengaturan yang tak berlaku; foto berlabel "Photo"; kombinasi unik dilacak lewat id, field kunci wajib; `builderPayload`) + `builder/builderValidation.ts` (error: label kosong/ganda, opsi, min > maks, satuan > 10, default, foto ganda/jumlah foto, akurasi 0,01–500, kunci > 5; peringatan: ganti nama/tipe/hapus field pada project yang sudah punya data). `npm test` 75 → 92; `npm test` kini memuat `scripts/ts-resolve.mjs` (impor .ts tanpa ekstensi saat test).
 - [ ] T22: builder kartu field di dialog project + "New project" + hapus `CreateEditDialog.tsx`.
 - [ ] T23: drag & drop urutan (`framer-motion` Reorder) + tombol naik/turun.
 - [ ] T24: pratinjau form langsung.
