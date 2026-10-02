@@ -52,7 +52,7 @@ Baseline: `flutter test` 735, `flutter analyze` 0 error / 29 warning · backend 
   - Payload `builderPayload` (urutan field, kombinasi unik, akurasi minimum) + collectors. Error memblokir simpan (tombol nonaktif + catatan); peringatan tidak (`geoDataCount > 0`).
   - `applied: false` (bukan pembuat) dan 400 tampil sebagai gagal dengan pesan server (`builder/projectSave.ts`); pesan tetap di dialog. Menutup dialog dengan perubahan yang belum disimpan minta konfirmasi.
   - `CreateEditDialog.tsx`, ekspornya, dan `validateProjectForm` dihapus. `npm test` 93 → 100; `tsc` baseline; lint sama dengan HEAD; `next build` berhasil.
-- [ ] T23: drag & drop urutan (`framer-motion` Reorder) + tombol naik/turun.
+- [x] T23 (gis-dashboard `f2c748e`): pegangan seret per kartu (`framer-motion` `Reorder` + `useDragControls`; hanya pegangan yang memulai seret, isian di kartu tetap bisa diketik) + tombol naik/turun ber-`aria-label` yang menjaga fokus keyboard (pindah ke tombol lain di ujung daftar); urutan baru = urutan simpan (`orderFields`, daftar id tak cocok diabaikan). Builder dimuat dengan `next/dynamic` saat dialog dibuka: tanpa itu halaman survei naik 50 → 83 kB, dengan itu tetap 50 kB. Dicek di harness browser (seret lewat pegangan, seret di luar pegangan hanya memilih teks, tombol & fokus, ketik di kartu, rename ikut ke kombinasi unik). `npm test` 101.
 - [ ] T24: pratinjau form langsung.
 - [ ] T25: aturan project di builder (akurasi minimum, kombinasi unik).
 
