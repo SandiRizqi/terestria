@@ -19,6 +19,9 @@ import '../data_collection/data_collection_screen.dart';
 import 'edit_geo_data_screen.dart';
 import 'create_project_screen.dart';
 import '../../widgets/geo_data_list_item.dart';
+import '../../widgets/project/data_view_toggle.dart';
+import '../../widgets/project/geo_data_list_tile.dart';
+import '../../services/data_view_mode_store.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -64,6 +67,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   int _pendingPhotoCount = 0;
   String? _currentUsername;
 
+  /// Grid (bawaan) atau list; pilihan disimpan di HP.
+  DataViewMode _viewMode = DataViewMode.grid;
+
   // ── Filter state ──
   DateTimeRange? _dateFilter;
   Map<String, dynamic> _fieldFilters = {};
@@ -87,6 +93,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     _initConnectivity();
     _scrollController.addListener(_onScroll);
     _loadUsername();
+    _loadViewMode();
+  }
+
+  Future<void> _loadViewMode() async {
+    final mode = await DataViewModeStore.load();
+    if (mounted) setState(() => _viewMode = mode);
+  }
+
+  void _setViewMode(DataViewMode mode) {
+    if (mode == _viewMode) return;
+    setState(() => _viewMode = mode);
+    DataViewModeStore.save(mode);
   }
 
   Future<void> _loadUsername() async {
@@ -1341,34 +1359,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               // full pull-all langsung dari gesture refresh.
                               await _loadGeoData();
                             },
-                            child: GridView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.only(
-                                left: 16,
-                                right: 16,
-                                top: 16,
-                                bottom: 80, // Padding untuk FAB
-                              ),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.70, // Memberikan ruang vertikal lebih lega
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
-                              itemCount: _filteredGeoDataList.length,
-                              itemBuilder: (context, index) {
-                                final data = _filteredGeoDataList[index];
-                                final canEdit = _canEditGeoData(data);
-                                return GeoDataListItem(
-                                  geoData: data,
-                                  geometryType: _currentProject.geometryType,
-                                  project: _currentProject,
-                                  onDelete: canEdit ? () => _deleteGeoData(data) : null,
-                                  onEdit: canEdit ? () => _editGeoData(data) : null,
-                                  onTap: () => _showDataDetail(data),
-                                );
-                              },
-                            ),
+                            child: _viewMode == DataViewMode.list
+                                ? _buildDataList()
+                                : _buildDataGrid(),
                           ),
           ),
         ],
@@ -1388,65 +1381,166 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
+  Widget _buildDataGrid() {
+    return GridView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: 80, // Padding untuk FAB
+      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.70, // Memberikan ruang vertikal lebih lega
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: _filteredGeoDataList.length,
+      itemBuilder: (context, index) {
+        final data = _filteredGeoDataList[index];
+        final canEdit = _canEditGeoData(data);
+        return GeoDataListItem(
+          geoData: data,
+          geometryType: _currentProject.geometryType,
+          project: _currentProject,
+          onDelete: canEdit ? () => _deleteGeoData(data) : null,
+          onEdit: canEdit ? () => _editGeoData(data) : null,
+          onTap: () => _showDataDetail(data),
+        );
+      },
+    );
+  }
+
+  /// Tampilan list (template "Project detail · data"): satu baris per record.
+  Widget _buildDataList() {
+    return ListView.separated(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(top: 8, bottom: 88), // ruang untuk FAB
+      itemCount: _filteredGeoDataList.length,
+      separatorBuilder: (context, index) =>
+          Divider(height: 1, indent: 72, color: Colors.grey.shade200),
+      itemBuilder: (context, index) {
+        final data = _filteredGeoDataList[index];
+        final canEdit = _canEditGeoData(data);
+        return GeoDataListTile(
+          geoData: data,
+          project: _currentProject,
+          currentUsername: _currentUsername,
+          onTap: () => _showDataDetail(data),
+          onEdit: canEdit ? () => _editGeoData(data) : null,
+          onDelete: canEdit ? () => _deleteGeoData(data) : null,
+        );
+      },
+    );
+  }
+
   Widget _buildFilterBar() {
     final hasFilters = _activeFilterCount > 0;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Tombol filter
-          GestureDetector(
-            onTap: _showFilterPanel,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: hasFilters
-                    ? AppTheme.primaryGreen
-                    : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: hasFilters
-                      ? AppTheme.primaryGreen
-                      : Colors.grey.shade300,
+          Row(
+            children: [
+              // Tombol filter
+              GestureDetector(
+                onTap: _showFilterPanel,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: hasFilters
+                        ? AppTheme.primaryGreen
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: hasFilters
+                          ? AppTheme.primaryGreen
+                          : Colors.grey.shade300,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.tune_rounded,
+                        size: 16,
+                        color: hasFilters ? Colors.white : AppTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        hasFilters
+                            ? 'Filter ($_activeFilterCount)'
+                            : 'Filter',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: hasFilters ? Colors.white : AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.tune_rounded,
-                    size: 16,
-                    color: hasFilters ? Colors.white : AppTheme.textSecondary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    hasFilters
-                        ? 'Filter ($_activeFilterCount)'
-                        : 'Filter',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: hasFilters ? Colors.white : AppTheme.textSecondary,
+    
+              if (_hasActiveFilters) ...[
+                const SizedBox(width: 8),
+                // Tombol hapus semua filter
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _dateFilter = null;
+                      _fieldFilters = {};
+                      _searchController.clear();
+                    });
+                    _applyFilters();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.close_rounded, size: 13, color: Colors.red.shade600),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Clear filters',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red.shade600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+              ],
+              const Spacer(),
+              const SizedBox(width: 8),
+              DataViewToggle(mode: _viewMode, onChanged: _setViewMode),
+            ],
           ),
-
-          // Indikator hasil filter
-          if (_hasActiveFilters) ...[
-            const SizedBox(width: 10),
-            Expanded(
+          // Indikator hasil filter (baris sendiri agar tidak terpotong di
+          // layar sempit).
+          if (_hasActiveFilters)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 4),
               child: Text(
                 '${_filteredGeoDataList.length} of ${_geoDataList.length} records',
                 style: TextStyle(
@@ -1456,41 +1550,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 ),
               ),
             ),
-            // Tombol hapus semua filter
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _dateFilter = null;
-                  _fieldFilters = {};
-                  _searchController.clear();
-                });
-                _applyFilters();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.close_rounded, size: 13, color: Colors.red.shade600),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Clear filters',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.red.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
