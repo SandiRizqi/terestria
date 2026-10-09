@@ -10,9 +10,11 @@ import 'package:geoform_app/theme/app_theme.dart';
 /// tema membuat tombol 56, dulu tak terhitung sehingga baris bawah terpotong)
 /// di layar seukuran iPhone 390×844.
 ///
-/// Kartu mengambang di atas bilah navigasi / home indicator: di bawahnya peta,
-/// bukan pita putih; isi tak pernah terpotong; bisa disembunyikan lewat
-/// tombol, ketuk pegangan, atau geser cepat.
+/// Kartu mengambang dengan jarak bawah = jarak kiri/kanan (12), kecuali bilah
+/// navigasi bertombol (Android 3 tombol) — kartu tepat di atasnya. Di bawah
+/// kartu peta, bukan pita putih; isi tak pernah terpotong. Line/polygon mode
+/// GPS bisa disembunyikan (tombol, ketuk pegangan, geser); point & mode
+/// gambar langsung Add point + Undo + Clear.
 
 const _screen = Size(390, 844);
 
@@ -116,11 +118,14 @@ void main() {
   ];
 
   for (final inset in [34.0, 48.0, 0.0]) {
+    // iPhone (home indicator 34) & tanpa bilah → 12; Android 3 tombol → 48.
+    final gap = inset >= 40 ? inset : 12.0;
     for (final (label, type, mode, isTracking) in configs) {
       for (final expanded in [true, false]) {
         testWidgets(
             '$label, ${expanded ? 'terbuka' : 'ringkas'}, bilah bawah $inset: '
-            'tombol utuh di atas bilah, tanpa pita putih', (tester) async {
+            'kartu $gap dari bawah, tombol utuh, tanpa pita putih',
+            (tester) async {
           await _pump(tester,
               inset: inset,
               type: type,
@@ -128,18 +133,13 @@ void main() {
               isTracking: isTracking,
               expanded: expanded);
 
-          final safeBottom = _screen.height - inset;
+          final card = _card(tester);
+          expect(card.bottom, closeTo(_screen.height - gap, 0.5));
+          expect(card.left, closeTo(12, 0.5));
+          expect(card.right, closeTo(_screen.width - 12, 0.5));
+
           final buttons = _buttons();
           expect(buttons, isNotEmpty);
-          for (final b in buttons) {
-            expect(b.bottom, lessThanOrEqualTo(safeBottom),
-                reason: 'tombol $b masuk ke bilah navigasi / terpotong');
-          }
-
-          final card = _card(tester);
-          // Kartu berhenti di atas bilah navigasi; di bawahnya peta.
-          expect(card.bottom, lessThanOrEqualTo(safeBottom));
-          expect(card.bottom, greaterThanOrEqualTo(safeBottom - 12));
           for (final b in buttons) {
             expect(card.contains(b.topLeft) && b.bottom <= card.bottom, isTrue,
                 reason: 'tombol $b harus utuh di dalam kartu $card');
@@ -151,6 +151,22 @@ void main() {
         });
       }
     }
+  }
+
+  for (final (label, type, mode) in [
+    ('point', GeometryType.point, CollectionMode.tracking),
+    ('line mode gambar', GeometryType.line, CollectionMode.drawing),
+  ]) {
+    testWidgets('$label: langsung Add point + Undo + Clear, tanpa sembunyikan',
+        (tester) async {
+      await _pump(tester, type: type, mode: mode, expanded: false);
+      expect(find.text('Add point'), findsOneWidget);
+      expect(find.byIcon(Icons.undo), findsOneWidget);
+      expect(find.byIcon(Icons.delete_sweep_outlined), findsOneWidget);
+      expect(find.text('Start'), findsNothing);
+      expect(find.byTooltip('Hide controls'), findsNothing);
+      expect(find.byTooltip('Show controls'), findsNothing);
+    });
   }
 
   testWidgets('tombol Hide/Show controls menyembunyikan dan memunculkan',
@@ -179,18 +195,30 @@ void main() {
     expect(find.byIcon(Icons.undo), findsOneWidget);
   });
 
-  testWidgets('geser cepat yang pendek ke bawah/atas ikut menyembunyikan',
+  testWidgets('geser cepat yang pendek (20 px) ke bawah/atas ikut menyembunyikan',
       (tester) async {
+    // Sampel sentuhan ±120 Hz seperti layar HP; mulai di atas tombol.
+    Future<void> flick(double dy) => tester.timedDragFrom(
+        _card(tester).center, Offset(0, dy), const Duration(milliseconds: 25),
+        frequency: 120);
     await _pump(tester);
-    await tester.flingFrom(
-        _card(tester).center, const Offset(0, 30), 1000);
+    await flick(20);
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.undo), findsNothing);
 
-    await tester.flingFrom(
-        _card(tester).center, const Offset(0, -30), 1000);
+    await flick(-20);
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.undo), findsOneWidget);
+  });
+
+  testWidgets('geser pelan 30 px dari atas tombol juga menyembunyikan',
+      (tester) async {
+    await _pump(tester);
+    await tester.timedDragFrom(
+        tester.getCenter(find.text('Start')), const Offset(0, 30),
+        const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.undo), findsNothing);
   });
 
   testWidgets('geser pelan yang sangat pendek tidak mengubah panel',

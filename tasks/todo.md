@@ -84,6 +84,18 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - **Test:** layar detail kini bisa di-pump di test (data gagal dimuat tanpa DB → kosong). Test "header di luar area gulir" dan "daftar sampai tepi bawah" — yang kedua terbukti gagal dengan perilaku lama (692 vs 740 px).
   - Test 1015 → 1024; analyze 0 error / 29 warning.
 
+- [x] Perbaikan panel kontrol peta koleksi data (laporan user 9 Okt, dengan tangkapan layar iPhone):
+  - **Penyebab "masih ada space putih & tombol terpotong":** angka tinggi tetap dari test tanpa tema app. Padding tombol dari tema membuat tombol 56 (bukan 52), sehingga baris bawah terpotong 8 px, lalu di bawahnya masih ada 34 px home indicator berwarna putih.
+  - **Kartu mengambang:**
+    - jarak bawah = jarak kiri/kanan (12) sesuai permintaan user;
+    - bilah navigasi bertombol (Android 3 tombol, ≥ 40 dp) tidak ditutup — kartu tepat di atasnya;
+    - area di bawah kartu tembus ke peta.
+  - **Tinggi mengikuti isi:** diukur (`onHeightChanged`), bukan angka tetap; tombol 48. Kolom tombol peta di kanan ikut tinggi terukur (`ValueListenableBuilder`).
+  - **Point & mode gambar:** langsung [Add point][Undo][Clear] satu baris, tanpa sembunyikan (tak ada tombol track).
+  - **Line/polygon mode GPS:** bisa disembunyikan lewat tombol ⌄/⌃, ketuk pegangan, atau geser. Geser dihitung sejak jari menyentuh (termasuk di atas tombol) dan geser cepat ikut dihitung — dulu flick pendek diabaikan.
+  - Sambungan layar (`d99aba1`, di-commit user) + kartu final di commit ini.
+  - Test (tema app asli, layar iPhone 390×844): tombol utuh di kartu, jarak bawah 12/48, tanpa pita putih, sembunyikan/munculkan, tinggi terlapor. Test 1024 → 1050; analyze 0 error / 29 warning.
+
 ### Checkpoint B
 - [x] Test hijau (1013); analyze 0 error / 29 warning (sama dengan baseline 8 Okt).
 - [ ] (User, di HP) tampilan ketiga halaman: daftar project, detail project, buat/edit project (termasuk sheet pilih sumber).

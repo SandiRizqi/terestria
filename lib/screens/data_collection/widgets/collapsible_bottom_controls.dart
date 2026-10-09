@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -5,16 +6,29 @@ import '../../../models/project_model.dart';
 import '../../../theme/app_theme.dart';
 import '../data_collection_screen.dart' show CollectionMode;
 
-/// Panel kontrol koleksi: kartu mengambang di atas bilah navigasi / home
-/// indicator HP (di bawahnya peta, bukan pita putih). Tinggi mengikuti isi
-/// (diukur, bukan angka tetap — padding tombol dari tema dulu membuat isi
-/// terpotong) dan dilaporkan lewat [onHeightChanged] untuk tombol peta.
+/// Panel kontrol koleksi: kartu mengambang di dekat tepi bawah layar dengan
+/// jarak sama seperti kiri/kanan. Tinggi mengikuti isi (diukur, bukan angka
+/// tetap — padding tombol dari tema dulu membuat isi terpotong) dan
+/// dilaporkan lewat [onHeightChanged] untuk menaruh tombol peta.
+///
+/// Hanya line/polygon mode GPS (ada tombol Start/Stop) yang bisa diciutkan.
+/// Project point dan mode gambar langsung menampilkan Add point + Undo +
+/// Clear dalam satu baris.
 class CollapsibleBottomControls extends StatefulWidget {
   /// Key kartu putih (untuk test).
   static const cardKey = ValueKey<String>('collect-controls-card');
 
   /// Perkiraan tinggi sebelum ukuran pertama terlapor.
   static const double initialHeightEstimate = 150.0;
+
+  /// Jarak kartu ke tepi layar (kiri, kanan, bawah).
+  static const double margin = 12.0;
+
+  /// Jarak bawah kartu: sama dengan kiri/kanan. Bilah navigasi bertombol
+  /// (Android 3 tombol, ≥ 40 dp) tidak boleh tertutup, jadi kartu tepat di
+  /// atasnya; home indicator iPhone / navigasi gestur cukup tipis.
+  static double bottomGap(double systemBottomInset) =>
+      systemBottomInset >= 40 ? systemBottomInset : margin;
 
   final bool isExpanded;
   final VoidCallback onToggleExpanded;
@@ -55,16 +69,16 @@ class CollapsibleBottomControls extends StatefulWidget {
 
 class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
   static const double _buttonHeight = 48;
-  static const double _margin = 12;
 
-  /// Geser dianggap disengaja bila lebih jauh dari ini, atau secepat
-  /// [_flingVelocity] (geser cepat yang pendek dulu diabaikan).
+  /// Geser dianggap disengaja bila lebih jauh dari ini (dihitung sejak jari
+  /// menyentuh, termasuk di atas tombol), atau berupa geser cepat.
   static const double _dragDistance = 24;
   static const double _flingVelocity = 300;
 
   double _dragDy = 0;
 
-  bool get _hasTrackingControls =>
+  /// Line/polygon mode GPS: ada Start/Stop, panel bisa diciutkan.
+  bool get _collapsible =>
       widget.geometryType != GeometryType.point &&
       widget.collectionMode == CollectionMode.tracking;
 
@@ -153,125 +167,132 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
     );
   }
 
-  /// Undo & Clear (minta konfirmasi & bisa di-Undo, lihat layar koleksi).
-  List<Widget> _editActions() => [
-        const SizedBox(width: 8),
-        _iconAction(
-          tooltip: 'Undo last point',
-          icon: Icons.undo,
-          color: AppTheme.primaryColor,
-          onPressed: widget.onUndoPoint,
-        ),
-        const SizedBox(width: 8),
-        _iconAction(
-          tooltip: 'Clear all points',
-          icon: Icons.delete_sweep_outlined,
-          color: Colors.red,
-          onPressed: widget.onClearPoints,
-        ),
-      ];
-
-  Widget _toggleButton() => SizedBox(
-        width: 40,
-        height: _buttonHeight,
-        child: IconButton(
-          tooltip: widget.isExpanded ? 'Hide controls' : 'Show controls',
-          padding: EdgeInsets.zero,
-          iconSize: 28,
-          color: AppTheme.textSecondary,
-          onPressed: widget.onToggleExpanded,
-          icon: Icon(widget.isExpanded
-              ? Icons.keyboard_arrow_down_rounded
-              : Icons.keyboard_arrow_up_rounded),
-        ),
-      );
-
-  /// Baris utama (selalu tampil): aksi utama + tombol sembunyikan/munculkan.
-  Widget _mainRow() => Row(
+  /// Add point + Undo + Clear (Clear minta konfirmasi & bisa di-Undo, lihat
+  /// layar koleksi).
+  Widget _addRow() => Row(
         children: [
-          if (_hasTrackingControls) ...[
-            Expanded(child: _trackingButton()),
-            if (widget.isTracking) ...[
-              const SizedBox(width: 8),
-              Expanded(child: _pauseButton()),
-            ],
-          ] else ...[
-            Expanded(child: _addPointButton()),
-            if (widget.isExpanded) ..._editActions(),
-          ],
-          const SizedBox(width: 4),
-          _toggleButton(),
+          Expanded(child: _addPointButton()),
+          const SizedBox(width: 8),
+          _iconAction(
+            tooltip: 'Undo last point',
+            icon: Icons.undo,
+            color: AppTheme.primaryColor,
+            onPressed: widget.onUndoPoint,
+          ),
+          const SizedBox(width: 8),
+          _iconAction(
+            tooltip: 'Clear all points',
+            icon: Icons.delete_sweep_outlined,
+            color: Colors.red,
+            onPressed: widget.onClearPoints,
+          ),
         ],
       );
 
-  @override
-  Widget build(BuildContext context) {
-    final inset = MediaQuery.paddingOf(context).bottom;
-    return _HeightReporter(
-      onHeight: widget.onHeightChanged,
-      child: Padding(
-        // Jarak bawah = bilah navigasi HP (minimal 12); area ini tembus ke peta.
-        padding: EdgeInsets.fromLTRB(
-            _margin, 0, _margin, inset > _margin ? inset : _margin),
-        child: GestureDetector(
-          onVerticalDragStart: (_) => _dragDy = 0,
-          onVerticalDragUpdate: (d) => _dragDy += d.delta.dy,
-          onVerticalDragEnd: _onDragEnd,
-          child: DecoratedBox(
-            key: CollapsibleBottomControls.cardKey,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+  /// Start/Stop (+ Pause/Resume saat tracking) + tombol sembunyikan/munculkan.
+  Widget _trackingRow() => Row(
+        children: [
+          Expanded(child: _trackingButton()),
+          if (widget.isTracking) ...[
+            const SizedBox(width: 8),
+            Expanded(child: _pauseButton()),
+          ],
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 40,
+            height: _buttonHeight,
+            child: IconButton(
+              tooltip: widget.isExpanded ? 'Hide controls' : 'Show controls',
+              padding: EdgeInsets.zero,
+              iconSize: 28,
+              color: AppTheme.textSecondary,
+              onPressed: widget.onToggleExpanded,
+              icon: Icon(widget.isExpanded
+                  ? Icons.keyboard_arrow_down_rounded
+                  : Icons.keyboard_arrow_up_rounded),
             ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOut,
-                alignment: Alignment.topCenter,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Pegangan: ketuk untuk sembunyikan/munculkan.
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: widget.onToggleExpanded,
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 20,
-                        child: Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    _mainRow(),
-                    if (widget.isExpanded && _hasTrackingControls) ...[
-                      const SizedBox(height: 10),
-                      Row(children: [
-                        Expanded(child: _addPointButton()),
-                        ..._editActions(),
-                      ]),
-                    ],
-                  ],
-                ),
+          ),
+        ],
+      );
+
+  /// Pegangan: ketuk untuk sembunyikan/munculkan.
+  Widget _handle() => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onToggleExpanded,
+        child: SizedBox(
+          width: double.infinity,
+          height: 20,
+          child: Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
         ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    const margin = CollapsibleBottomControls.margin;
+    final collapsible = _collapsible;
+    final card = DecoratedBox(
+      key: CollapsibleBottomControls.cardKey,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(12, collapsible ? 0 : 12, 12, 12),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: collapsible
+                ? [
+                    _handle(),
+                    _trackingRow(),
+                    if (widget.isExpanded) ...[
+                      const SizedBox(height: 10),
+                      _addRow(),
+                    ],
+                  ]
+                : [_addRow()],
+          ),
+        ),
+      ),
+    );
+
+    return _HeightReporter(
+      onHeight: widget.onHeightChanged,
+      child: Padding(
+        // Area jarak ini tembus ke peta (bukan pita putih).
+        padding: EdgeInsets.fromLTRB(margin, 0, margin,
+            CollapsibleBottomControls.bottomGap(
+                MediaQuery.paddingOf(context).bottom)),
+        child: collapsible
+            ? GestureDetector(
+                // Jarak geser dihitung sejak jari menyentuh, termasuk saat
+                // mulai di atas tombol.
+                dragStartBehavior: DragStartBehavior.down,
+                onVerticalDragStart: (_) => _dragDy = 0,
+                onVerticalDragUpdate: (d) => _dragDy += d.delta.dy,
+                onVerticalDragEnd: _onDragEnd,
+                child: card,
+              )
+            : card,
       ),
     );
   }
