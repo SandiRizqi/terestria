@@ -105,6 +105,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   final ValueNotifier<LatLng> _centerNotifier =
       ValueNotifier(const LatLng(-6.2088, 106.8456));
 
+  /// Tinggi panel kontrol bawah (diukur oleh panel), untuk menaruh tombol
+  /// peta tepat di atasnya.
+  final ValueNotifier<double> _bottomControlsHeight =
+      ValueNotifier(CollapsibleBottomControls.initialHeightEstimate);
+
   /// Draft titik manual + isian form (bertahan bila app dibunuh saat kamera).
   final CollectionDraftService _draftService = CollectionDraftService();
   Timer? _draftDebounce;
@@ -1271,6 +1276,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     _locationNotifier.dispose();
     _bearingNotifier.dispose();
     _centerNotifier.dispose();
+    _bottomControlsHeight.dispose();
 
     super.dispose();
   }
@@ -3743,12 +3749,11 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       ),
 
       // ── RIGHT CONTROLS — satu kolom responsif (tak saling menumpuk) ──────
-      MapControlsColumn(
+      ValueListenableBuilder<double>(
+        valueListenable: _bottomControlsHeight,
+        builder: (context, panelHeight, _) => MapControlsColumn(
         right: AppTheme.spacingMedium,
-        bottom: (_isBottomSheetExpanded
-                ? _getExpandedBottomSheetHeight()
-                : _getCollapsedBottomSheetHeight()) +
-            AppTheme.spacingLarge,
+        bottom: panelHeight + AppTheme.spacingMedium,
         children: [
           // Map measure tools — paling atas.
           buildMapToolsPanel(),
@@ -3841,6 +3846,7 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
             onPressed: _toggleFollowMe,
           ),
         ],
+      ),
       ),
     ]);
   }
@@ -4121,20 +4127,6 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     );
   }
 
-  double _getExpandedBottomSheetHeight() => BottomControlsMetrics.height(
-        expanded: true,
-        type: widget.project.geometryType,
-        mode: _collectionMode,
-        bottomInset: MediaQuery.of(context).padding.bottom,
-      );
-
-  double _getCollapsedBottomSheetHeight() => BottomControlsMetrics.height(
-        expanded: false,
-        type: widget.project.geometryType,
-        mode: _collectionMode,
-        bottomInset: MediaQuery.of(context).padding.bottom,
-      );
-
   Widget _buildBottomControls() {
     return CollapsibleBottomControls(
       isExpanded: _isBottomSheetExpanded,
@@ -4153,6 +4145,9 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
       onAddPoint: _addCurrentPoint,
       onUndoPoint: _undoLastPoint,
       onClearPoints: _clearPoints,
+      onHeightChanged: (h) {
+        if (mounted) _bottomControlsHeight.value = h;
+      },
     );
   }
 }
