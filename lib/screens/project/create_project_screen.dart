@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/project_model.dart';
-import '../../models/field_type_info.dart';
 import '../../models/form_field_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../utils/field_values.dart' show formatNumber;
+import '../../widgets/project/create_project_parts.dart';
 import '../../widgets/project/project_rules_section.dart';
 import '../../widgets/form_field_builder.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
@@ -395,38 +396,58 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.project != null;
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
+      // Bar terang seperti template: tutup, judul, tombol Save.
       appBar: AppBar(
-        backgroundColor: AppTheme.primaryGreen,
+        backgroundColor: AppTheme.scaffoldBackground,
+        foregroundColor: AppTheme.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          tooltip: 'Close',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.maybePop(context),
+        ),
         title: Text(
-          widget.project == null ? 'Create Project' : 'Edit Project',
-          style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+          isEditing ? 'Edit project' : 'New project',
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
         ),
         actions: [
           const ConnectivityIndicator(
             showLabel: false,
-            iconSize: 24,
+            iconSize: 20,
           ),
           const SizedBox(width: 8),
-          if (_isSaving)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: FilledButton(
+              onPressed: _isSaving ? null : _saveProject,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.primaryGreen,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.check_rounded, size: 28),
-              tooltip: 'Save Project',
-              onPressed: _saveProject,
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text('Save',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
             ),
+          ),
         ],
       ),
       body: SafeArea(
@@ -434,373 +455,195 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-            // Project Name
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Project Name',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.label),
+              const FormSectionLabel('Project Name'),
+              TextFormField(
+                controller: _nameController,
+                decoration: _inputDecoration('e.g. Palm Estate · Block D'),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter project name';
+                  }
+                  return null;
+                },
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter project name';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Description
-            TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.description),
+              const SizedBox(height: 16),
+              const FormSectionLabel('Description'),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: _inputDecoration('What is this project for?'),
+                maxLines: 3,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter description';
+                  }
+                  return null;
+                },
               ),
-              maxLines: 3,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter description';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-
-            // Geometry Type
-            Container(
-              decoration: AppTheme.getCardDecoration,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Geometry Type',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
-                          ),
-                        ),
-                        if (widget.project != null) ...[
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: Colors.orange.withOpacity(0.3),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.lock,
-                                    size: 14,
-                                    color: Colors.orange[700],
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Flexible(
-                                    child: Text(
-                                      'Cannot be changed',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.orange[700],
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
+              const SizedBox(height: 20),
+              FormSectionLabel(
+                'Geometry Type',
+                trailing: isEditing ? _lockedBadge() : null,
+              ),
+              GeometrySegmentedControl(
+                value: _selectedGeometry,
+                onChanged: isEditing
+                    ? null
+                    : (type) => setState(() => _selectedGeometry = type),
+              ),
+              const SizedBox(height: 24),
+              _buildFieldsHeader(isEditing),
+              if (_formFields.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Text(
+                    'No form fields yet. Tap "Add Field" to create one.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                )
+              else
+                ReorderableListView.builder(
+                  shrinkWrap: true,
+                  // Seret hanya lewat pegangan di kartu; ketuk kartu = edit.
+                  buildDefaultDragHandles: false,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _formFields.length,
+                  onReorder: (oldIndex, newIndex) {
+                    setState(() {
+                      if (newIndex > oldIndex) {
+                        newIndex -= 1;
+                      }
+                      final item = _formFields.removeAt(oldIndex);
+                      _formFields.insert(newIndex, item);
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    final field = _formFields[index];
+                    return FormFieldCard(
+                      key: ValueKey(field.id),
+                      field: field,
+                      isUniqueKey: _uniqueFieldIds.contains(field.id),
+                      dragHandle: isEditing
+                          ? null
+                          : ReorderableDragStartListener(
+                              index: index,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                                child: Icon(Icons.drag_indicator_rounded,
+                                    color: Colors.grey[400]),
                               ),
                             ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildGeometryTypeSelector(),
-                  ],
+                      onTap: isEditing ? null : () => _editFormField(index),
+                      onDelete:
+                          isEditing ? null : () => _deleteFormField(index),
+                    );
+                  },
+                ),
+              if (!isEditing) ...[
+                const SizedBox(height: 4),
+                DashedAddButton(label: 'Add Field', onPressed: _addFormField),
+              ],
+              const SizedBox(height: 24),
+
+              // Project rules: akurasi minimum & kombinasi unik
+              Container(
+                decoration: AppTheme.getCardDecoration,
+                padding: const EdgeInsets.all(20),
+                child: ProjectRulesSection(
+                  minAccuracyController: _minAccuracyController,
+                  fields: _formFields,
+                  uniqueFieldIds: _uniqueFieldIds,
+                  onUniqueFieldIdsChanged: (ids) => setState(() {
+                    _uniqueFieldIds = ids;
+                    _formFields = withRequiredKeyFields(_formFields, ids);
+                  }),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-
-            // Form Fields Section
-            Container(
-              decoration: AppTheme.getCardDecoration,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Form Fields',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
-                          ),
-                        ),
-                        if (widget.project != null) ...[
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(
-                                    color: Colors.orange.withOpacity(0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.lock,
-                                      size: 14,
-                                      color: Colors.orange[700],
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Flexible(
-                                      child: Text(
-                                        'Cannot be changed',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.orange[700],
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ] else
-                          ElevatedButton.icon(
-                            onPressed: _addFormField,
-                            icon: const Icon(Icons.add_rounded, size: 18),
-                            label: const Text('Add Field'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
-                              foregroundColor: AppTheme.primaryGreen,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (_formFields.isEmpty)
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            'No form fields added yet.\nClick "Add Field" to create one.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                        ),
-                      )
-                    else
-                      ReorderableListView.builder(
-                        shrinkWrap: true,
-                        buildDefaultDragHandles: widget.project == null,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _formFields.length,
-                        onReorder: (oldIndex, newIndex) {
-                          setState(() {
-                            if (newIndex > oldIndex) {
-                              newIndex -= 1;
-                            }
-                            final item = _formFields.removeAt(oldIndex);
-                            _formFields.insert(newIndex, item);
-                          });
-                        },
-                        itemBuilder: (context, index) {
-                          final field = _formFields[index];
-                          return _buildFormFieldCard(field, index);
-                        },
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Project rules: akurasi minimum & kombinasi unik
-            Container(
-              decoration: AppTheme.getCardDecoration,
-              padding: const EdgeInsets.all(20),
-              child: ProjectRulesSection(
-                minAccuracyController: _minAccuracyController,
-                fields: _formFields,
-                uniqueFieldIds: _uniqueFieldIds,
-                onUniqueFieldIdsChanged: (ids) => setState(() {
-                  _uniqueFieldIds = ids;
-                  _formFields = withRequiredKeyFields(_formFields, ids);
-                }),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ), // This closes the SafeArea
-  );
-  }
-
-  Widget _buildGeometryTypeSelector() {
-    final isEditing = widget.project != null;
-    
-    return Column(
-      children: [
-        RadioListTile<GeometryType>(
-          title: Text(
-            'Point',
-            style: TextStyle(
-              color: isEditing ? Colors.grey : null,
-            ),
-          ),
-          subtitle: Text(
-            'Single location marker',
-            style: TextStyle(
-              color: isEditing ? Colors.grey : null,
-            ),
-          ),
-          value: GeometryType.point,
-          groupValue: _selectedGeometry,
-          onChanged: isEditing ? null : (value) => setState(() => _selectedGeometry = value!),
-          secondary: Icon(
-            Icons.place,
-            color: isEditing ? Colors.grey : null,
-          ),
-        ),
-        RadioListTile<GeometryType>(
-          title: Text(
-            'Line',
-            style: TextStyle(
-              color: isEditing ? Colors.grey : null,
-            ),
-          ),
-          subtitle: Text(
-            'Path or route',
-            style: TextStyle(
-              color: isEditing ? Colors.grey : null,
-            ),
-          ),
-          value: GeometryType.line,
-          groupValue: _selectedGeometry,
-          onChanged: isEditing ? null : (value) => setState(() => _selectedGeometry = value!),
-          secondary: Icon(
-            Icons.timeline,
-            color: isEditing ? Colors.grey : null,
-          ),
-        ),
-        RadioListTile<GeometryType>(
-          title: Text(
-            'Polygon',
-            style: TextStyle(
-              color: isEditing ? Colors.grey : null,
-            ),
-          ),
-          subtitle: Text(
-            'Area or boundary',
-            style: TextStyle(
-              color: isEditing ? Colors.grey : null,
-            ),
-          ),
-          value: GeometryType.polygon,
-          groupValue: _selectedGeometry,
-          onChanged: isEditing ? null : (value) => setState(() => _selectedGeometry = value!),
-          secondary: Icon(
-            Icons.crop_square,
-            color: isEditing ? Colors.grey : null,
-          ),
-        ),
-      ],
     );
   }
 
-  Widget _buildFormFieldCard(FormFieldModel field, int index) {
-    final icon = field.isUnknownType
-        ? Icons.help_outline
-        : fieldTypeInfo(field.type).icon;
+  InputDecoration _inputDecoration(String hint) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: Colors.grey.shade300),
+    );
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: AppTheme.cardBackground,
+      border: border,
+      enabledBorder: border,
+      focusedBorder: border.copyWith(
+        borderSide: const BorderSide(color: AppTheme.primaryGreen, width: 2),
+      ),
+    );
+  }
 
-    return Container(
-      key: ValueKey(field.id),
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+  /// "FORM FIELDS · n" + petunjuk seret, atau tanda terkunci saat edit.
+  Widget _buildFieldsHeader(bool isEditing) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'FORM FIELDS · ${_formFields.length}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: AppTheme.textSecondary,
+              ),
+            ),
           ),
+          if (isEditing)
+            Flexible(child: _lockedBadge())
+          else if (_formFields.length > 1)
+            const Text(
+              'Drag to reorder',
+              style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+            ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppTheme.primaryGreen.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: AppTheme.primaryColor, size: 20),
-        ),
-        title: Text(field.label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(
-          '${fieldTypeDisplayName(field)}${field.required ? ' • Required' : ''}'
-          '${_uniqueFieldIds.contains(field.id) ? ' • Unique key' : ''}',
-          style: TextStyle(color: Colors.grey[600], fontSize: 13),
-        ),
-        trailing: widget.project != null
-            ? null
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit_rounded, size: 20),
-                    color: AppTheme.primaryColor,
-                    onPressed: () => _editFormField(index),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                    color: Colors.red[600],
-                    onPressed: () => _deleteFormField(index),
-                  ),
-                ],
+    );
+  }
+
+  /// Tanda "Cannot be changed" (geometri & field project yang sudah ada).
+  Widget _lockedBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock, size: 14, color: Colors.orange[700]),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Cannot be changed',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.orange[700],
+                fontWeight: FontWeight.w500,
               ),
+            ),
+          ),
+        ],
       ),
     );
   }

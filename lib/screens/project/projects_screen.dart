@@ -10,6 +10,7 @@ import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/project/project_list_header.dart';
+import '../../widgets/project/create_project_source_sheet.dart';
 import '../../utils/project_list.dart';
 import '../../widgets/tracking/active_tracking_panel.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
@@ -654,118 +655,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   }
 
   void _navigateToCreateProject() async {
-    // Show dialog to choose between new project, from template, or from cloud
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.add_circle_outline),
-            SizedBox(width: 8),
-            Text('Create Project'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('How would you like to create your project?'),
-            const SizedBox(height: 24),
-            // Create New button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context, 'new'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: const Icon(Icons.add),
-                label: const Text(
-                  'Create New Project',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // From Cloud button
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.pop(context, 'cloud'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(
-                    color: Colors.green,
-                    width: 2,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: const Icon(Icons.cloud_download),
-                label: const Text(
-                  'Add from Cloud',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // From Template button
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.pop(context, 'template'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Theme.of(context).primaryColor,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: BorderSide(
-                    color: Theme.of(context).primaryColor,
-                    width: 2,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: const Icon(Icons.upload_file),
-                label: const Text(
-                  'Import from Template',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
-    );
-
+    // Sheet pilih sumber (template "Create project · choose source").
+    final choice = await showCreateProjectSourceSheet(context);
     if (choice == null) return;
 
-    if (choice == 'new') {
+    if (choice == CreateProjectSource.scratch) {
       final result = await Navigator.push(
         context,
         MaterialPageRoute(
@@ -776,9 +670,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       if (result == true) {
         _loadProjects();
       }
-    } else if (choice == 'cloud') {
+    } else if (choice == CreateProjectSource.server) {
       _addProjectFromCloud();
-    } else if (choice == 'template') {
+    } else if (choice == CreateProjectSource.template) {
       _showTemplateImportOptions();
     }
   }

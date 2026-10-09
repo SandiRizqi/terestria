@@ -48,10 +48,26 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - Jumlah per project dari satu query terkelompok (`DatabaseService.getProjectDataStats`); aturan filter/tag/subjudul murni di `lib/utils/project_list.dart`. Kembali dari detail project selalu memuat ulang (jumlah record bisa berubah). FAB "Create Project".
   - `_syncProjectsFromServer` sejak sebelumnya tidak terjangkau dari UI (menu lama tak punya item pull); kini diberi `ignore: unused_element` + catatan, menunggu keputusan user.
   - Test 973 → 986; analyze 0 error / 29 warning.
-- [ ] T6: Buat project: sheet pilih sumber + layar New project (segmented geometri, kartu field berlencana tipe, Add Field).
+- [x] T6: Alur buat project seperti template 06–07.
+  - **Sheet "Create Project"** (`showCreateProjectSourceSheet`) menggantikan dialog lama. Pilihannya memanggil fungsi yang sama dengan dulu:
+    - Start from scratch → layar New project;
+    - Import template → impor .json;
+    - From server → dialog cloud ("Download a project assigned to you"; data tetap di-Pull dari detail);
+    - Cancel.
+  - **Layar New/Edit project:**
+    - AppBar terang dengan ✕, judul, dan tombol **Save** hijau (spinner saat menyimpan);
+    - label di atas isian Project Name/Description;
+    - Geometry Type bergaya segmented (terkunci saat edit, dengan tanda "Cannot be changed");
+    - header "FORM FIELDS · n" + "Drag to reorder";
+    - kartu field: pegangan seret (seret hanya lewat pegangan, ketuk kartu = edit), label + `*` merah bila wajib, ringkasan (opsi / batas angka + satuan / jumlah foto / "Required" / keterangan tipe, + "Unique key"), lencana tipe (`text`, `dropdown`, …), tombol hapus;
+    - tombol "Add Field" bergaris putus;
+    - Project rules tetap.
+  - Komponen di `lib/widgets/project/create_project_parts.dart` dan `create_project_source_sheet.dart`. Pemilih radio & kartu ListTile lama dihapus (layar −354 baris bersih).
+  - Test 1000 → 1013; analyze 0 error / 29 warning.
 
 ### Checkpoint B
-- [ ] Test hijau; (User, di HP) tampilan ketiga halaman.
+- [x] Test hijau (1013); analyze 0 error / 29 warning (sama dengan baseline 8 Okt).
+- [ ] (User, di HP) tampilan ketiga halaman: daftar project, detail project, buat/edit project (termasuk sheet pilih sumber).
 
 ## Fase 3 — Alat ukur
 - [x] T7 (dikerjakan sebelum T6, permintaan user 9 Okt): edit & tambah titik alat ukur lewat koordinat.
