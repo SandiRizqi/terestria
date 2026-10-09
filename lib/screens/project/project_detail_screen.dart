@@ -1171,50 +1171,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               
               //if (_canEditProject())
               PopupMenuItem<String>(
-                value: 'select',
-                enabled: _filteredGeoDataList.isNotEmpty,
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryGreen.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.checklist_rounded,
-                        color: AppTheme.primaryGreen,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Select Records',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Or long-press a record',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const PopupMenuDivider(),
-              PopupMenuItem<String>(
                 value: 'pull_from_server',
                 child: Row(
                   children: [
@@ -1439,8 +1395,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 _syncNow();
               } else if (value == 'info') {
                 _showProjectInfo();
-              } else if (value == 'select') {
-                _startSelection();
               } else if (value == 'clear_local') {
                 _clearLocalData();
               }
@@ -1552,6 +1506,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         onClearFilters: _clearAllFilters,
         viewMode: _viewMode,
         onViewModeChanged: _setViewMode,
+        selectionMode: _selectionMode,
+        onToggleSelection: _selectionMode
+            ? _exitSelection
+            : (_filteredGeoDataList.isEmpty ? null : _startSelection),
       ),
     ];
   }

@@ -308,7 +308,8 @@ class DataSearchBar extends StatelessWidget {
   }
 }
 
-/// "248 records" / "12 of 248 records" + Clear filters + tombol grid/list.
+/// "248 records" / "12 of 248 records" + Clear filters, lalu di kanan tombol
+/// Select (grup sendiri) dan tombol grid/list.
 class RecordsHeaderRow extends StatelessWidget {
   final int visibleCount;
   final int totalCount;
@@ -316,6 +317,12 @@ class RecordsHeaderRow extends StatelessWidget {
   final VoidCallback onClearFilters;
   final DataViewMode viewMode;
   final ValueChanged<DataViewMode> onViewModeChanged;
+
+  /// Sedang di mode pilih (tombol Select aktif; ketuk lagi untuk keluar).
+  final bool selectionMode;
+
+  /// Masuk/keluar mode pilih. Null = tak ada record untuk dipilih (nonaktif).
+  final VoidCallback? onToggleSelection;
 
   const RecordsHeaderRow({
     super.key,
@@ -325,39 +332,109 @@ class RecordsHeaderRow extends StatelessWidget {
     required this.onClearFilters,
     required this.viewMode,
     required this.onViewModeChanged,
+    this.selectionMode = false,
+    this.onToggleSelection,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Flexible(
-          child: Text(
-            hasActiveFilters
-                ? '$visibleCount of ${_plural(totalCount, 'record', 'records')}'
-                : _plural(totalCount, 'record', 'records'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
+        // Expanded (bukan Flexible + Spacer) supaya tombol di kanan selalu
+        // menempel ke tepi, berapa pun panjang teks jumlah.
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  hasActiveFilters
+                      ? '$visibleCount of ${_plural(totalCount, 'record', 'records')}'
+                      : _plural(totalCount, 'record', 'records'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+              if (hasActiveFilters)
+                TextButton(
+                  onPressed: onClearFilters,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.errorColor,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('Clear filters',
+                      style: TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ),
+            ],
+          ),
+        ),
+        _SelectRecordsButton(
+          active: selectionMode,
+          onPressed: onToggleSelection,
+        ),
+        const SizedBox(width: 8),
+        DataViewToggle(mode: viewMode, onChanged: onViewModeChanged),
+      ],
+    );
+  }
+}
+
+/// Tombol mode pilih, bentuknya sama dengan [DataViewToggle] tapi grup
+/// sendiri. Aktif (hijau) selama mode pilih.
+class _SelectRecordsButton extends StatelessWidget {
+  final bool active;
+  final VoidCallback? onPressed;
+
+  const _SelectRecordsButton({required this.active, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    final label = active ? 'Done selecting' : 'Select records';
+    return Semantics(
+      container: true,
+      button: true,
+      enabled: enabled,
+      selected: active,
+      label: label,
+      child: Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(16),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: active ? AppTheme.primaryGreen : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(
+                Icons.checklist_rounded,
+                size: 18,
+                color: active
+                    ? Colors.white
+                    : enabled
+                        ? AppTheme.textSecondary
+                        : Colors.grey.shade400,
+              ),
             ),
           ),
         ),
-        if (hasActiveFilters)
-          TextButton(
-            onPressed: onClearFilters,
-            style: TextButton.styleFrom(
-              foregroundColor: AppTheme.errorColor,
-              visualDensity: VisualDensity.compact,
-            ),
-            child: const Text('Clear filters',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-          ),
-        const Spacer(),
-        DataViewToggle(mode: viewMode, onChanged: onViewModeChanged),
-      ],
+      ),
     );
   }
 }

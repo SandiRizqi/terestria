@@ -52,6 +52,32 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
   });
 
+  testWidgets('tombol Select ada di baris grid/list, tidak lagi di menu ⋮',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+        MaterialApp(home: ProjectDetailScreen(project: _project)));
+    await tester.pump();
+
+    expect(
+      find.descendant(
+          of: find.byType(RecordsHeaderRow),
+          matching: find.byTooltip('Select records')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    expect(find.text('Select Records'), findsNothing);
+    expect(find.text('Clear Local Data'), findsOneWidget,
+        reason: 'menu ⋮ tetap terbuka berisi aksi lain');
+
+    await tester.pumpWidget(const SizedBox());
+    ConnectivityService().stopMonitoring();
+    await tester.pump(const Duration(seconds: 6));
+  });
+
   testWidgets('daftar data sampai tepi bawah layar (tanpa pita kosong)',
       (tester) async {
     tester.view.physicalSize = const Size(360, 740);

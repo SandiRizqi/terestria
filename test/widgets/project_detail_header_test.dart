@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geoform_app/services/data_view_mode_store.dart';
+import 'package:geoform_app/widgets/project/data_view_toggle.dart';
 import 'package:geoform_app/widgets/project/project_detail_header.dart';
 
 /// Potongan header detail project (template "Project detail · data"):
@@ -175,6 +176,98 @@ void main() {
       expect(find.text('12 of 248 records'), findsOneWidget);
       await tester.tap(find.text('Clear filters'));
       expect(clears, 1);
+    });
+
+    testWidgets('grid/list menempel di kanan walau teks jumlah pendek',
+        (tester) async {
+      await _pump(
+        tester,
+        RecordsHeaderRow(
+          visibleCount: 3,
+          totalCount: 3,
+          hasActiveFilters: false,
+          onClearFilters: () {},
+          viewMode: DataViewMode.grid,
+          onViewModeChanged: (_) {},
+        ),
+      );
+      expect(tester.getRect(find.byType(DataViewToggle)).right, 360);
+    });
+
+    testWidgets('tombol Select sejajar grid/list tapi grup terpisah',
+        (tester) async {
+      var toggles = 0;
+      await _pump(
+        tester,
+        RecordsHeaderRow(
+          visibleCount: 248,
+          totalCount: 248,
+          hasActiveFilters: true,
+          onClearFilters: () {},
+          viewMode: DataViewMode.grid,
+          onViewModeChanged: (_) {},
+          onToggleSelection: () => toggles++,
+        ),
+      );
+      final select = find.byTooltip('Select records');
+      expect(select, findsOneWidget);
+      expect(find.ancestor(of: select, matching: find.byType(DataViewToggle)),
+          findsNothing);
+      final selectRect = tester.getRect(select);
+      final toggleRect = tester.getRect(find.byType(DataViewToggle));
+      expect(selectRect.center.dy, closeTo(toggleRect.center.dy, 0.5));
+      expect(selectRect.right, lessThan(toggleRect.left));
+      expect(selectRect.height, closeTo(toggleRect.height, 0.5));
+
+      await tester.tap(select);
+      expect(toggles, 1);
+    });
+
+    testWidgets('mode pilih: tombol Select aktif, ketuk lagi untuk keluar',
+        (tester) async {
+      var toggles = 0;
+      await _pump(
+        tester,
+        RecordsHeaderRow(
+          visibleCount: 4,
+          totalCount: 4,
+          hasActiveFilters: false,
+          onClearFilters: () {},
+          viewMode: DataViewMode.list,
+          onViewModeChanged: (_) {},
+          selectionMode: true,
+          onToggleSelection: () => toggles++,
+        ),
+      );
+      expect(find.byTooltip('Select records'), findsNothing);
+      expect(
+        tester.getSemantics(find.byTooltip('Done selecting')),
+        isSemantics(label: 'Done selecting', isButton: true, isSelected: true),
+      );
+      await tester.tap(find.byTooltip('Done selecting'));
+      expect(toggles, 1);
+    });
+
+    testWidgets('tanpa record: tombol Select nonaktif', (tester) async {
+      await _pump(
+        tester,
+        RecordsHeaderRow(
+          visibleCount: 0,
+          totalCount: 0,
+          hasActiveFilters: false,
+          onClearFilters: () {},
+          viewMode: DataViewMode.grid,
+          onViewModeChanged: (_) {},
+        ),
+      );
+      expect(
+        tester.getSemantics(find.byTooltip('Select records')),
+        isSemantics(
+            label: 'Select records',
+            isButton: true,
+            hasEnabledState: true,
+            isEnabled: false),
+      );
     });
   });
 }

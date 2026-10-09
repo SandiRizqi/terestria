@@ -96,6 +96,13 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - Sambungan layar (`d99aba1`, di-commit user) + kartu final di commit ini.
   - Test (tema app asli, layar iPhone 390×844): tombol utuh di kartu, jarak bawah 12/48, tanpa pita putih, sembunyikan/munculkan, tinggi terlapor. Test 1024 → 1050; analyze 0 error / 29 warning.
 
+- [x] Tombol Select pindah dari menu ⋮ ke baris jumlah record (permintaan user 9 Okt):
+  - sejajar tombol grid/list tapi grup sendiri (bentuk pil yang sama);
+  - aktif (hijau) selama mode pilih, ketuk lagi = keluar; nonaktif bila tak ada record;
+  - grid/list kini selalu menempel ke kanan (dulu `Flexible` + `Spacer` menyisakan celah bila teks jumlah pendek — terbukti 350 vs 360 px).
+- [x] AppBar mode pilih memakai hijau utama aplikasi (`primaryGreen`, dulu `darkGreen` yang kehijauan-biru).
+  - Test 1050 → 1056; analyze 0 error / 29 warning.
+
 ### Checkpoint B
 - [x] Test hijau (1013); analyze 0 error / 29 warning (sama dengan baseline 8 Okt).
 - [ ] (User, di HP) tampilan ketiga halaman: daftar project, detail project, buat/edit project (termasuk sheet pilih sumber).
