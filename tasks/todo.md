@@ -102,6 +102,12 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - grid/list kini selalu menempel ke kanan (dulu `Flexible` + `Spacer` menyisakan celah bila teks jumlah pendek — terbukti 350 vs 360 px).
 - [x] AppBar mode pilih memakai hijau utama aplikasi (`primaryGreen`, dulu `darkGreen` yang kehijauan-biru).
   - Test 1050 → 1056; analyze 0 error / 29 warning.
+- [x] Heading-up di peta koleksi data, sama dengan layar navigasi (permintaan user 9 Okt):
+  - tombol "Heading up" (ikon kompas penjelajah) di atas tombol kompas; aktif → peta berputar mengikuti arah hadap user, mati → kembali north-up;
+  - mati sendiri bila peta diputar manual (> 5°) atau tombol kompas diketuk; rotasi dibatasi 100 ms & < 2° diabaikan;
+  - logika dari navigasi dipindah ke helper bersama `headingUpRotation` / `headingUpOverridden` (`323db8e`, perilaku navigasi tetap).
+  - Test 1056 → 1059; analyze 0 error / 29 warning.
+  - [ ] (User, di HP) aktifkan heading-up di koleksi data, putar badan → peta ikut; putar peta dengan dua jari → heading-up mati.
 
 ### Checkpoint B
 - [x] Test hijau (1013); analyze 0 error / 29 warning (sama dengan baseline 8 Okt).

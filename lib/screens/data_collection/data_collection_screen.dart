@@ -188,6 +188,12 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   // P2+P3: Zoom tracking & culling debounce
   double _currentZoom = 15.0;
   bool _followMe = false;
+
+  /// Heading-up: peta berputar agar arah hadap user menghadap ke atas
+  /// (seperti di layar navigasi). Mati sendiri bila peta diputar manual.
+  bool _headingUp = false;
+  double _lastAutoRotation = 0.0;
+  DateTime? _lastHeadingUpAt;
   Timer? _cullingDebounce;
 
   // GeoJSON Layers
@@ -684,10 +690,50 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
         final heading = event.heading;
         if (!mounted || heading == null) return;
         _bearingNotifier.value = heading;
+        if (_headingUp) _applyHeadingUp(heading);
       },
       onError: (Object e) =>
           logWarn('Compass unavailable: $e', tag: 'COLLECT'),
     );
+  }
+
+  /// Putar peta agar [heading] menghadap ke atas. Dibatasi tiap 100 ms
+  /// (seperti navigasi): rotasi peta me-render ulang semua layer.
+  void _applyHeadingUp(double heading, {bool force = false}) {
+    final now = DateTime.now();
+    if (!force &&
+        _lastHeadingUpAt != null &&
+        now.difference(_lastHeadingUpAt!).inMilliseconds < 100) {
+      return;
+    }
+    _lastHeadingUpAt = now;
+    final double? target;
+    try {
+      target = headingUpRotation(heading, _mapController.camera.rotation);
+    } catch (_) {
+      return; // peta belum siap
+    }
+    if (target == null) return;
+    try {
+      _mapController.rotate(target);
+      _lastAutoRotation = target;
+    } catch (_) {}
+  }
+
+  void _toggleHeadingUp() {
+    HapticFeedback.selectionClick();
+    final enable = !_headingUp;
+    setState(() => _headingUp = enable);
+    try {
+      if (enable) {
+        // Acuan putar manual = rotasi saat ini, supaya geser peta biasa
+        // tidak langsung mematikan heading-up.
+        _lastAutoRotation = _mapController.camera.rotation;
+        _applyHeadingUp(_bearingNotifier.value, force: true);
+      } else {
+        _mapController.rotate(0); // kembali north-up
+      }
+    } catch (_) {}
   }
 
   // ──────────────────────────────────────────────────────
@@ -3451,6 +3497,14 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
                       if (hasGesture && _followMe) {
                         setState(() => _followMe = false);
                       }
+                      // Peta diputar user → heading-up berhenti agar tidak
+                      // berkejaran dengan kompas.
+                      if (hasGesture &&
+                          _headingUp &&
+                          headingUpOverridden(
+                              _lastAutoRotation, position.rotation)) {
+                        setState(() => _headingUp = false);
+                      }
                       // Notifier, bukan setState: label koordinat crosshair
                       // saja yang ikut berubah tiap frame geser peta.
                       _centerNotifier.value = position.center;
@@ -3758,8 +3812,24 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
           // Map measure tools — paling atas.
           buildMapToolsPanel(),
 
-          // Compass — jarum mengikuti rotasi peta, reset ber-animasi
-          CompassButton(mapController: _mapController, size: 44),
+          // Heading-up — peta berputar mengikuti arah hadap user (seperti
+          // di navigasi).
+          MapToolButton(
+            tooltip: 'Heading up',
+            icon: Icons.explore,
+            active: _headingUp,
+            onPressed: _toggleHeadingUp,
+          ),
+
+          // Compass — jarum mengikuti rotasi peta, reset ber-animasi; juga
+          // mematikan heading-up.
+          CompassButton(
+            mapController: _mapController,
+            size: 44,
+            onResetToNorth: () {
+              if (_headingUp) setState(() => _headingUp = false);
+            },
+          ),
 
           // Mode Toggle (hanya line/polygon)
           if (widget.project.geometryType != GeometryType.point)
