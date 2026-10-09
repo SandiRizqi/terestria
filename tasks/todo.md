@@ -11,8 +11,13 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - `DataViewToggle` di ujung kanan baris filter; pilihan disimpan lewat `DataViewModeStore` (SharedPreferences, berlaku untuk semua project). Grid tetap bawaan dan tidak berubah.
   - Teks "N of M records" pindah ke baris sendiri di bawah tombol filter, supaya tidak terpotong di 360 dp.
   - Test 913 → 935; analyze 0 error / 29 warning (sama dengan baseline).
-- [ ] T2: Mode pilih (tekan lama / Select) + pilih semua yang terlihat, checkbox di grid & list.
-- [ ] T3: Hapus terpilih + kosongkan data lokal (dialog peringatan, satu transaksi DB). Konfirmasi keputusan 4–5 di plan dulu.
+- [x] T2: Mode pilih + pilih semua.
+  - Masuk mode pilih: tekan lama record (langsung tercentang) atau menu ⋮ "Select Records".
+  - `SelectionAppBar` menggantikan AppBar: "N selected", Select all / Deselect all (hanya record yang terlihat), dan ✕ untuk batal. Back = keluar dari mode pilih. FAB disembunyikan selama mode pilih.
+  - List: checkbox menggantikan ikon geometri, latar hijau tipis bila terpilih, menu ⋮ disembunyikan. Grid: checkbox di pojok kiri atas, garis hijau bila terpilih, tombol edit/hapus disembunyikan. Ketuk = centang/lepas (bukan buka detail).
+  - `RecordSelection` (murni): toggle, pilih/lepas semua yang terlihat, `retain` — dipanggil di `_applyFilters`, jadi record yang tersembunyi filter/cari atau terhapus otomatis lepas dari pilihan.
+  - Test 935 → 948; analyze 0 error / 29 warning. Perilaku di level layar (tekan lama, Back, FAB) belum ada test-nya (layar butuh DB & service) → dicek di HP pada Checkpoint A.
+- [ ] T3: Hapus terpilih + kosongkan data lokal (dialog peringatan, satu transaksi DB). Hapus **hanya di HP** (keputusan user 9 Okt, plan keputusan 4).
 
 ### Checkpoint A
 - [ ] Test hijau; analyze tidak memburuk.

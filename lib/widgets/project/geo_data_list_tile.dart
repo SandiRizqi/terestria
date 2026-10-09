@@ -15,7 +15,16 @@ class GeoDataListTile extends StatelessWidget {
   final GeoData geoData;
   final Project project;
   final String? currentUsername;
+
+  /// Di mode pilih: mencentang/melepas record (bukan membuka detail).
   final VoidCallback onTap;
+
+  /// Tekan lama: masuk mode pilih.
+  final VoidCallback? onLongPress;
+
+  /// Mode pilih: checkbox menggantikan ikon geometri, menu ⋮ disembunyikan.
+  final bool selectionMode;
+  final bool selected;
 
   /// Null bila user tidak boleh mengedit/menghapus record ini.
   final VoidCallback? onEdit;
@@ -31,6 +40,9 @@ class GeoDataListTile extends StatelessWidget {
     required this.project,
     required this.currentUsername,
     required this.onTap,
+    this.onLongPress,
+    this.selectionMode = false,
+    this.selected = false,
     this.onEdit,
     this.onDelete,
     this.now,
@@ -50,22 +62,35 @@ class GeoDataListTile extends StatelessWidget {
     );
 
     return Material(
-      color: AppTheme.cardBackground,
+      color: selectionMode && selected
+          ? AppTheme.primaryGreen.withValues(alpha: 0.06)
+          : AppTheme.cardBackground,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
           child: Row(
             children: [
-              Container(
+              SizedBox(
                 width: 44,
                 height: 44,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.10),
-                  borderRadius:
-                      BorderRadius.circular(AppTheme.borderRadiusMedium),
-                ),
-                child: Icon(icon, size: 22, color: color),
+                child: selectionMode
+                    ? Center(
+                        child: Checkbox(
+                          value: selected,
+                          activeColor: AppTheme.primaryGreen,
+                          onChanged: (_) => onTap(),
+                        ),
+                      )
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(
+                              AppTheme.borderRadiusMedium),
+                        ),
+                        child: Icon(icon, size: 22, color: color),
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -109,7 +134,7 @@ class GeoDataListTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _SyncDot(synced: geoData.isSynced, failed: syncError != null),
-              if (onEdit != null || onDelete != null)
+              if (!selectionMode && (onEdit != null || onDelete != null))
                 _actionsMenu()
               else
                 const SizedBox(width: 12),

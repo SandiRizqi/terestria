@@ -21,6 +21,8 @@ import 'create_project_screen.dart';
 import '../../widgets/geo_data_list_item.dart';
 import '../../widgets/project/data_view_toggle.dart';
 import '../../widgets/project/geo_data_list_tile.dart';
+import '../../widgets/project/selection_app_bar.dart';
+import '../../utils/record_selection.dart';
 import '../../services/data_view_mode_store.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:convert';
@@ -70,6 +72,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   /// Grid (bawaan) atau list; pilihan disimpan di HP.
   DataViewMode _viewMode = DataViewMode.grid;
 
+  // ── Mode pilih (tekan lama record / menu "Select records") ──
+  bool _selectionMode = false;
+  RecordSelection _selection = const RecordSelection();
+
+  Iterable<String> get _visibleIds => _filteredGeoDataList.map((d) => d.id);
+
   // ── Filter state ──
   DateTimeRange? _dateFilter;
   Map<String, dynamic> _fieldFilters = {};
@@ -105,6 +113,42 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (mode == _viewMode) return;
     setState(() => _viewMode = mode);
     DataViewModeStore.save(mode);
+  }
+
+  /// Masuk mode pilih; [first] langsung tercentang (tekan lama record).
+  void _startSelection([GeoData? first]) {
+    setState(() {
+      _selectionMode = true;
+      _selection = first == null
+          ? const RecordSelection()
+          : RecordSelection({first.id});
+    });
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selection = const RecordSelection();
+    });
+  }
+
+  /// Ketuk record: di mode pilih mencentang/melepas, selain itu buka detail.
+  void _onRecordTap(GeoData data) {
+    if (_selectionMode) {
+      setState(() => _selection = _selection.toggle(data.id));
+    } else {
+      _showDataDetail(data);
+    }
+  }
+
+  PreferredSizeWidget _buildSelectionAppBar() {
+    return SelectionAppBar(
+      selectedCount: _selection.count,
+      allSelected: _selection.allSelected(_visibleIds),
+      onClose: _exitSelection,
+      onToggleAll: () =>
+          setState(() => _selection = _selection.toggleAll(_visibleIds)),
+    );
   }
 
   Future<void> _loadUsername() async {
@@ -236,6 +280,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
         return true;
       }).toList();
+      // Record yang tak terlihat lagi (filter berubah/terhapus) dilepas dari
+      // pilihan, supaya aksi tidak mengenai record tersembunyi.
+      _selection = _selection.retain(_visibleIds);
     });
   }
 
@@ -1032,9 +1079,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // Back di mode pilih = keluar dari mode pilih, bukan meninggalkan layar.
+    return PopScope(
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _exitSelection();
+      },
+      child: Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
-      appBar: AppBar(
+      appBar: _selectionMode ? _buildSelectionAppBar() : AppBar(
         backgroundColor: AppTheme.primaryGreen,
         elevation: 0,
         title: _isSearching
@@ -1107,6 +1160,49 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           // Edit Project - hanya tampil jika user adalah creator
               
               //if (_canEditProject())
+              PopupMenuItem<String>(
+                value: 'select',
+                enabled: _filteredGeoDataList.isNotEmpty,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryGreen.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.checklist_rounded,
+                        color: AppTheme.primaryGreen,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Select Records',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Or long-press a record',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'pull_from_server',
@@ -1288,6 +1384,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 _syncNow();
               } else if (value == 'info') {
                 _showProjectInfo();
+              } else if (value == 'select') {
+                _startSelection();
               }
             },
           ),
@@ -1367,7 +1465,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         ],
       ),
     ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: _selectionMode ? null : FloatingActionButton.extended(
         onPressed: _navigateToDataCollection,
         backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
@@ -1377,6 +1475,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         ),
         icon: const Icon(Icons.add_location_alt_rounded),
         label: const Text('Add Data', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
       ),
     );
   }
@@ -1406,7 +1505,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           project: _currentProject,
           onDelete: canEdit ? () => _deleteGeoData(data) : null,
           onEdit: canEdit ? () => _editGeoData(data) : null,
-          onTap: () => _showDataDetail(data),
+          onTap: () => _onRecordTap(data),
+          onLongPress: _selectionMode ? null : () => _startSelection(data),
+          selectionMode: _selectionMode,
+          selected: _selection.contains(data.id),
         );
       },
     );
@@ -1427,7 +1529,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           geoData: data,
           project: _currentProject,
           currentUsername: _currentUsername,
-          onTap: () => _showDataDetail(data),
+          onTap: () => _onRecordTap(data),
+          onLongPress: _selectionMode ? null : () => _startSelection(data),
+          selectionMode: _selectionMode,
+          selected: _selection.contains(data.id),
           onEdit: canEdit ? () => _editGeoData(data) : null,
           onDelete: canEdit ? () => _deleteGeoData(data) : null,
         );

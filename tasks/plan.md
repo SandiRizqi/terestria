@@ -28,7 +28,11 @@ Plan sebelumnya: `tasks/plan-form-rules.md` (arsip lokal; versi git ada di riway
    - titik status sync (hijau tersinkron, kuning lokal, merah gagal).
 
    Ketuk = detail. Menu ⋮ = edit/hapus bila boleh, sama dengan tombol di grid.
-4. **Hapus terpilih** mengikuti aturan hapus sekarang: hanya record yang dikumpulkan user sendiri. Record orang lain di pilihan dilewati, dan jumlahnya disebut di dialog.
+4. **Hapus terpilih hanya menghapus dari HP** (keputusan user, 9 Okt 2026). Tidak ada penghapusan di server.
+   - Semua record terpilih boleh dihapus dari HP, termasuk record pengumpul lain (record seperti itu pasti berasal dari server).
+   - Record yang sudah di server tetap di server dan bisa diambil lagi lewat Pull.
+   - Record yang belum di-upload hilang permanen.
+   - Dialog menyebut jumlah keduanya sebelum menghapus.
 5. **Kosongkan data lokal** (menu project) menghapus record project ini **dari HP saja**.
    - Record yang sudah di server bisa diambil lagi lewat Pull.
    - Record yang **belum di-upload** tidak ikut dihapus, kecuali user mencentang "Also delete N records not uploaded yet (permanent)" di dialog. Bawaannya tidak dicentang.
@@ -92,5 +96,5 @@ Test hijau; **(User, di HP)** ukur jarak dengan titik yang diketik/diedit di ket
 | Layout template memakai warna lain | Keputusan 1: hanya `AppTheme` |
 
 ## Pertanyaan terbuka (dipakai default di atas bila tidak dijawab)
-- Keputusan 4–5 (aturan hapus record orang lain, perlakuan record belum di-upload) — konfirmasi sebelum T3.
+- ~~Keputusan 4–5~~: user memutuskan hapus hanya berlaku di HP (9 Okt). Keputusan 4 diperbarui; keputusan 5 tetap memakai default.
 - T6 menyentuh alur buat project; bila hanya halaman daftar & detail yang ingin diubah, T6 dilewati.

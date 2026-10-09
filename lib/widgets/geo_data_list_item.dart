@@ -10,8 +10,15 @@ class GeoDataListItem extends StatelessWidget {
   final GeometryType geometryType;
   final VoidCallback? onDelete; // Nullable - null jika tidak bisa delete
   final VoidCallback? onEdit; // Nullable - null jika tidak bisa edit
-  final VoidCallback onTap;
+  final VoidCallback onTap; // Di mode pilih: centang/lepas record
   final Project? project;
+
+  /// Tekan lama: masuk mode pilih.
+  final VoidCallback? onLongPress;
+
+  /// Mode pilih: checkbox di pojok kiri atas, tombol edit/hapus disembunyikan.
+  final bool selectionMode;
+  final bool selected;
 
   const GeoDataListItem({
     Key? key,
@@ -21,6 +28,9 @@ class GeoDataListItem extends StatelessWidget {
     this.onEdit, // Optional
     required this.onTap,
     this.project,
+    this.onLongPress,
+    this.selectionMode = false,
+    this.selected = false,
   }) : super(key: key);
 
   @override
@@ -56,15 +66,19 @@ class GeoDataListItem extends StatelessWidget {
     // record belum tersinkron.
     final syncError = geoData.isSynced ? null : geoData.lastSyncError;
 
-    return Card(
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
       shadowColor: Colors.black.withOpacity(0.08),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
+        side: selectionMode && selected
+            ? const BorderSide(color: AppTheme.primaryGreen, width: 2)
+            : BorderSide.none,
       ),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -142,13 +156,13 @@ class GeoDataListItem extends StatelessWidget {
                           ),
                         ),
                         // Actions (Edit/Delete icons styled like buttons)
-                        if (onEdit != null)
+                        if (onEdit != null && !selectionMode)
                           _buildActionButton(
                             icon: Icons.edit_rounded,
                             color: AppTheme.primaryColor,
                             onTap: onEdit!,
                           ),
-                        if (onDelete != null)
+                        if (onDelete != null && !selectionMode)
                           Padding(
                             padding: const EdgeInsets.only(left: 6),
                             child: _buildActionButton(
@@ -260,6 +274,29 @@ class GeoDataListItem extends StatelessWidget {
           ],
         ),
       ),
+    );
+
+    if (!selectionMode) return card;
+    return Stack(
+      children: [
+        Positioned.fill(child: card),
+        Positioned(
+          top: 6,
+          left: 6,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Checkbox(
+              value: selected,
+              activeColor: AppTheme.primaryGreen,
+              visualDensity: VisualDensity.compact,
+              onChanged: (_) => onTap(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
