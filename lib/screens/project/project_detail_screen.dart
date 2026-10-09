@@ -22,6 +22,7 @@ import '../../widgets/geo_data_list_item.dart';
 import '../../widgets/project/data_view_toggle.dart';
 import '../../widgets/project/geo_data_list_tile.dart';
 import '../../widgets/project/selection_app_bar.dart';
+import '../../widgets/project/local_delete_dialogs.dart';
 import '../../utils/record_selection.dart';
 import '../../services/data_view_mode_store.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
@@ -148,7 +149,61 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       onClose: _exitSelection,
       onToggleAll: () =>
           setState(() => _selection = _selection.toggleAll(_visibleIds)),
+      actions: [
+        IconButton(
+          tooltip: 'Delete from this phone',
+          icon: const Icon(Icons.delete_outline_rounded),
+          onPressed: _selection.isEmpty ? null : _deleteSelected,
+        ),
+      ],
     );
+  }
+
+  // ── Hapus dari HP saja (tidak ada penghapusan di server) ──
+
+  /// Hapus saat sync berjalan bisa berebut dengan upload record yang sama.
+  bool _blockedBySync() {
+    if (!_isSyncing) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Wait until the sync finishes.')),
+    );
+    return true;
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_blockedBySync()) return;
+    final records =
+        _geoDataList.where((d) => _selection.contains(d.id)).toList();
+    if (records.isEmpty) return;
+    if (!await confirmDeleteSelected(context, records)) return;
+    await _deleteLocally(records.map((r) => r.id).toList());
+    if (mounted) _exitSelection();
+  }
+
+  Future<void> _clearLocalData() async {
+    if (_blockedBySync()) return;
+    final ids = await confirmClearLocalData(context, _geoDataList);
+    if (ids == null || ids.isEmpty) return;
+    await _deleteLocally(ids);
+  }
+
+  /// Satu transaksi DB: gagal di tengah → tidak ada yang terhapus.
+  Future<void> _deleteLocally(List<String> ids) async {
+    try {
+      final n = await _storageService.deleteGeoDataBatch(ids);
+      await _loadGeoData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '${n == 1 ? '1 record' : '$n records'} deleted from this phone'),
+        ),
+      );
+    } catch (e, st) {
+      if (!mounted) return;
+      showErrorFeedback(context, 'Could not delete the records',
+          error: e, stack: st, tag: 'PROJECT');
+    }
   }
 
   Future<void> _loadUsername() async {
@@ -1374,6 +1429,51 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ],
                 ),
               ),
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'clear_local',
+                enabled: _geoDataList.isNotEmpty,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.cleaning_services_outlined,
+                        color: AppTheme.errorColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Clear Local Data',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: AppTheme.errorColor,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Remove records from this phone only',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
             onSelected: (value) {
               if (value == 'pull_from_server') {
@@ -1386,6 +1486,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 _showProjectInfo();
               } else if (value == 'select') {
                 _startSelection();
+              } else if (value == 'clear_local') {
+                _clearLocalData();
               }
             },
           ),

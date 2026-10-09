@@ -19,6 +19,26 @@ class DatabaseResetInProgress implements Exception {
       'DatabaseResetInProgress: the local database is being cleared (logout)';
 }
 
+/// Batas id per pernyataan `IN (...)` — di bawah batas parameter SQLite lama
+/// (999).
+const _deleteChunk = 500;
+
+/// Hapus record [ids] dan konflik sync-nya lewat [db] (panggil di dalam
+/// transaksi). Mengembalikan jumlah record yang terhapus.
+Future<int> deleteGeoDataRows(DatabaseExecutor db, List<String> ids) async {
+  var deleted = 0;
+  for (var start = 0; start < ids.length; start += _deleteChunk) {
+    final chunk = ids.sublist(start,
+        start + _deleteChunk < ids.length ? start + _deleteChunk : ids.length);
+    final marks = List.filled(chunk.length, '?').join(', ');
+    deleted += await db.delete('geo_data',
+        where: 'id IN ($marks)', whereArgs: chunk);
+    await db.delete('sync_conflicts',
+        where: 'geoDataId IN ($marks)', whereArgs: chunk);
+  }
+  return deleted;
+}
+
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
@@ -515,6 +535,14 @@ class DatabaseService {
     );
     await db.delete('sync_conflicts',
         where: 'geoDataId = ?', whereArgs: [geoDataId]);
+  }
+
+  /// Hapus banyak record sekaligus dalam satu transaksi: gagal di tengah →
+  /// tidak ada yang terhapus. Mengembalikan jumlah record yang terhapus.
+  Future<int> deleteGeoDataBatch(List<String> geoDataIds) async {
+    if (geoDataIds.isEmpty) return 0;
+    final db = await database;
+    return db.transaction((txn) => deleteGeoDataRows(txn, geoDataIds));
   }
 
   // ==================== SYNC CONFLICTS ====================

@@ -104,6 +104,10 @@ class StorageService {
     await _db.deleteGeoData(geoDataId);
   }
 
+  /// Hapus banyak record dari HP dalam satu transaksi; jumlah yang terhapus.
+  Future<int> deleteGeoDataBatch(List<String> geoDataIds) =>
+      _db.deleteGeoDataBatch(geoDataIds);
+
   /// Update geo data sync status
   Future<void> updateGeoDataSyncStatus(String geoDataId, bool isSynced, {DateTime? syncedAt}) async {
     await _db.updateGeoDataSyncStatus(geoDataId, isSynced, syncedAt: syncedAt);

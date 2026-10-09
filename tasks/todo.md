@@ -17,7 +17,12 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - List: checkbox menggantikan ikon geometri, latar hijau tipis bila terpilih, menu ⋮ disembunyikan. Grid: checkbox di pojok kiri atas, garis hijau bila terpilih, tombol edit/hapus disembunyikan. Ketuk = centang/lepas (bukan buka detail).
   - `RecordSelection` (murni): toggle, pilih/lepas semua yang terlihat, `retain` — dipanggil di `_applyFilters`, jadi record yang tersembunyi filter/cari atau terhapus otomatis lepas dari pilihan.
   - Test 935 → 948; analyze 0 error / 29 warning. Perilaku di level layar (tekan lama, Back, FAB) belum ada test-nya (layar butuh DB & service) → dicek di HP pada Checkpoint A.
-- [ ] T3: Hapus terpilih + kosongkan data lokal (dialog peringatan, satu transaksi DB). Hapus **hanya di HP** (keputusan user 9 Okt, plan keputusan 4).
+- [x] T3: Hapus terpilih + kosongkan data lokal — **hanya dari HP** (keputusan user 9 Okt). Semua record terpilih boleh dihapus, termasuk kiriman pengumpul lain (sudah di server, bisa di-Pull lagi).
+  - Bar pilihan: tombol 🗑 "Delete from this phone". Dialog menyebut berapa yang sudah di server (tetap di server) dan berapa yang belum di-upload (hilang permanen, saran sync dulu), plus "Nothing is deleted on the server."
+  - Menu ⋮ "Clear Local Data": bawaan hanya record yang sudah di server. Record belum di-upload ikut hanya bila "Also delete N not uploaded yet" dicentang. Tombol "Delete N" mengikuti jumlah, dan nonaktif bila 0.
+  - `DatabaseService.deleteGeoDataBatch`: satu transaksi; `deleteGeoDataRows` (dapat diuji) menghapus record + konflik sync per potongan 500 id (batas parameter SQLite).
+  - Hapus diblokir selama sync berjalan ("Wait until the sync finishes."). Hapus satuan (tombol di tile) tidak berubah.
+  - Test 948 → 960; analyze 0 error / 29 warning. Catatan: test DB sungguhan (sqflite ffi) tidak dibuat, karena butuh dev dependency baru di `pubspec.yaml` yang sedang berisi perubahan lokal. Diganti test dengan executor tiruan.
 
 ### Checkpoint A
 - [ ] Test hijau; analyze tidak memburuk.
