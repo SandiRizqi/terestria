@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../widgets/map/tools/map_tools_controller.dart';
@@ -34,5 +37,24 @@ mixin MapToolsHost<T extends StatefulWidget> on State<T> {
       [MapToolsLayer(controller: mapToolsController)];
 
   /// Panel/FAB alat ukur untuk ditaruh di Stack layar.
-  Widget buildMapToolsPanel() => MapToolsPanel(controller: mapToolsController);
+  Widget buildMapToolsPanel() => MapToolsPanel(
+        controller: mapToolsController,
+        onFocusPoint: focusMapToolsPoint,
+      );
+
+  /// Peta milik layar, untuk menggeser kamera ke titik yang diketik/diedit di
+  /// alat ukur. Override di layar peta; null = tidak digeser.
+  MapController? get mapToolsMapController => null;
+
+  /// Geser peta ke [p] (zoom minimal 16, tidak memperkecil zoom sekarang).
+  /// Peta yang belum dirender diabaikan.
+  void focusMapToolsPoint(LatLng p) {
+    final map = mapToolsMapController;
+    if (map == null) return;
+    try {
+      map.move(p, math.max(map.camera.zoom, 16));
+    } catch (_) {
+      // Kamera belum siap (peta belum dirender) — tidak ada yang digeser.
+    }
+  }
 }

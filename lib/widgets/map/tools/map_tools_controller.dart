@@ -55,6 +55,14 @@ class MapToolsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ganti titik ke-[index] (mis. koordinat diketik ulang); indeks di luar
+  /// daftar diabaikan.
+  void updatePoint(int index, LatLng p) {
+    if (index < 0 || index >= _points.length) return;
+    _points[index] = p;
+    notifyListeners();
+  }
+
   void undo() {
     if (_points.isEmpty) return;
     _points.removeLast();

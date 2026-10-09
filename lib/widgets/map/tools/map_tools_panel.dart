@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../models/settings/app_settings.dart';
 import '../../../services/settings_service.dart';
 import '../../../theme/app_theme.dart';
+import 'package:latlong2/latlong.dart';
+
 import '../map_tool_button.dart';
+import 'coordinate_dialog.dart';
+import 'coordinate_input.dart';
 import 'map_tools_controller.dart';
 
 /// Panel alat ukur peta: tombol launcher yang membuka daftar mode, kartu hasil
@@ -12,7 +16,12 @@ import 'map_tools_controller.dart';
 /// posisinya, mis. Positioned kanan-bawah).
 class MapToolsPanel extends StatefulWidget {
   final MapToolsController controller;
-  const MapToolsPanel({super.key, required this.controller});
+
+  /// Dipanggil setelah titik diketik/diedit, agar host menggeser peta ke sana.
+  final ValueChanged<LatLng>? onFocusPoint;
+
+  const MapToolsPanel(
+      {super.key, required this.controller, this.onFocusPoint});
 
   @override
   State<MapToolsPanel> createState() => _MapToolsPanelState();
@@ -52,33 +61,149 @@ class _MapToolsPanelState extends State<MapToolsPanel> {
     );
   }
 
-  // ─── Kartu hasil live ─────────────────────────────────────────────────────
+  // ─── Kartu hasil live + titik yang bisa diketik/diedit ─────────────────────
   Widget _resultCard(MapToolsController c) {
     final settings = SettingsService().settings;
+    final isCoordinate = c.mode == MapToolMode.coordinate;
+    // Mode koordinat: hasilnya sendiri adalah koordinat titik → ketuk = edit.
+    final editableResult = isCoordinate && c.points.isNotEmpty;
+    final resultRow = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(_iconFor(c.mode), size: 16, color: AppTheme.primaryGreen),
+        const SizedBox(width: AppTheme.spacingSmall),
+        Expanded(
+          child: Text(
+            c.resultText(settings),
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+        ),
+        if (editableResult)
+          const Icon(Icons.edit_outlined,
+              size: 16, color: AppTheme.textSecondary),
+      ],
+    );
     return Container(
-      width: 200,
+      width: 240,
       margin: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.spacingMedium, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(
+          AppTheme.spacingMedium, 10, AppTheme.spacingSmall, 4),
       decoration: AppTheme.getCardDecoration,
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(_iconFor(c.mode), size: 16, color: AppTheme.primaryGreen),
-          const SizedBox(width: AppTheme.spacingSmall),
-          Expanded(
-            child: Text(
-              c.resultText(settings),
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+          if (editableResult)
+            InkWell(
+              key: const Key('mapToolsEditCoordinate'),
+              onTap: () => _editPoint(c, 0),
+              child: resultRow,
+            )
+          else
+            resultRow,
+          if (!isCoordinate && c.points.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 132),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: c.points.length,
+                itemBuilder: (context, i) => _pointRow(c, i),
               ),
+            ),
+          ],
+          TextButton.icon(
+            key: const Key('mapToolsAddCoordinate'),
+            onPressed: () => _addPoint(c),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.primaryGreen,
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+            ),
+            icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+            label: Text(
+              isCoordinate ? 'Enter coordinate' : 'Add by coordinate',
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Satu titik: nomor + koordinat; ketuk untuk mengetik ulang koordinatnya.
+  Widget _pointRow(MapToolsController c, int i) {
+    return InkWell(
+      key: Key('mapToolsPoint_$i'),
+      onTap: () => _editPoint(c, i),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 18,
+              height: 18,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGreen.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '${i + 1}',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.primaryGreen,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacingSmall),
+            Expanded(
+              child: Text(
+                formatCoordinate(c.points[i]),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textPrimary,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            const Icon(Icons.edit_outlined,
+                size: 14, color: AppTheme.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editPoint(MapToolsController c, int index) async {
+    final p = await showCoordinateDialog(
+      context,
+      title: c.mode == MapToolMode.coordinate
+          ? 'Edit coordinate'
+          : 'Edit point ${index + 1}',
+      initial: c.points[index],
+    );
+    if (p == null || !mounted) return;
+    c.updatePoint(index, p);
+    widget.onFocusPoint?.call(p);
+  }
+
+  Future<void> _addPoint(MapToolsController c) async {
+    final p = await showCoordinateDialog(
+      context,
+      title: c.mode == MapToolMode.coordinate ? 'Enter coordinate' : 'Add point',
+      initial: c.lastPoint,
+    );
+    if (p == null || !mounted) return;
+    c.addPoint(p);
+    widget.onFocusPoint?.call(p);
   }
 
   // ─── Menu pilih mode ──────────────────────────────────────────────────────

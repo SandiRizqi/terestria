@@ -54,7 +54,19 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
 - [ ] Test hijau; (User, di HP) tampilan ketiga halaman.
 
 ## Fase 3 — Alat ukur
-- [ ] T7: Edit & tambah titik ukur lewat koordinat (dialog lat/lon, daftar titik, peta bergeser) di tiga layar peta.
+- [x] T7 (dikerjakan sebelum T6, permintaan user 9 Okt): edit & tambah titik alat ukur lewat koordinat.
+  - **Kartu hasil:**
+    - mode Distance/Area/Bearing/Radius menampilkan daftar titik bernomor (koordinat 6 desimal), ketuk = edit;
+    - mode Coordinate: ketuk hasil koordinat = edit;
+    - tombol "Add by coordinate" / "Enter coordinate".
+  - **Dialog Latitude/Longitude:**
+    - derajat desimal; koma desimal diterima;
+    - tempel "lat, lon" / "lat lon" / "lat;lon" di kolom Latitude mengisi keduanya;
+    - rentang dicek per kolom ("Latitude must be between -90 and 90"), dialog tetap terbuka bila salah.
+  - **Setelah simpan:** hasil ukur dihitung ulang (`MapToolsController.updatePoint`), lalu peta bergeser ke titik itu (zoom minimal 16, tidak memperkecil zoom). Lewat `MapToolsHost.mapToolsMapController`, di-override di layar koleksi data, navigasi, dan peta notifikasi.
+  - Logika murni di `coordinate_input.dart`.
+  - Test 986 → 1000; analyze 0 error / 29 warning.
+- [x] Tambahan (permintaan user 9 Okt, `79958e1`): fungsi "Pull from server" daftar project yang tak punya tombol dihapus, bersama import/field yang ikut tak terpakai.
 
 ### Checkpoint C — Selesai
 - [ ] Test hijau; (User, di HP) ukur jarak dengan titik yang diketik/diedit.

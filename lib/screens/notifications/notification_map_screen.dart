@@ -59,6 +59,10 @@ class _NotificationMapScreenState extends State<NotificationMapScreen>
         MapToolsHost<NotificationMapScreen> {
   // ─── Services ──────────────────────────────────────────────────────────────
   final MapController      _mapController  = MapController();
+
+  /// Alat ukur menggeser peta ini ke titik yang koordinatnya diketik.
+  @override
+  MapController? get mapToolsMapController => _mapController;
   late final PdfOverlayController _pdfOverlay;
   final BasemapService     _basemapService = BasemapService();
   final LayerService       _layerService   = LayerService();

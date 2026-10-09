@@ -84,6 +84,10 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
   final BasemapService _basemapService = BasemapService();
   final SettingsService _settingsService = SettingsService();
   final MapController _mapController = MapController();
+
+  /// Alat ukur menggeser peta ini ke titik yang koordinatnya diketik.
+  @override
+  MapController? get mapToolsMapController => _mapController;
   final _formKey = GlobalKey<FormState>();
   final _uuid = const Uuid();
 

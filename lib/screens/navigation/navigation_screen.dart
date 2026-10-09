@@ -54,6 +54,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   final _routingService   = RoutingService();
   final _settingsService  = SettingsService();
   final _mapController    = MapController();
+
+  /// Alat ukur menggeser peta ini ke titik yang koordinatnya diketik.
+  @override
+  MapController? get mapToolsMapController => _mapController;
   late final PdfOverlayController _pdfOverlay;
 
   // ─── GPS ───────────────────────────────────────────────────────────────────
