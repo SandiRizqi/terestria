@@ -5,8 +5,6 @@ import '../../services/storage_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/sync_service.dart';
-import '../../services/api_service.dart';
-import '../../config/api_config.dart';
 import '../auth/login_screen.dart';
 import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
@@ -18,7 +16,6 @@ import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../services/project_template_service.dart';
 import '../../services/crashlytics_service.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:convert';
 import 'dart:async';
 import '../../widgets/project/cloud_project_dialog.dart';
 import '../../theme/app_theme.dart';
@@ -37,7 +34,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   final AuthService _authService = AuthService();
   final ConnectivityService _connectivityService = ConnectivityService();
   final SyncService _syncService = SyncService();
-  final ApiService _apiService = ApiService();
   final TextEditingController _searchController = TextEditingController();
   
   List<Project> _projects = [];
@@ -125,169 +121,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         currentUsername: _currentUsername,
       );
     });
-  }
-
-  /// Sync projects dari server (Pull dari server ke local).
-  /// Sejak sebelum layout baru (T5) tidak ada tombol yang memanggilnya: menu
-  /// lama hanya berisi "Push to Server". Dibiarkan sampai diputuskan apakah
-  /// perlu tombol sendiri atau dihapus (fungsi ini juga menghapus project lokal
-  /// yang tidak ada di server).
-  // ignore: unused_element
-  Future<void> _syncProjectsFromServer() async {
-    if (_isSyncing) return;
-
-    // Check if online
-    if (!_isOnline) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.wifi_off, color: Colors.white),
-                SizedBox(width: 8),
-                Text('No internet connection. Please connect to sync.'),
-              ],
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-      return;
-    }
-
-    setState(() => _isSyncing = true);
-
-    try {
-      final projectResponse = await _apiService.get(
-        '${ApiConfig.syncProjectEndpoint}?user_only=true',
-      );
-
-      if (_apiService.isSuccess(projectResponse)) {
-        final projectData = jsonDecode(projectResponse.body);
-        int newProjectCount = 0;
-        int updatedProjectCount = 0;
-
-        // Load existing projects
-        final existingProjects = await _storageService.loadProjects();
-        final existingProjectMap = {for (var p in existingProjects) p.id: p};
-
-        // Buat set ID dari projects di server
-        Set<String> serverProjectIds = {};
-        int deletedProjectCount = 0;
-
-        // Process projects dari server
-        if (projectData is List) {
-          for (var projectJson in projectData) {
-            try {
-              // Tersimpan sebagai sudah sync: tanpa perubahan lokal, project
-              // tidak di-push balik ke server.
-              final serverProject = Project.fromServerJson(projectJson);
-              serverProjectIds.add(serverProject.id);
-              final existingProject = existingProjectMap[serverProject.id];
-
-              if (existingProject == null) {
-                // Project baru dari server
-                await _storageService.saveProject(serverProject);
-                newProjectCount++;
-              } else if (serverProject.updatedAt.isAfter(existingProject.updatedAt)) {
-                // Update project yang lebih baru dari server
-                await _storageService.saveProject(serverProject);
-                updatedProjectCount++;
-              }
-            } catch (e) {
-              logWarn('Error processing project from server: $e', tag: 'PROJECT');
-            }
-          }
-
-          // Hapus projects local yang tidak ada di server
-          for (var existingProject in existingProjects) {
-            if (!serverProjectIds.contains(existingProject.id)) {
-              try {
-                await _storageService.deleteProject(existingProject.id);
-                deletedProjectCount++;
-                logDebug('Deleted local project not found on server: ${existingProject.name}', tag: 'PROJECT');
-              } catch (e) {
-                logWarn('Error deleting local project: $e', tag: 'PROJECT');
-              }
-            }
-          }
-        }
-
-        // Reload local data
-        await _loadProjects();
-
-        // Show notification
-        if (mounted) {
-          int totalChanges = newProjectCount + updatedProjectCount + deletedProjectCount;
-          
-          if (totalChanges > 0) {
-            List<String> messageParts = [];
-            if (newProjectCount > 0) {
-              messageParts.add('$newProjectCount new');
-            }
-            if (updatedProjectCount > 0) {
-              messageParts.add('$updatedProjectCount updated');
-            }
-            if (deletedProjectCount > 0) {
-              messageParts.add('$deletedProjectCount deleted');
-            }
-            
-            String message = messageParts.join(', ');
-            message += ' project${totalChanges > 1 ? "s" : ""} synced from server';
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Icon(Icons.cloud_download, color: Colors.white),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(message)),
-                  ],
-                ),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.white),
-                    SizedBox(width: 8),
-                    Text('Projects are up to date'),
-                  ],
-                ),
-                backgroundColor: Colors.blue,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        }
-      }
-    } catch (e, stack) {
-      crashlytics.recordError(e, stack,
-          reason: 'Project: syncProjectsFromServer failed');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text(loggedErrorMessage('Download from the server failed', e, tag: 'SYNC'))),
-              ],
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSyncing = false);
-      }
-    }
   }
 
   /// Push projects ke server (Upload local ke server)
