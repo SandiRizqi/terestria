@@ -295,14 +295,13 @@ class _NavigationScreenState extends State<NavigationScreen>
   /// Throttle perubahan kecil (<2°) agar tidak jitter; jarum utara (CompassButton)
   /// otomatis mengikuti karena terikat rotasi peta.
   void _applyHeadingUp(double heading) {
-    final target = normalizeDegrees(-heading);
-    double cur;
+    final double? target;
     try {
-      cur = _mapController.camera.rotation;
+      target = headingUpRotation(heading, _mapController.camera.rotation);
     } catch (_) {
       return;
     }
-    if (shortestDelta(cur, target).abs() < 2.0) return;
+    if (target == null) return;
     try {
       _mapController.rotate(target);
       _lastAutoRotation = target;
@@ -580,7 +579,7 @@ class _NavigationScreenState extends State<NavigationScreen>
             // Manual rotate → matikan heading-up agar tidak berkejaran
             if (_headingUp && mounted) {
               final r = _mapController.camera.rotation;
-              if (shortestDelta(_lastAutoRotation, r).abs() > 5.0) {
+              if (headingUpOverridden(_lastAutoRotation, r)) {
                 setState(() => _headingUp = false);
               }
             }

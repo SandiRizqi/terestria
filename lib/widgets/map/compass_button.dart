@@ -14,6 +14,21 @@ double normalizeDegrees(double deg) {
 /// Selisih sudut terpendek dari [from] ke [to] (hasil di (-180, 180]).
 double shortestDelta(double from, double to) => normalizeDegrees(to - from);
 
+/// Heading-up: rotasi peta agar arah hadap user ([heading], derajat kompas)
+/// menghadap ke atas layar. Null bila selisih dengan [currentRotation] kurang
+/// dari [minDelta] derajat (anti-jitter). Dipakai navigasi & koleksi data.
+double? headingUpRotation(double heading, double currentRotation,
+    {double minDelta = 2.0}) {
+  final target = normalizeDegrees(-heading);
+  return shortestDelta(currentRotation, target).abs() < minDelta ? null : target;
+}
+
+/// User memutar peta sendiri (menyimpang lebih dari [tolerance] derajat dari
+/// rotasi otomatis terakhir) → heading-up dimatikan agar tidak berkejaran.
+bool headingUpOverridden(double lastAutoRotation, double rotation,
+        {double tolerance = 5.0}) =>
+    shortestDelta(lastAutoRotation, rotation).abs() > tolerance;
+
 /// Tombol kompas penunjuk utara untuk peta flutter_map.
 ///
 /// Jarum diikat ke **rotasi peta** ([MapController.camera.rotation]) — bukan
