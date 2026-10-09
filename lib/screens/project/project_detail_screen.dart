@@ -19,7 +19,7 @@ import '../data_collection/data_collection_screen.dart';
 import 'edit_geo_data_screen.dart';
 import 'create_project_screen.dart';
 import '../../widgets/geo_data_list_item.dart';
-import '../../widgets/project/data_view_toggle.dart';
+import '../../widgets/project/project_detail_header.dart';
 import '../../widgets/project/geo_data_list_tile.dart';
 import '../../widgets/project/selection_app_bar.dart';
 import '../../widgets/project/local_delete_dialogs.dart';
@@ -59,7 +59,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _isLoading = true;
   late Project _currentProject;
   final TextEditingController _searchController = TextEditingController();
-  bool _isSearching = false;
   bool _isOnline = false;
   StreamSubscription<bool>? _connectivitySubscription;
   bool _isSyncing = false;
@@ -1142,65 +1141,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       },
       child: Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
+      // Bar terang seperti template; judul project & pencarian ada di badan
+      // halaman (_buildHeader).
       appBar: _selectionMode ? _buildSelectionAppBar() : AppBar(
-        backgroundColor: AppTheme.primaryGreen,
+        backgroundColor: AppTheme.scaffoldBackground,
+        foregroundColor: AppTheme.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
         elevation: 0,
-        title: _isSearching
-            ? Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  style: const TextStyle(color: Colors.black87, fontSize: 14),
-                  decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.symmetric(vertical: 10),
-                    hintText: 'Search data...',
-                    hintStyle: TextStyle(color: Colors.black45),
-                    border: InputBorder.none,
-                    isDense: true,
-                  ),
-                ),
-              )
-            : Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _currentProject.name,
-                      style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
-                    ),
-                  ),
-                  const ConnectivityIndicator(
-                    showLabel: true,
-                    iconSize: 16,
-                  ),
-                ],
-              ),
+        scrolledUnderElevation: 0,
+        titleSpacing: 0,
+        title: const Align(
+          alignment: Alignment.centerLeft,
+          child: ConnectivityIndicator(
+            showLabel: true,
+            iconSize: 16,
+          ),
+        ),
         actions: [
-          if (_isSearching)
-            IconButton(
-              icon: const Icon(Icons.clear_rounded),
-              onPressed: () {
-                setState(() {
-                  _isSearching = false;
-                });
-                _searchController.clear(); // trigger _applyFilters via listener
-              },
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.search_rounded),
-              onPressed: () {
-                setState(() {
-                  _isSearching = true;
-                });
-              },
-            ),
           IconButton(
+            tooltip: 'Export data',
             icon: const Icon(Icons.download_rounded),
             onPressed: _exportData,
           ),
@@ -1493,80 +1453,27 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         ],
       ),
+      // Header (judul, statistik, banner, cari) ikut tergulir bersama data,
+      // seperti template — layar kecil tidak kehabisan ruang untuk daftar.
       body: SafeArea(
         top: true,
-        child: 
-      Column(
-        children: [
-          // Sync Indicator
-          if (_isSyncing)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              color: Colors.blue[50],
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[700]!),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _syncProgress.isEmpty ? 'Syncing with server...' : _syncProgress,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.blue[800],
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+        child: RefreshIndicator(
+          // Pull-to-refresh = muat ulang data LOKAL saja. Pull dari server
+          // hanya lewat "Pull with Filter" / "Pull Since Date".
+          onRefresh: _loadGeoData,
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                sliver: SliverList.list(children: _buildHeader()),
               ),
-            ),
-          
-          // Record yang diubah di server & di HP → user memilih versi.
-          if (_conflicts.isNotEmpty)
-            ConflictBanner(
-              count: _conflicts.length,
-              onResolve: _openConflicts,
-            ),
-
-          // Stats Card
-          _buildStatsCard(),
-
-          // Filter Bar
-          _buildFilterBar(),
-
-          // Data List
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _geoDataList.isEmpty
-                    ? _buildEmptyState()
-                    : _filteredGeoDataList.isEmpty
-                        ? _buildNoResultsState()
-                        : RefreshIndicator(
-                            onRefresh: () async {
-                              // Pull-to-refresh = muat ulang data LOKAL saja.
-                              // Pull dari server kini hanya lewat "Pull from
-                              // Server" (filter + preflight); tidak ada lagi
-                              // full pull-all langsung dari gesture refresh.
-                              await _loadGeoData();
-                            },
-                            child: _viewMode == DataViewMode.list
-                                ? _buildDataList()
-                                : _buildDataGrid(),
-                          ),
+              ..._buildDataSlivers(),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
       floatingActionButton: _selectionMode ? null : FloatingActionButton.extended(
         onPressed: _navigateToDataCollection,
         backgroundColor: AppTheme.primaryColor,
@@ -1582,291 +1489,189 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
+  /// Header halaman (template "Project detail · data"): judul, statistik,
+  /// status sync/konflik, cari + filter, jumlah record + grid/list.
+  List<Widget> _buildHeader() {
+    final unsyncedCount = _geoDataList.where((data) => !data.isSynced).length;
+    return [
+      ProjectDetailTitle(
+        name: _currentProject.name,
+        createdBy: _currentProject.createdBy,
+        updatedAt: _currentProject.updatedAt,
+      ),
+      const SizedBox(height: 16),
+      ProjectStatsRow(
+        type: _geometryLabel(),
+        records: _geoDataList.length,
+        fields: _currentProject.formFields.length,
+      ),
+      if (_isSyncing) ...[
+        const SizedBox(height: 12),
+        _buildSyncProgress(),
+      ],
+      // Antrean sync + satu tombol (project → record → foto sekaligus).
+      if (!_currentProject.isSynced || unsyncedCount > 0) ...[
+        const SizedBox(height: 12),
+        SyncPendingBanner(
+          unsyncedCount: unsyncedCount,
+          pendingPhotoCount: _pendingPhotoCount,
+          projectSynced: _currentProject.isSynced,
+          isOnline: _isOnline,
+          isSyncing: _isSyncing,
+          onSync: _syncNow,
+        ),
+      ],
+      // Record yang diubah di server & di HP → user memilih versi.
+      if (_conflicts.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: ConflictBanner(
+            count: _conflicts.length,
+            onResolve: _openConflicts,
+          ),
+        ),
+      ],
+      const SizedBox(height: 16),
+      DataSearchBar(
+        controller: _searchController,
+        activeFilterCount: _activeFilterCount,
+        onOpenFilters: _showFilterPanel,
+      ),
+      const SizedBox(height: 6),
+      RecordsHeaderRow(
+        visibleCount: _filteredGeoDataList.length,
+        totalCount: _geoDataList.length,
+        hasActiveFilters: _hasActiveFilters,
+        onClearFilters: _clearAllFilters,
+        viewMode: _viewMode,
+        onViewModeChanged: _setViewMode,
+      ),
+    ];
+  }
+
+  String _geometryLabel() {
+    switch (_currentProject.geometryType) {
+      case GeometryType.point:
+        return 'Point';
+      case GeometryType.line:
+        return 'Line';
+      case GeometryType.polygon:
+        return 'Polygon';
+    }
+  }
+
+  Widget _buildSyncProgress() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[700]!),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _syncProgress.isEmpty ? 'Syncing with server...' : _syncProgress,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.blue[800],
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      _dateFilter = null;
+      _fieldFilters = {};
+    });
+    _searchController.clear(); // listener → _applyFilters
+    _applyFilters();
+  }
+
+  /// Daftar data sebagai sliver: memuat / kosong / tanpa hasil / grid / list.
+  List<Widget> _buildDataSlivers() {
+    Widget fill(Widget child) =>
+        SliverFillRemaining(hasScrollBody: false, child: child);
+    if (_isLoading) {
+      return [fill(const Center(child: CircularProgressIndicator()))];
+    }
+    if (_geoDataList.isEmpty) return [fill(_buildEmptyState())];
+    if (_filteredGeoDataList.isEmpty) return [fill(_buildNoResultsState())];
+    return [
+      _viewMode == DataViewMode.list ? _buildDataList() : _buildDataGrid(),
+    ];
+  }
+
   Widget _buildDataGrid() {
-    return GridView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: 80, // Padding untuk FAB
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), // ruang untuk FAB
+      sliver: SliverGrid.builder(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.70, // Memberikan ruang vertikal lebih lega
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: _filteredGeoDataList.length,
+        itemBuilder: (context, index) {
+          final data = _filteredGeoDataList[index];
+          final canEdit = _canEditGeoData(data);
+          return GeoDataListItem(
+            geoData: data,
+            geometryType: _currentProject.geometryType,
+            project: _currentProject,
+            onDelete: canEdit ? () => _deleteGeoData(data) : null,
+            onEdit: canEdit ? () => _editGeoData(data) : null,
+            onTap: () => _onRecordTap(data),
+            onLongPress: _selectionMode ? null : () => _startSelection(data),
+            selectionMode: _selectionMode,
+            selected: _selection.contains(data.id),
+          );
+        },
       ),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.70, // Memberikan ruang vertikal lebih lega
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: _filteredGeoDataList.length,
-      itemBuilder: (context, index) {
-        final data = _filteredGeoDataList[index];
-        final canEdit = _canEditGeoData(data);
-        return GeoDataListItem(
-          geoData: data,
-          geometryType: _currentProject.geometryType,
-          project: _currentProject,
-          onDelete: canEdit ? () => _deleteGeoData(data) : null,
-          onEdit: canEdit ? () => _editGeoData(data) : null,
-          onTap: () => _onRecordTap(data),
-          onLongPress: _selectionMode ? null : () => _startSelection(data),
-          selectionMode: _selectionMode,
-          selected: _selection.contains(data.id),
-        );
-      },
     );
   }
 
   /// Tampilan list (template "Project detail · data"): satu baris per record.
   Widget _buildDataList() {
-    return ListView.separated(
-      controller: _scrollController,
-      padding: const EdgeInsets.only(top: 8, bottom: 88), // ruang untuk FAB
-      itemCount: _filteredGeoDataList.length,
-      separatorBuilder: (context, index) =>
-          Divider(height: 1, indent: 72, color: Colors.grey.shade200),
-      itemBuilder: (context, index) {
-        final data = _filteredGeoDataList[index];
-        final canEdit = _canEditGeoData(data);
-        return GeoDataListTile(
-          geoData: data,
-          project: _currentProject,
-          currentUsername: _currentUsername,
-          onTap: () => _onRecordTap(data),
-          onLongPress: _selectionMode ? null : () => _startSelection(data),
-          selectionMode: _selectionMode,
-          selected: _selection.contains(data.id),
-          onEdit: canEdit ? () => _editGeoData(data) : null,
-          onDelete: canEdit ? () => _deleteGeoData(data) : null,
-        );
-      },
-    );
-  }
-
-  Widget _buildFilterBar() {
-    final hasFilters = _activeFilterCount > 0;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              // Tombol filter
-              GestureDetector(
-                onTap: _showFilterPanel,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: hasFilters
-                        ? AppTheme.primaryGreen
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: hasFilters
-                          ? AppTheme.primaryGreen
-                          : Colors.grey.shade300,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.tune_rounded,
-                        size: 16,
-                        color: hasFilters ? Colors.white : AppTheme.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        hasFilters
-                            ? 'Filter ($_activeFilterCount)'
-                            : 'Filter',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: hasFilters ? Colors.white : AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-    
-              if (_hasActiveFilters) ...[
-                const SizedBox(width: 8),
-                // Tombol hapus semua filter
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _dateFilter = null;
-                      _fieldFilters = {};
-                      _searchController.clear();
-                    });
-                    _applyFilters();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.close_rounded, size: 13, color: Colors.red.shade600),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Clear filters',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-              const Spacer(),
-              const SizedBox(width: 8),
-              DataViewToggle(mode: _viewMode, onChanged: _setViewMode),
-            ],
-          ),
-          // Indikator hasil filter (baris sendiri agar tidak terpotong di
-          // layar sempit).
-          if (_hasActiveFilters)
-            Padding(
-              padding: const EdgeInsets.only(top: 6, left: 4),
-              child: Text(
-                '${_filteredGeoDataList.length} of ${_geoDataList.length} records',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsCard() {
-    final unsyncedCount = _geoDataList.where((data) => !data.isSynced).length;
-    
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: AppTheme.getCardDecoration,
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem(
-                  icon: _getGeometryIconForType(),
-                  label: 'Type',
-                  value: _currentProject.geometryType.toString().split('.').last.toUpperCase(),
-                  color: _getGeoColor(_currentProject.geometryType.toString().split('.').last.toUpperCase()),
-                ),
-                Container(
-                  width: 1,
-                  height: 50,
-                  color: Colors.grey[300],
-                ),
-                _buildStatItem(
-                  icon: Icons.storage_rounded,
-                  label: 'Records',
-                  value: '${_geoDataList.length}',
-                  color: Colors.grey,
-                ),
-                Container(
-                  width: 1,
-                  height: 50,
-                  color: Colors.grey[300],
-                ),
-                _buildStatItem(
-                  icon: Icons.view_list_rounded,
-                  label: 'Fields',
-                  value: '${_currentProject.formFields.length}',
-                  color: Colors.orange,
-                ),
-              ],
-            ),
-          ),
-          // Antrean sync + satu tombol (project → record → foto sekaligus;
-          // dulu "Sync Project" dan "Sync Now" terpisah).
-          if (!_currentProject.isSynced || unsyncedCount > 0)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                border: Border(
-                  top: BorderSide(color: Colors.grey[300]!, width: 1),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.cloud_upload, size: 20, color: Colors.orange[700]),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          unsyncedCount == 0
-                              ? 'Project not on the server yet'
-                              : [
-                                  '$unsyncedCount ${unsyncedCount == 1 ? 'record' : 'records'}',
-                                  if (_pendingPhotoCount > 0)
-                                    '$_pendingPhotoCount ${_pendingPhotoCount == 1 ? 'photo' : 'photos'}',
-                                ].join(' · ') + ' waiting',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.orange[900],
-                          ),
-                        ),
-                        Text(
-                          !_isOnline
-                              ? 'Offline — safe on this phone'
-                              : !_currentProject.isSynced
-                                  ? 'Sync uploads the project first'
-                                  : 'Tap Sync to upload',
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.grey[700]),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: (_isOnline && !_isSyncing) ? _syncNow : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.orange[800],
-                      minimumSize: const Size(0, 44),
-                    ),
-                    icon: const Icon(Icons.sync, size: 18),
-                    label: const Text('Sync'),
-                  ),
-                ],
-              ),
-            ),
-        ],
+    return SliverPadding(
+      padding: const EdgeInsets.only(top: 4, bottom: 96), // ruang untuk FAB
+      sliver: SliverList.separated(
+        itemCount: _filteredGeoDataList.length,
+        separatorBuilder: (context, index) =>
+            Divider(height: 1, indent: 72, color: Colors.grey.shade200),
+        itemBuilder: (context, index) {
+          final data = _filteredGeoDataList[index];
+          final canEdit = _canEditGeoData(data);
+          return GeoDataListTile(
+            geoData: data,
+            project: _currentProject,
+            currentUsername: _currentUsername,
+            onTap: () => _onRecordTap(data),
+            onLongPress: _selectionMode ? null : () => _startSelection(data),
+            selectionMode: _selectionMode,
+            selected: _selection.contains(data.id),
+            onEdit: canEdit ? () => _editGeoData(data) : null,
+            onDelete: canEdit ? () => _deleteGeoData(data) : null,
+          );
+        },
       ),
     );
   }
@@ -1880,48 +1685,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       case GeometryType.polygon:
         return Icons.pentagon_outlined;
     }
-  }
-
-  Widget _buildStatItem({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Expanded(
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              icon,
-              size: 22,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildEmptyState() {

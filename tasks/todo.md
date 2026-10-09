@@ -29,7 +29,16 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
 - [ ] (User, di HP) list/grid, pilih, hapus terpilih, kosongkan data lokal.
 
 ## Fase 2 — Layout seperti template (palet `AppTheme` tetap)
-- [ ] T4: Detail project: judul + pembuat/waktu, statistik ringkas, banner sync, kotak cari + filter berlencana, FAB.
+- [x] T4: Layout detail project seperti template 08.
+  - AppBar terang (warna latar app) berisi indikator koneksi, Export, dan menu ⋮ (isi menu tetap). Cari di AppBar diganti kotak cari di halaman.
+  - Header di halaman, ikut tergulir bersama data (`CustomScrollView`; grid/list jadi sliver, pull-to-refresh di seluruh halaman):
+    - nama project besar + "Created by … · updated 2 h ago" (`relativeTime`, murni);
+    - kartu Type | Records | Fields;
+    - progres sync, banner "N records not synced" (foto tertunda + petunjuk offline/project belum di server, tombol Sync gelap `textPrimary`, nonaktif saat offline/sync), banner konflik;
+    - kotak cari + tombol filter hijau berlencana jumlah filter;
+    - baris "N records" / "N of M records" + Clear filters + tombol grid/list.
+  - Widget di `lib/widgets/project/project_detail_header.dart`. `_buildStatsCard`, `_buildFilterBar`, `_buildStatItem`, dan `_isSearching` dihapus (layar −438/+201 baris). FAB "Add Data" tetap hijau (palet app).
+  - Test 960 → 973; analyze 0 error / 29 warning. Tampilan utuh layar belum dirender di test (butuh DB) → cek di HP (Checkpoint B).
 - [ ] T5: Daftar project: judul + Sync all, cari, chip All/Unsynced/From server, kartu bertag, FAB Create Project.
 - [ ] T6: Buat project: sheet pilih sumber + layar New project (segmented geometri, kartu field berlencana tipe, Add Field).
 
