@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/project_model.dart';
 import '../../models/form_field_model.dart';
@@ -14,6 +13,7 @@ import '../../widgets/connectivity/connectivity_indicator.dart';
 import 'dart:async';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/light_app_bar.dart';
 import '../../utils/ui_feedback.dart';
 
 class CreateProjectScreen extends StatefulWidget {
@@ -400,13 +400,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
       // Bar terang seperti template: tutup, judul, tombol Save.
-      appBar: AppBar(
-        backgroundColor: AppTheme.scaffoldBackground,
-        foregroundColor: AppTheme.textPrimary,
-        surfaceTintColor: Colors.transparent,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        elevation: 0,
-        scrolledUnderElevation: 0,
+      appBar: lightAppBar(
         leading: IconButton(
           tooltip: 'Close',
           icon: const Icon(Icons.close_rounded),

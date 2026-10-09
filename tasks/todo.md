@@ -65,6 +65,12 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - Komponen di `lib/widgets/project/create_project_parts.dart` dan `create_project_source_sheet.dart`. Pemilih radio & kartu ListTile lama dihapus (layar −354 baris bersih).
   - Test 1000 → 1013; analyze 0 error / 29 warning.
 
+- [x] Perbaikan (laporan user 9 Okt): tombol AppBar terang tidak terlihat.
+  - Penyebab: tema app memasang `iconTheme`/`titleTextStyle` putih secara eksplisit, dan itu mengalahkan `foregroundColor` gelap. Akibatnya tombol kembali/Export/⋮/✕ dan judul "New/Edit project" putih di atas latar terang.
+  - Perbaikan: `lightAppBar()` (`lib/theme/light_app_bar.dart`) menimpa `iconTheme`, `actionsIconTheme`, dan `titleTextStyle` menjadi `textPrimary`. Dipakai di daftar, detail, dan buat/edit project.
+  - Test (dengan tema app sungguhan) gagal sebelum perbaikan: ikon ✕ bernilai putih.
+  - Test 1013 → 1015; analyze 0 error / 29 warning.
+
 ### Checkpoint B
 - [x] Test hijau (1013); analyze 0 error / 29 warning (sama dengan baseline 8 Okt).
 - [ ] (User, di HP) tampilan ketiga halaman: daftar project, detail project, buat/edit project (termasuk sheet pilih sumber).

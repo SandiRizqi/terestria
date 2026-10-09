@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../models/project_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/auth_service.dart';
@@ -20,6 +19,7 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:async';
 import '../../widgets/project/cloud_project_dialog.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/light_app_bar.dart';
 
 import '../../utils/app_logger.dart';
 import '../../utils/ui_feedback.dart';
@@ -455,13 +455,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
       // Bar terang seperti template: judul besar + Push all.
-      appBar: AppBar(
-        backgroundColor: AppTheme.scaffoldBackground,
-        foregroundColor: AppTheme.textPrimary,
-        surfaceTintColor: Colors.transparent,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        elevation: 0,
-        scrolledUnderElevation: 0,
+      appBar: lightAppBar(
         title: const Text(
           'Projects',
           style: TextStyle(

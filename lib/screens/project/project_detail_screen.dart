@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:geoform_app/theme/app_theme.dart';
+import '../../theme/light_app_bar.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
@@ -1143,13 +1144,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       backgroundColor: AppTheme.scaffoldBackground,
       // Bar terang seperti template; judul project & pencarian ada di badan
       // halaman (_buildHeader).
-      appBar: _selectionMode ? _buildSelectionAppBar() : AppBar(
-        backgroundColor: AppTheme.scaffoldBackground,
-        foregroundColor: AppTheme.textPrimary,
-        surfaceTintColor: Colors.transparent,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        elevation: 0,
-        scrolledUnderElevation: 0,
+      appBar: _selectionMode ? _buildSelectionAppBar() : lightAppBar(
         titleSpacing: 0,
         title: const Align(
           alignment: Alignment.centerLeft,
