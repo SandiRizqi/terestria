@@ -52,6 +52,10 @@ void main() {
     for (final t in ['Type', 'Polygon', 'Records', '248', 'Fields', '7']) {
       expect(find.text(t), findsOneWidget, reason: t);
     }
+    // Ringkas (satu baris label + nilai) agar ruang untuk data lebih banyak.
+    expect(tester.getSize(find.byType(ProjectStatsRow)).height,
+        lessThanOrEqualTo(44));
+    expect(tester.takeException(), isNull);
   });
 
   group('banner sync', () {

@@ -39,19 +39,21 @@ class ProjectDetailTitle extends StatelessWidget {
       children: [
         Text(
           name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontSize: 24,
+            fontSize: 20,
             height: 1.2,
             fontWeight: FontWeight.w800,
             color: AppTheme.textPrimary,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           who == null || who.isEmpty
               ? 'Updated $updated'
               : 'Created by $who · updated $updated',
-          style: const TextStyle(fontSize: 13.5, color: AppTheme.textSecondary),
+          style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
         ),
       ],
     );
@@ -93,24 +95,27 @@ class ProjectStatsRow extends StatelessWidget {
     );
   }
 
+  /// Ringkas: label dan nilai dalam satu baris, supaya ruang untuk data lebih
+  /// banyak.
   Widget _cell(String label, String value) => Expanded(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Row(
             children: [
               Text(label,
                   style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
-              const SizedBox(height: 2),
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
+                      fontSize: 11, color: AppTheme.textSecondary)),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -243,7 +248,7 @@ class DataSearchBar extends StatelessWidget {
                 filled: true,
                 fillColor: AppTheme.cardBackground,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(vertical: 11),
                 border: border,
                 enabledBorder: border,
                 focusedBorder: border.copyWith(
@@ -267,8 +272,8 @@ class DataSearchBar extends StatelessWidget {
                 child: const Tooltip(
                   message: 'Filters',
                   child: SizedBox(
-                    width: 50,
-                    height: 50,
+                    width: 46,
+                    height: 46,
                     child: Icon(Icons.tune_rounded, color: Colors.white),
                   ),
                 ),

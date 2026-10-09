@@ -4121,17 +4121,19 @@ class _DataCollectionScreenState extends State<DataCollectionScreen>
     );
   }
 
-  double _getExpandedBottomSheetHeight() {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    return BottomControlsMetrics.expanded(
-            widget.project.geometryType, _collectionMode) +
-        bottomPadding;
-  }
+  double _getExpandedBottomSheetHeight() => BottomControlsMetrics.height(
+        expanded: true,
+        type: widget.project.geometryType,
+        mode: _collectionMode,
+        bottomInset: MediaQuery.of(context).padding.bottom,
+      );
 
-  double _getCollapsedBottomSheetHeight() {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    return BottomControlsMetrics.collapsed + bottomPadding;
-  }
+  double _getCollapsedBottomSheetHeight() => BottomControlsMetrics.height(
+        expanded: false,
+        type: widget.project.geometryType,
+        mode: _collectionMode,
+        bottomInset: MediaQuery.of(context).padding.bottom,
+      );
 
   Widget _buildBottomControls() {
     return CollapsibleBottomControls(

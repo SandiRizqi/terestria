@@ -71,6 +71,19 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
   - Test (dengan tema app sungguhan) gagal sebelum perbaikan: ikon ✕ bernilai putih.
   - Test 1013 → 1015; analyze 0 error / 29 warning.
 
+- [x] Perbaikan tata letak (laporan user 9 Okt):
+  - **Detail project — header tetap:** judul, statistik, banner, cari/filter, dan baris jumlah tidak lagi ikut tergulir (hanya daftar data yang bergulir; kebalikan dari keputusan T4).
+  - **Detail project — tanpa pita kosong di bawah:** body tidak dipotong `SafeArea` bawah; daftar bergulir sampai tepi layar dengan padding bawah = FAB + bilah navigasi HP.
+  - **Ringkas:** kartu Type/Records/Fields satu baris (≤ 44 px, sebelumnya 71 px); judul 24 → 20; kotak cari dan jarak antarbagian dirampingkan.
+  - **Panel kontrol peta koleksi data:**
+    - tinggi panel kini pas dengan isinya (`BottomControlsMetrics.height`): isi ringkas 76, diperluas 80, tracking 144;
+    - dulu 84/128/184 ditambah padding 12, lalu bilah navigasi ditumpuk di atasnya;
+    - ruang bawah = bilah navigasi HP (minimal 8);
+    - label tombol panel dikunci satu baris (mengecil bila tak muat), karena "Add point (crosshair)" dulu bisa dua baris;
+    - layar memakai rumus yang sama untuk posisi tombol peta.
+  - **Test:** layar detail kini bisa di-pump di test (data gagal dimuat tanpa DB → kosong). Test "header di luar area gulir" dan "daftar sampai tepi bawah" — yang kedua terbukti gagal dengan perilaku lama (692 vs 740 px).
+  - Test 1015 → 1024; analyze 0 error / 29 warning.
+
 ### Checkpoint B
 - [x] Test hijau (1013); analyze 0 error / 29 warning (sama dengan baseline 8 Okt).
 - [ ] (User, di HP) tampilan ketiga halaman: daftar project, detail project, buat/edit project (termasuk sheet pilih sumber).

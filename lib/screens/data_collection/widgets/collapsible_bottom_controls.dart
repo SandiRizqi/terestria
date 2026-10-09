@@ -6,12 +6,30 @@ import '../data_collection_screen.dart' show CollectionMode;
 /// Tinggi panel kontrol bawah — dipakai juga layar koleksi untuk menaruh
 /// tombol peta di atasnya (satu sumber kebenaran).
 class BottomControlsMetrics {
-  static const double collapsed = 84.0;
+  /// Ruang minimal di bawah tombol bila HP tanpa bilah navigasi.
+  static const double minBottomGap = 8.0;
 
+  /// Tinggi isi (tanpa ruang bawah): pegangan 24 + baris tombol 52.
+  static const double collapsed = 76.0;
+
+  /// Tinggi isi saat diperluas: pegangan 24 + 4 + baris 52 (+ 12 + baris 52
+  /// untuk Start/Stop & Pause saat tracking line/polygon). Dulu angkanya
+  /// lebih besar dari isi sehingga tersisa ruang putih di bawah tombol.
   static double expanded(GeometryType type, CollectionMode mode) =>
       (type != GeometryType.point && mode == CollectionMode.tracking)
-          ? 184.0 // Start/Stop + Pause/Resume, lalu Add/Undo/Clear
-          : 128.0; // hanya Add/Undo/Clear
+          ? 144.0 // Start/Stop + Pause/Resume, lalu Add/Undo/Clear
+          : 80.0; // hanya Add/Undo/Clear
+
+  /// Tinggi panel = isi + ruang bawah. Ruang bawah = bilah navigasi HP
+  /// ([bottomInset]), minimal [minBottomGap] — tidak ditumpuk.
+  static double height({
+    required bool expanded,
+    required GeometryType type,
+    required CollectionMode mode,
+    required double bottomInset,
+  }) =>
+      (expanded ? BottomControlsMetrics.expanded(type, mode) : collapsed) +
+      (bottomInset > minBottomGap ? bottomInset : minBottomGap);
 }
 
 class CollapsibleBottomControls extends StatefulWidget {
@@ -104,33 +122,38 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       );
 
+  /// Label tombol selalu satu baris (mengecil bila tak muat), supaya tinggi
+  /// tombol tetap 52 dan panel pas dengan [BottomControlsMetrics].
+  Widget _oneLine(Widget label) =>
+      FittedBox(fit: BoxFit.scaleDown, child: label);
+
   Widget _trackingButton() => ElevatedButton.icon(
         onPressed: widget.onToggleTracking,
         icon: Icon(widget.isTracking ? Icons.stop : Icons.play_arrow, size: 24),
-        label: Text(
+        label: _oneLine(Text(
           widget.isTracking ? 'Stop' : 'Start',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
+        )),
         style: _filled(widget.isTracking ? Colors.red : AppTheme.primaryColor),
       );
 
   Widget _pauseButton() => ElevatedButton.icon(
         onPressed: widget.onTogglePause,
         icon: Icon(widget.isPaused ? Icons.play_arrow : Icons.pause, size: 24),
-        label: Text(
+        label: _oneLine(Text(
           widget.isPaused ? 'Resume' : 'Pause',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
+        )),
         style: _filled(widget.isPaused ? Colors.green : Colors.orange),
       );
 
   Widget _addPointButton() => ElevatedButton.icon(
         onPressed: _canAddPoint ? widget.onAddPoint : null,
         icon: const Icon(Icons.add_location, size: 24),
-        label: const Text(
+        label: _oneLine(const Text(
           'Add point',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
+        )),
         style: _filled(AppTheme.primaryColor),
       );
 
@@ -163,14 +186,18 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
 
   @override
   Widget build(BuildContext context) {
-    // Get bottom safe area padding
+    // Ruang bawah = bilah navigasi HP (minimal 8), sama dengan SafeArea di
+    // bawah — tinggi panel pas dengan isinya.
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    double heightFor(bool expanded) => BottomControlsMetrics.height(
+          expanded: expanded,
+          type: widget.geometryType,
+          mode: widget.collectionMode,
+          bottomInset: bottomPadding,
+        );
 
-    final double collapsedHeight =
-        BottomControlsMetrics.collapsed + bottomPadding;
-    final double expandedHeight = BottomControlsMetrics.expanded(
-            widget.geometryType, widget.collectionMode) +
-        bottomPadding;
+    final double collapsedHeight = heightFor(false);
+    final double expandedHeight = heightFor(true);
 
     final double targetHeight = widget.isExpanded ? expandedHeight : collapsedHeight;
     final double currentHeight = _isDragging
@@ -198,6 +225,8 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
         ),
         child: SafeArea(
           top: false,
+          minimum:
+              const EdgeInsets.only(bottom: BottomControlsMetrics.minBottomGap),
           child: SingleChildScrollView(
             // Saat drag, tinggi sementara bisa lebih kecil dari konten.
             physics: const NeverScrollableScrollPhysics(),
@@ -227,7 +256,8 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                   _buildCompactRow()
                 else
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    // Tanpa padding bawah: ruang bawah dari SafeArea saja.
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -255,14 +285,14 @@ class _CollapsibleBottomControlsState extends State<CollapsibleBottomControls> {
                                 onPressed:
                                     _canAddPoint ? widget.onAddPoint : null,
                                 icon: const Icon(Icons.add_location, size: 22),
-                                label: Text(
+                                label: _oneLine(Text(
                                   widget.geometryType == GeometryType.point
                                       ? 'Add point (crosshair)'
                                       : 'Add point',
                                   style: const TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600),
-                                ),
+                                )),
                                 style: _filled(AppTheme.primaryColor),
                               ),
                             ),

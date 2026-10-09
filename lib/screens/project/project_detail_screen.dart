@@ -1448,25 +1448,36 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         ],
       ),
-      // Header (judul, statistik, banner, cari) ikut tergulir bersama data,
-      // seperti template — layar kecil tidak kehabisan ruang untuk daftar.
+      // Header (judul, statistik, banner, cari/filter) tetap di atas; hanya
+      // daftar data yang bergulir. Bawah tidak dipotong SafeArea: daftar
+      // bergulir sampai tepi layar, padding bawahnya memberi ruang FAB +
+      // bilah navigasi HP (tanpa pita kosong di bawah).
       body: SafeArea(
         top: true,
-        child: RefreshIndicator(
-          // Pull-to-refresh = muat ulang data LOKAL saja. Pull dari server
-          // hanya lewat "Pull with Filter" / "Pull Since Date".
-          onRefresh: _loadGeoData,
-          child: CustomScrollView(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                sliver: SliverList.list(children: _buildHeader()),
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _buildHeader(),
               ),
-              ..._buildDataSlivers(),
-            ],
-          ),
+            ),
+            Expanded(
+              child: RefreshIndicator(
+                // Pull-to-refresh = muat ulang data LOKAL saja. Pull dari
+                // server hanya lewat "Pull with Filter" / "Pull Since Date".
+                onRefresh: _loadGeoData,
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: _buildDataSlivers(),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: _selectionMode ? null : FloatingActionButton.extended(
@@ -1494,19 +1505,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         createdBy: _currentProject.createdBy,
         updatedAt: _currentProject.updatedAt,
       ),
-      const SizedBox(height: 16),
+      const SizedBox(height: 10),
       ProjectStatsRow(
         type: _geometryLabel(),
         records: _geoDataList.length,
         fields: _currentProject.formFields.length,
       ),
       if (_isSyncing) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         _buildSyncProgress(),
       ],
       // Antrean sync + satu tombol (project → record → foto sekaligus).
       if (!_currentProject.isSynced || unsyncedCount > 0) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         SyncPendingBanner(
           unsyncedCount: unsyncedCount,
           pendingPhotoCount: _pendingPhotoCount,
@@ -1518,7 +1529,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ],
       // Record yang diubah di server & di HP → user memilih versi.
       if (_conflicts.isNotEmpty) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: ConflictBanner(
@@ -1527,13 +1538,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         ),
       ],
-      const SizedBox(height: 16),
+      const SizedBox(height: 10),
       DataSearchBar(
         controller: _searchController,
         activeFilterCount: _activeFilterCount,
         onOpenFilters: _showFilterPanel,
       ),
-      const SizedBox(height: 6),
+      const SizedBox(height: 4),
       RecordsHeaderRow(
         visibleCount: _filteredGeoDataList.length,
         totalCount: _geoDataList.length,
@@ -1614,9 +1625,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     ];
   }
 
+  /// Ruang di bawah data terakhir: FAB + bilah navigasi HP (body tidak
+  /// dipotong SafeArea bawah).
+  double get _listBottomPadding => 96 + MediaQuery.paddingOf(context).bottom;
+
   Widget _buildDataGrid() {
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), // ruang untuk FAB
+      padding: EdgeInsets.fromLTRB(16, 8, 16, _listBottomPadding),
       sliver: SliverGrid.builder(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
@@ -1647,7 +1662,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   /// Tampilan list (template "Project detail · data"): satu baris per record.
   Widget _buildDataList() {
     return SliverPadding(
-      padding: const EdgeInsets.only(top: 4, bottom: 96), // ruang untuk FAB
+      padding: EdgeInsets.only(top: 4, bottom: _listBottomPadding),
       sliver: SliverList.separated(
         itemCount: _filteredGeoDataList.length,
         separatorBuilder: (context, index) =>
