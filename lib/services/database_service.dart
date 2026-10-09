@@ -9,6 +9,7 @@ import '../models/layer_model.dart';
 import '../models/notification_model.dart';
 import '../models/sync_conflict.dart';
 import '../utils/app_logger.dart';
+import '../utils/project_list.dart';
 import 'tracking/session_repository.dart';
 
 /// Akses DB ditolak karena reset logout sedang berjalan.
@@ -680,6 +681,23 @@ class DatabaseService {
     
     final result = await db.rawQuery(query, args);
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Ringkasan record semua project (jumlah, belum ter-upload, gagal push,
+  /// terbaru) dalam satu query — untuk daftar project.
+  Future<Map<String, ProjectDataStats>> getProjectDataStats() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT projectId,
+             COUNT(*) AS total,
+             SUM(CASE WHEN isSynced = 0 THEN 1 ELSE 0 END) AS unsynced,
+             SUM(CASE WHEN isSynced = 0 AND lastSyncError IS NOT NULL
+                       AND lastSyncError != '' THEN 1 ELSE 0 END) AS failed,
+             MAX(updatedAt) AS lastUpdated
+      FROM geo_data
+      GROUP BY projectId
+    ''');
+    return projectDataStatsFromRows(rows);
   }
 
   // ==================== EXPORT & CLEAR ====================

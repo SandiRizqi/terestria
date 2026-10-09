@@ -3,6 +3,7 @@ import 'package:geoform_app/theme/app_theme.dart';
 import '../models/project_model.dart';
 import '../services/auth_service.dart';
 import '../services/tracking/tracking_session_manager.dart';
+import '../utils/project_list.dart';
 import '../utils/project_permissions.dart';
 import 'project/manage_collectors_dialog.dart';
 
@@ -14,6 +15,15 @@ class ProjectCard extends StatefulWidget {
   /// Dipanggil saat collectors berhasil diupdate, agar parent bisa reload
   final ValueChanged<Project>? onProjectUpdated;
 
+  /// Ringkasan record project di HP (jumlah, belum ter-upload, gagal).
+  final ProjectDataStats stats;
+
+  /// User yang login; null → dibaca sendiri dari AuthService.
+  final String? currentUsername;
+
+  /// Untuk test; bawaan jam sekarang.
+  final DateTime? now;
+
   const ProjectCard({
     Key? key,
     required this.project,
@@ -21,6 +31,9 @@ class ProjectCard extends StatefulWidget {
     required this.onDelete,
     required this.onEdit,
     this.onProjectUpdated,
+    this.stats = ProjectDataStats.empty,
+    this.currentUsername,
+    this.now,
   }) : super(key: key);
 
   @override
@@ -143,7 +156,10 @@ class _ProjectCardState extends State<ProjectCard>
     );
   }
 
+  String? get _username => widget.currentUsername ?? _currentUsername;
+
   Future<void> _loadUsername() async {
+    if (widget.currentUsername != null) return;
     final authService = AuthService();
     final user = await authService.getUser();
     if (mounted) {
@@ -153,52 +169,24 @@ class _ProjectCardState extends State<ProjectCard>
     }
   }
 
-  /// Badge status sinkronisasi project ke server (Synced / Local).
-  Widget _buildSyncBadge(bool isSynced) {
-    final color = isSynced ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
-    final icon = isSynced ? Icons.cloud_done : Icons.cloud_off;
-    final label = isSynced ? 'Synced' : 'Local';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: color),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Hanya pembuat yang boleh mengedit project (server mengabaikan perubahan
   /// dari user lain). Project lama tanpa pembuat tidak bisa diedit di app.
   bool _canEditProject() =>
-      isProjectCreator(widget.project, _currentUsername);
+      isProjectCreator(widget.project, _username);
 
   /// Hanya created_by yang boleh manage collectors
   bool _canManageCollectors() =>
-      isProjectCreator(widget.project, _currentUsername);
+      isProjectCreator(widget.project, _username);
 
   Future<void> _openManageCollectors() async {
-    if (_currentUsername == null) return;
+    final username = _username;
+    if (username == null) return;
 
     final updatedProject = await showDialog<Project>(
       context: context,
       builder: (_) => ManageCollectorsDialog(
         project: widget.project,
-        currentUsername: _currentUsername!,
+        currentUsername: username,
       ),
     );
 
@@ -255,201 +243,95 @@ class _ProjectCardState extends State<ProjectCard>
 
   @override
   Widget build(BuildContext context) {
-    IconData geometryIcon;
-    Color geometryColor;
-
-    switch (widget.project.geometryType) {
-      case GeometryType.point:
-        geometryIcon = Icons.place;
-        geometryColor = AppTheme.pointColor;
-        break;
-      case GeometryType.line:
-        geometryIcon = Icons.timeline;
-        geometryColor = AppTheme.lineColor;
-        break;
-      case GeometryType.polygon:
-        geometryIcon = Icons.crop_square;
-        geometryColor = AppTheme.polygonColor;
-        break;
-    }
-
-    final canEdit = _canEditProject();
-    final canDelete = _canDeleteProject();
-    final canManageCollectors = _canManageCollectors();
+    final (geometryIcon, geometryColor, geometryLabel) =
+        _geometryStyle(widget.project.geometryType);
+    final (syncLabel, syncTone) = projectSyncTag(widget.project, widget.stats);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: AppTheme.getCardDecoration,
+      decoration: BoxDecoration(
+        color: AppTheme.cardBackground,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
           onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+          borderRadius: BorderRadius.circular(18),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(14, 14, 4, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
-                        color: geometryColor.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: geometryColor.withOpacity(0.2),
-                          width: 1,
-                        ),
+                        color: geometryColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Icon(
-                        geometryIcon,
-                        color: geometryColor,
-                        size: 22,
-                      ),
+                      child: Icon(geometryIcon, color: geometryColor, size: 24),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             widget.project.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
                               color: AppTheme.textPrimary,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
-                          // Wrap (bukan Row) agar type + badge Synced + REC tak
-                          // saling bertabrakan / overflow pada nama panjang / layar sempit.
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                widget.project.geometryType.toString().split('.').last.toUpperCase(),
-                                style: TextStyle(
-                                  color: geometryColor,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              _buildSyncBadge(widget.project.isSynced),
-                              if (_isTracking)
-                                _buildTrackingBadge()
-                              else if (_hasSession)
-                                _buildIdleSessionBadge(),
-                            ],
+                          Text(
+                            projectSubtitle(widget.project, widget.stats,
+                                widget.now ?? DateTime.now()),
+                            style: const TextStyle(
+                                fontSize: 13, color: AppTheme.textSecondary),
                           ),
+                          if (widget.project.description.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.project.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 12, color: AppTheme.textSecondary),
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                    // Manage Collectors button
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: Colors.teal.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.group_outlined, size: 16),
-                        color: Colors.teal[600],
-                        onPressed: _openManageCollectors,
-                        padding: EdgeInsets.zero,
-                        tooltip: canManageCollectors
-                            ? 'Manage Collectors'
-                            : 'View Collectors',
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // Edit button
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: canEdit
-                            ? AppTheme.primaryColor.withOpacity(0.08)
-                            : Colors.grey.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: IconButton(
-                        icon: Icon(
-                          canEdit ? Icons.edit_rounded : Icons.lock_outline_rounded,
-                          size: 16,
-                        ),
-                        color: canEdit ? AppTheme.primaryColor : Colors.grey[400],
-                        onPressed: _handleEdit,
-                        padding: EdgeInsets.zero,
-                        tooltip: canEdit ? 'Edit Project' : 'No permission to edit',
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // Delete button
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: canDelete
-                            ? Colors.red.withOpacity(0.08)
-                            : Colors.grey.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: IconButton(
-                        icon: Icon(
-                          canDelete
-                              ? Icons.delete_outline_rounded
-                              : Icons.lock_outline_rounded,
-                          size: 16,
-                        ),
-                        color: canDelete ? Colors.red[600] : Colors.grey[400],
-                        onPressed: _handleDelete,
-                        padding: EdgeInsets.zero,
-                        tooltip: canDelete ? 'Delete Project' : 'No permission to delete',
-                      ),
-                    ),
+                    _actionsMenu(),
                   ],
                 ),
-                if (widget.project.description.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.project.description,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
                 const SizedBox(height: 10),
+                // Wrap agar tag + badge tracking tak overflow di layar sempit.
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    _buildInfoChip(
-                      Icons.edit_note,
-                      '${widget.project.formFields.length} fields',
-                    ),
-                    _buildInfoChip(
-                      Icons.calendar_today,
-                      _formatDate(widget.project.createdAt),
-                    ),
-                    if (widget.project.createdBy != null)
-                      _buildCreatorChip(widget.project.createdBy!),
+                    _tag(geometryLabel, TagTone.neutral),
+                    _tag(syncLabel, syncTone),
+                    if (isFromServer(widget.project, _username))
+                      _tag('From server', TagTone.neutral),
+                    if (_isTracking)
+                      _buildTrackingBadge()
+                    else if (_hasSession)
+                      _buildIdleSessionBadge(),
                   ],
                 ),
-                // Collectors row
-                if (widget.project.collectors.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _buildCollectorsRow(widget.project.collectors),
-                ],
               ],
             ),
           ),
@@ -458,111 +340,103 @@ class _ProjectCardState extends State<ProjectCard>
     );
   }
 
-  Widget _buildCollectorsRow(List<String> collectors) {
-    const maxVisible = 3;
-    final visible = collectors.take(maxVisible).toList();
-    final overflow = collectors.length - maxVisible;
-
-    return Row(
-      children: [
-        const Icon(Icons.group_outlined, size: 12, color: Colors.teal),
-        const SizedBox(width: 5),
-        ...visible.map((name) => _buildCollectorChip(name)),
-        if (overflow > 0)
-          Container(
-            margin: const EdgeInsets.only(left: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.teal.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              '+$overflow more',
-              style: TextStyle(
-                fontSize: 9,
-                color: Colors.teal[700],
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+  /// Menu aksi kartu: collectors, edit (hanya pembuat), hapus.
+  Widget _actionsMenu() {
+    final canEdit = _canEditProject();
+    return PopupMenuButton<String>(
+      tooltip: 'Project actions',
+      icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.borderRadiusMedium),
+      ),
+      onSelected: (value) {
+        switch (value) {
+          case 'collectors':
+            _openManageCollectors();
+          case 'edit':
+            _handleEdit();
+          case 'delete':
+            _handleDelete();
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'collectors',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading:
+                const Icon(Icons.group_outlined, color: AppTheme.primaryGreen),
+            title: Text(_canManageCollectors()
+                ? 'Manage collectors'
+                : 'View collectors'),
           ),
+        ),
+        PopupMenuItem(
+          value: 'edit',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              canEdit ? Icons.edit_rounded : Icons.lock_outline_rounded,
+              color: canEdit ? AppTheme.primaryColor : AppTheme.textSecondary,
+            ),
+            title: const Text('Edit project'),
+            subtitle: canEdit ? null : const Text('Only the creator can edit'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'delete',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.delete_outline_rounded,
+                color: AppTheme.errorColor),
+            title: Text('Delete project',
+                style: TextStyle(color: AppTheme.errorColor)),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildCollectorChip(String username) {
+  static (IconData, Color, String) _geometryStyle(GeometryType type) {
+    switch (type) {
+      case GeometryType.point:
+        return (Icons.place_outlined, AppTheme.pointColor, 'Point');
+      case GeometryType.line:
+        return (Icons.timeline, AppTheme.lineColor, 'Line');
+      case GeometryType.polygon:
+        return (Icons.pentagon_outlined, AppTheme.polygonColor, 'Polygon');
+    }
+  }
+
+  /// Tag status kecil (template): netral abu-abu, sukses hijau, peringatan
+  /// kuning, bahaya merah — warna dari AppTheme.
+  Widget _tag(String label, TagTone tone) {
+    final (bg, fg) = switch (tone) {
+      TagTone.neutral => (Colors.grey.shade100, AppTheme.textPrimary),
+      TagTone.success => (
+          AppTheme.successColor.withValues(alpha: 0.14),
+          AppTheme.darkGreen,
+        ),
+      TagTone.warning => (
+          AppTheme.warningColor.withValues(alpha: 0.20),
+          const Color(0xFFB45309),
+        ),
+      TagTone.danger => (
+          AppTheme.errorColor.withValues(alpha: 0.12),
+          AppTheme.errorColor,
+        ),
+    };
     return Container(
-      margin: const EdgeInsets.only(left: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.teal.withOpacity(0.08),
+        color: bg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.teal.withOpacity(0.2)),
       ),
       child: Text(
-        username,
-        style: TextStyle(
-          fontSize: 9,
-          color: Colors.teal[800],
-          fontWeight: FontWeight.w500,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        label,
+        style:
+            TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: fg),
       ),
     );
-  }
-
-  Widget _buildInfoChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: Colors.grey[600]),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[700],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCreatorChip(String creator) {
-    const color = Color(0xFF6366F1);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.person_outline, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            creator,
-            style: const TextStyle(
-              fontSize: 10,
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/project_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/auth_service.dart';
@@ -10,6 +11,8 @@ import '../auth/login_screen.dart';
 import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
 import '../../widgets/project_card.dart';
+import '../../widgets/project/project_list_header.dart';
+import '../../utils/project_list.dart';
 import '../../widgets/tracking/active_tracking_panel.dart';
 import '../../widgets/connectivity/connectivity_indicator.dart';
 import '../../services/project_template_service.dart';
@@ -40,8 +43,12 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   List<Project> _projects = [];
   List<Project> _filteredProjects = [];
   bool _isLoading = true;
-  bool _isSearching = false;
   bool _isOnline = false;
+
+  /// Chip filter (All / Unsynced / From server) + ringkasan record per project.
+  ProjectListFilter _filter = ProjectListFilter.all;
+  Map<String, ProjectDataStats> _stats = const {};
+  String? _currentUsername;
   StreamSubscription<bool>? _connectivitySubscription;
   bool _isSyncing = false;
 
@@ -50,6 +57,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     super.initState();
     _loadProjects();
     _initConnectivity();
+    _loadUsername();
+  }
+
+  Future<void> _loadUsername() async {
+    final user = await _authService.getUser();
+    if (!mounted) return;
+    setState(() => _currentUsername = user?.username);
+    _applyFilters();
   }
 
   void _initConnectivity() {
@@ -75,11 +90,19 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     setState(() => _isLoading = true);
     try {
       final projects = await _storageService.loadProjects();
+      var stats = const <String, ProjectDataStats>{};
+      try {
+        stats = await _storageService.getProjectDataStats();
+      } catch (e) {
+        logWarn('Could not load project record counts: $e', tag: 'PROJECT');
+      }
+      if (!mounted) return;
       setState(() {
         _projects = projects;
-        _filteredProjects = projects;
+        _stats = stats;
         _isLoading = false;
       });
+      _applyFilters();
     } catch (e, stack) {
       setState(() => _isLoading = false);
       crashlytics.recordError(e, stack, reason: 'Project: loadProjects failed');
@@ -91,23 +114,25 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     }
   }
 
-  void _filterProjects(String query) {
+  /// Cari (nama, deskripsi, pembuat) + chip filter.
+  void _applyFilters() {
     setState(() {
-      if (query.isEmpty) {
-        _filteredProjects = _projects;
-      } else {
-        _filteredProjects = _projects.where((project) {
-          final nameLower = project.name.toLowerCase();
-          final descLower = project.description.toLowerCase();
-          final createdLower = project.createdBy?.toLowerCase();
-          final searchLower = query.toLowerCase();
-          return nameLower.contains(searchLower) || descLower.contains(searchLower) || createdLower != null && createdLower.contains(searchLower);
-        }).toList();
-      }
+      _filteredProjects = filterProjects(
+        _projects,
+        query: _searchController.text,
+        filter: _filter,
+        stats: _stats,
+        currentUsername: _currentUsername,
+      );
     });
   }
 
-  /// Sync projects dari server (Pull dari server ke local)
+  /// Sync projects dari server (Pull dari server ke local).
+  /// Sejak sebelum layout baru (T5) tidak ada tombol yang memanggilnya: menu
+  /// lama hanya berisi "Push to Server". Dibiarkan sampai diputuskan apakah
+  /// perlu tombol sendiri atau dihapus (fungsi ini juga menghapus project lokal
+  /// yang tidak ada di server).
+  // ignore: unused_element
   Future<void> _syncProjectsFromServer() async {
     if (_isSyncing) return;
 
@@ -595,114 +620,50 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
+      // Bar terang seperti template: judul besar + Push all.
       appBar: AppBar(
-        backgroundColor: AppTheme.primaryGreen,
+        backgroundColor: AppTheme.scaffoldBackground,
+        foregroundColor: AppTheme.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
         elevation: 0,
-        title: _isSearching 
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-                cursorColor: Colors.white,
-                decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  hintText: 'Search projects...',
-                  hintStyle: const TextStyle(color: Colors.white70),
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.15),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: _filterProjects,
-              )
-            : const Text('Projects', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+        scrolledUnderElevation: 0,
+        title: const Text(
+          'Projects',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.textPrimary,
+          ),
+        ),
         actions: [
-          if (!_isSearching) ...[
-            const ConnectivityIndicator(
-              showLabel: true,
-              iconSize: 16,
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.search),
-              tooltip: 'Search Projects',
-              onPressed: () {
-                setState(() => _isSearching = true);
-              },
-            ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 8,
-              offset: const Offset(0, 50),
-              onSelected: (value) {
-                if (value == 'pull_from_server') {
-                  _syncProjectsFromServer();
-                } else if (value == 'sync_to_server') {
-                  _syncProjectsToServer();
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'sync_to_server',
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryGreen.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.cloud_upload_rounded,
-                          color: AppTheme.primaryGreen,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Push to Server',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: AppTheme.textPrimary,
-                              ),
-                            ),
-                            Text(
-                              'Upload projects to cloud',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+          const ConnectivityIndicator(
+            showLabel: false,
+            iconSize: 16,
+          ),
+          const SizedBox(width: 8),
+          // Sama dengan menu "Push to Server" sebelumnya: mengunggah struktur
+          // project yang belum ada di server (record di-sync dari detail).
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Tooltip(
+              message: 'Upload projects to cloud',
+              child: FilledButton.tonalIcon(
+                onPressed: _isSyncing ? null : _syncProjectsToServer,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.cardBackground,
+                  foregroundColor: AppTheme.textPrimary,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-              ],
+                icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                label: const Text('Push all',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
             ),
-          ] else ...[
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () {
-                setState(() {
-                  _isSearching = false;
-                  _searchController.clear();
-                  _filteredProjects = _projects;
-                });
-              },
-            ),
-          ],
+          ),
         ],
       ),
       body: Column(
@@ -734,12 +695,32 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 ],
               ),
             ),
-          
+
           // Banner "Tracking Aktif" (muncul saat ada sesi tracking berjalan)
           ActiveTrackingBanner(
             onTap: () => showActiveTrackingPanel(
               context,
               onOpenProject: _navigateToProjectDetail,
+            ),
+          ),
+
+          // Cari + chip filter (template "Projects list")
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: ProjectSearchField(
+              controller: _searchController,
+              onChanged: (_) => _applyFilters(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: ProjectFilterChips(
+              selected: _filter,
+              allCount: _projects.length,
+              onSelected: (filter) {
+                _filter = filter;
+                _applyFilters();
+              },
             ),
           ),
 
@@ -758,25 +739,25 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                           padding: const EdgeInsets.only(
                             left: 16,
                             right: 16,
-                            top: 16,
-                            bottom: 80, // Padding untuk FAB
+                            top: 12,
+                            bottom: 88, // Padding untuk FAB
                           ),
                           itemCount: _filteredProjects.length,
                           itemBuilder: (context, index) {
                             final project = _filteredProjects[index];
                             return ProjectCard(
                               project: project,
+                              stats: _stats[project.id] ?? ProjectDataStats.empty,
+                              currentUsername: _currentUsername,
                               onTap: () => _navigateToProjectDetail(project),
                               onDelete: () => _deleteProject(project),
                               onEdit: () => _editProject(project),
                               onProjectUpdated: (updatedProject) {
-                                setState(() {
-                                  final idx = _projects.indexWhere((p) => p.id == updatedProject.id);
-                                  if (idx != -1) {
-                                    _projects[idx] = updatedProject;
-                                    _filteredProjects = List.from(_projects);
-                                  }
-                                });
+                                final idx = _projects.indexWhere((p) => p.id == updatedProject.id);
+                                if (idx != -1) {
+                                  _projects[idx] = updatedProject;
+                                  _applyFilters();
+                                }
                               },
                             );
                           },
@@ -794,13 +775,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           borderRadius: BorderRadius.circular(16),
         ),
         icon: const Icon(Icons.add_rounded),
-        label: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold)),
+        label: const Text('Create Project', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    final isFiltering = _searchController.text.isNotEmpty;
+    final isFiltering = _searchController.text.isNotEmpty ||
+        _filter != ProjectListFilter.all;
     
     return Center(
       child: Column(
@@ -821,7 +803,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           const SizedBox(height: 8),
           Text(
             isFiltering 
-                ? 'Try different search keywords'
+                ? 'Try a different search or filter'
                 : 'Create your first project to start collecting geospatial data',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey[500]),
@@ -1211,8 +1193,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       ),
     );
 
-    if (result == true) {
-      _loadProjects();
-    }
+    // Selalu muat ulang: jumlah record & status sync bisa berubah di detail.
+    if (mounted) await _loadProjects();
+    if (result == true) logDebug('Project changed in detail', tag: 'PROJECT');
   }
 }

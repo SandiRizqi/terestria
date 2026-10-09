@@ -1,6 +1,7 @@
 import '../models/project_model.dart';
 import '../models/geo_data_model.dart';
 import '../models/sync_conflict.dart';
+import '../utils/project_list.dart';
 import 'database_service.dart';
 
 /// Storage Service - Now using SQLite for better performance and scalability
@@ -127,6 +128,10 @@ class StorageService {
   Future<int> getGeoDataCount(String projectId) async {
     return await _db.getGeoDataCount(projectId);
   }
+
+  /// Ringkasan record per project untuk daftar project (satu query).
+  Future<Map<String, ProjectDataStats>> getProjectDataStats() =>
+      _db.getProjectDataStats();
 
   /// Get count of unsynced geo data (optionally filtered by project)
   Future<int> getUnsyncedGeoDataCount({String? projectId}) async {

@@ -39,7 +39,15 @@ Baseline (8 Okt): `flutter test` 913 lulus · `flutter analyze` 0 error / 29 war
     - baris "N records" / "N of M records" + Clear filters + tombol grid/list.
   - Widget di `lib/widgets/project/project_detail_header.dart`. `_buildStatsCard`, `_buildFilterBar`, `_buildStatItem`, dan `_isSearching` dihapus (layar −438/+201 baris). FAB "Add Data" tetap hijau (palet app).
   - Test 960 → 973; analyze 0 error / 29 warning. Tampilan utuh layar belum dirender di test (butuh DB) → cek di HP (Checkpoint B).
-- [ ] T5: Daftar project: judul + Sync all, cari, chip All/Unsynced/From server, kartu bertag, FAB Create Project.
+- [x] T5: Layout daftar project seperti template 05.
+  - AppBar terang: judul besar "Projects", indikator koneksi (ikon), tombol **"Push all"**. Isinya sama dengan menu lama "Push to Server" (hanya struktur project yang belum ada di server), jadi labelnya tidak "Sync all".
+  - Kotak cari selalu tampil (menggantikan cari di AppBar). Chip **All n / Unsynced / From server**:
+    - "Unsynced" = project belum di server atau ada record belum ter-upload;
+    - "From server" = project dibuat user lain.
+  - Kartu: ikon geometri, nama, "**N records · waktu**" (aktivitas terakhir project/record), deskripsi 1 baris, dan tag: tipe; status (Sync failed / N unsynced / Local / Synced); From server; REC/PAUSED/NOT SAVED (key sama). Tombol collectors/edit/hapus pindah ke menu ⋮ "Project actions"; edit tetap hanya untuk pembuat ("Only the creator can edit"). Chip collectors, tanggal buat, dan pembuat tidak lagi di kartu (collectors tetap bisa dilihat lewat menu).
+  - Jumlah per project dari satu query terkelompok (`DatabaseService.getProjectDataStats`); aturan filter/tag/subjudul murni di `lib/utils/project_list.dart`. Kembali dari detail project selalu memuat ulang (jumlah record bisa berubah). FAB "Create Project".
+  - `_syncProjectsFromServer` sejak sebelumnya tidak terjangkau dari UI (menu lama tak punya item pull); kini diberi `ignore: unused_element` + catatan, menunggu keputusan user.
+  - Test 973 → 986; analyze 0 error / 29 warning.
 - [ ] T6: Buat project: sheet pilih sumber + layar New project (segmented geometri, kartu field berlencana tipe, Add Field).
 
 ### Checkpoint B
