@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geoform_app/theme/app_theme.dart';
 import 'package:geoform_app/models/form_field_model.dart';
 import 'package:geoform_app/models/geo_data_model.dart';
 import 'package:geoform_app/models/project_model.dart';
@@ -184,6 +185,12 @@ void main() {
       await tester.tap(find.byTooltip('Select all'));
       await tester.tap(find.byTooltip('Cancel selection'));
       expect((toggles, closes), (1, 1));
+    });
+
+    testWidgets('warna bar = hijau utama aplikasi', (tester) async {
+      await pumpBar(tester, count: 1, allSelected: false);
+      expect(tester.widget<AppBar>(find.byType(AppBar)).backgroundColor,
+          AppTheme.primaryGreen);
     });
 
     testWidgets('semua terpilih → tombol menjadi "Deselect all"', (tester) async {

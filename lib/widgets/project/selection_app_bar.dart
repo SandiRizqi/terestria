@@ -28,7 +28,7 @@ class SelectionAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      backgroundColor: AppTheme.darkGreen,
+      backgroundColor: AppTheme.primaryGreen,
       foregroundColor: Colors.white,
       elevation: 0,
       leading: IconButton(
